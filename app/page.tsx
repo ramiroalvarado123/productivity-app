@@ -1,9 +1,13 @@
 import { chatGPTSignInPath, getChatGPTUser } from "./chatgpt-auth";
+import NewUserPreview from "./new-user-preview";
 import ProgressClient from "./progress-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams?: Promise<{ demo?: string }> }) {
+  const params = searchParams ? await searchParams : {};
+  if (params.demo === "new-user") return <NewUserPreview />;
+
   const user = await getChatGPTUser();
 
   if (user) {
