@@ -926,37 +926,38 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     ["sleep", "☾", "Sueño", "Descansar mejor y con regularidad"],
     ["goals", "◎", "Objetivos", "Cumplir metas concretas"],
   ];
-  const onboardingPreferenceOptions = [
-    ["quick", "Carga rápida diaria"], ["weekly", "Resumen semanal"], ["ai", "Usar IA para organizar"],
-  ];
-
   if (!loading && !data.profile.onboardingCompleted) {
     const toggleGoal = (goal: string) => setOnboardingGoals((current) => current.includes(goal) ? current.filter((item) => item !== goal) : current.length < 3 ? [...current, goal] : current);
     const togglePreference = (preference: string) => setOnboardingPreferences((current) => current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference]);
-    return <main className="onboarding-page">
-      <header className="onboarding-header"><div className="access-brand"><div className="brand-mark small">M</div><b>Mi Progreso</b></div><span>PASO {onboardingStep} DE 2</span></header>
-      <section className="onboarding-card">
-        <div className="onboarding-progress"><i className={onboardingStep === 2 ? "complete" : ""} /></div>
-        {onboardingStep === 1 ? <>
-          <p className="step-label">TU PERFIL</p><h1>Bienvenido a Mi Progreso.</h1>
-          <p className="onboarding-lead">Empecemos por lo esencial. Este es el nombre que vas a ver dentro de la aplicación.</p>
-          <label className="onboarding-name">¿Cómo querés que te llamemos?<input autoFocus value={onboardingName} onChange={(event) => setOnboardingName(event.target.value)} maxLength={60} placeholder="Tu nombre" /></label>
-          <button className="onboarding-primary" disabled={onboardingName.trim().length < 2} onClick={() => setOnboardingStep(2)}>Continuar <span>→</span></button>
-        </> : <>
-          <p className="step-label">TUS PRIORIDADES</p><h1>¿Qué querés mejorar primero?</h1>
-          <p className="onboarding-lead">Elegí entre 1 y 3 áreas. Las usaremos para personalizar tu Daily Score; después podés cambiarlas cuando quieras.</p>
-          <div className="onboarding-goals">{onboardingGoalOptions.map(([value, icon, label, copy]) => <button type="button" aria-pressed={onboardingGoals.includes(value)} className={onboardingGoals.includes(value) ? "selected" : ""} key={value} onClick={() => toggleGoal(value)}><span>{icon}</span><p><b>{label}</b><small>{copy}</small></p><i>{onboardingGoals.includes(value) ? "✓" : "+"}</i></button>)}</div>
-          <div className="onboarding-preferences"><label>¿Cómo preferís usar la app? <small>Opcional</small></label><div>{onboardingPreferenceOptions.map(([value, label]) => <button type="button" aria-pressed={onboardingPreferences.includes(value)} className={onboardingPreferences.includes(value) ? "selected" : ""} key={value} onClick={() => togglePreference(value)}>{onboardingPreferences.includes(value) ? "✓ " : "+ "}{label}</button>)}</div></div>
-          {error && <div className="error-banner">{error}</div>}
-          <div className="onboarding-actions"><button type="button" className="onboarding-back" onClick={() => setOnboardingStep(1)}>← Atrás</button><button type="button" className="onboarding-primary" disabled={!onboardingGoals.length || saving} onClick={() => void save({ action: "complete_onboarding", displayName: onboardingName, mainGoals: onboardingGoals, usagePreferences: onboardingPreferences, monthKey })}>{saving ? "Configurando…" : "Entrar a Mi Progreso"} <span>→</span></button></div>
-        </>}
+    return <main className="editorial-onboarding">
+      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">L</span><b>LifeTrack</b></div><span>Paso {onboardingStep} de 2</span></header>
+      <div className="editorial-stepper" aria-label={`Paso ${onboardingStep} de 2`}>
+        <div className="active"><span>01</span><b>Perfil</b><i /></div><div className={onboardingStep === 2 ? "active" : ""}><span>02</span><b>Prioridades</b></div>
+      </div>
+      <section className="editorial-onboarding-body">
+        <div className="editorial-story">
+          <span className="editorial-number">0{onboardingStep}</span>
+          {onboardingStep === 1 ? <><h1>Primero,<br />conocerte.</h1><p>Este nombre aparecerá en tu perfil y en tu experiencia diaria.</p></> : <><h1>Tus<br />prioridades.</h1><p>Elegí entre 1 y 3 áreas para personalizar tu Daily Score.</p></>}
+        </div>
+        <div className="editorial-form-area">
+          {onboardingStep === 1 ? <>
+            <label className="editorial-name">¿Cómo te llamás?<input autoFocus value={onboardingName} onChange={(event) => setOnboardingName(event.target.value)} maxLength={60} placeholder="Tu nombre" /></label>
+            <button className="editorial-primary" disabled={onboardingName.trim().length < 2} onClick={() => setOnboardingStep(2)}>Continuar <span>→</span></button>
+            <p className="editorial-note"><span>🔒</span> Podés cambiarlo cuando quieras.</p>
+          </> : <>
+            <div className="editorial-priority-heading"><p>TUS PRIORIDADES</p><h2>¿Cuáles son tus prioridades?</h2><small>Elegí entre 1 y 3 áreas. Después podés cambiarlas cuando quieras.</small></div>
+            <div className="editorial-goals">{onboardingGoalOptions.map(([value, icon, label, copy]) => <button type="button" aria-pressed={onboardingGoals.includes(value)} className={onboardingGoals.includes(value) ? "selected" : ""} key={value} onClick={() => toggleGoal(value)}><span>{icon}</span><p><b>{label}</b><small>{copy}</small></p><i>{onboardingGoals.includes(value) ? "✓" : "+"}</i></button>)}</div>
+            <label className="weekly-consent"><input type="checkbox" checked={onboardingPreferences.includes("weekly")} onChange={() => togglePreference("weekly")} /><span aria-hidden="true">✉</span><p><b>Quiero recibir un resumen semanal de mi progreso</b><small>Podrás desactivarlo cuando quieras desde tu perfil.</small></p></label>
+            {error && <div className="error-banner">{error}</div>}
+            <div className="editorial-actions"><button type="button" className="editorial-back" onClick={() => setOnboardingStep(1)}>← Atrás</button><button type="button" className="editorial-primary" disabled={!onboardingGoals.length || saving} onClick={() => void save({ action: "complete_onboarding", displayName: onboardingName, mainGoals: onboardingGoals, usagePreferences: onboardingPreferences, monthKey })}>{saving ? "Configurando…" : "Entrar a LifeTrack"} <span>→</span></button></div>
+          </>}
+        </div>
       </section>
-      <p className="onboarding-security">🔒 Tus preferencias quedan asociadas únicamente a tu cuenta.</p>
     </main>;
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">M</span><b>Mi Progreso</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="profile-chip"><span>{displayName.charAt(0)}</span><div><b>{displayName}</b><small>Datos guardados</small></div><a href="/signout-with-chatgpt?return_to=/" title="Cerrar sesión">↗</a></div></aside>
+    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">L</span><b>LifeTrack</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="profile-chip"><span>{displayName.charAt(0)}</span><div><b>{displayName}</b><small>Datos guardados</small></div><a href="/signout-with-chatgpt?return_to=/" title="Cerrar sesión">↗</a></div></aside>
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div></header>
       {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <><section className={"hero-grid " + (loading ? "is-loading" : "")}>{scoreCard}<article className="stat-card"><span className="stat-icon violet">↗</span><div><p>ENTRENAMIENTOS</p><b>{data.trainingLogs.filter((item) => item.trainingDate >= week[0].iso).length}<small> esta semana</small></b><span>{data.disciplines.length} disciplinas</span></div></article><article className="stat-card"><span className="stat-icon coral">⌁</span><div><p>FOCO HOY</p><b>{(focusToday / 60).toFixed(focusToday % 60 ? 1 : 0)}<small> h</small></b><span>{focusToday} minutos</span></div></article><article className="stat-card"><span className="stat-icon mint">☾</span><div><p>SUEÑO</p><b>{sleepToday ? Math.round(sleepToday / 6) / 10 : "—"}<small> h</small></b><span>Último registro</span></div></article></section>

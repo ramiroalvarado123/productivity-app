@@ -2,22 +2,22 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mi Progreso",
-  description: "Tu gimnasio, alimentación, lectura y progreso diario en un solo lugar.",
+  title: "LifeTrack",
+  description: "Todo tu progreso en un solo lugar.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
   openGraph: {
-    title: "Mi Progreso",
-    description: "Tu día, en equilibrio.",
+    title: "LifeTrack",
+    description: "Todo tu progreso en un solo lugar.",
     url: "https://mi-progreso.ralvarado377764.chatgpt.site",
-    siteName: "Mi Progreso",
-    images: [{ url: "https://mi-progreso.ralvarado377764.chatgpt.site/og.png", width: 1200, height: 630, alt: "Mi Progreso — Tu día, en equilibrio." }],
+    siteName: "LifeTrack",
+    images: [{ url: "https://mi-progreso.ralvarado377764.chatgpt.site/og.png", width: 1200, height: 630, alt: "LifeTrack — Todo tu progreso en un solo lugar." }],
     locale: "es_AR",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Mi Progreso",
-    description: "Tu día, en equilibrio.",
+    title: "LifeTrack",
+    description: "Todo tu progreso en un solo lugar.",
     images: ["https://mi-progreso.ralvarado377764.chatgpt.site/og.png"],
   },
 };
