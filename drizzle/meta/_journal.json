@@ -29,6 +29,20 @@
       "when": 1787258251390,
       "tag": "0003_great_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787443385126,
+      "tag": "0004_steady_toro",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787448416748,
+      "tag": "0005_thankful_magik",
+      "breakpoints": true
     }
   ]
 }

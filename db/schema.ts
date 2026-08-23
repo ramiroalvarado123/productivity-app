@@ -28,6 +28,24 @@ export const meals = sqliteTable("meals", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const dietPlans = sqliteTable("diet_plans", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userEmail: text("user_email").notNull(),
+  age: integer("age").notNull(),
+  sex: text("sex", { enum: ["female", "male", "unspecified"] }).notNull().default("unspecified"),
+  heightCm: integer("height_cm").notNull(),
+  currentWeightDeciKg: integer("current_weight_deci_kg").notNull(),
+  targetWeightDeciKg: integer("target_weight_deci_kg").notNull(),
+  activityLevel: text("activity_level", { enum: ["sedentary", "light", "moderate", "high"] }).notNull().default("light"),
+  goalPace: text("goal_pace", { enum: ["gentle", "moderate"] }).notNull().default("gentle"),
+  preferences: text("preferences").notNull().default(""),
+  details: text("details").notNull().default(""),
+  targetCalories: integer("target_calories").notNull(),
+  planJson: text("plan_json").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("diet_plan_user_unique").on(table.userEmail)]);
+
 export const books = sqliteTable("books", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userEmail: text("user_email").notNull(),
@@ -36,6 +54,8 @@ export const books = sqliteTable("books", {
   status: text("status", { enum: ["reading", "read", "wishlist"] }).notNull().default("reading"),
   totalPages: integer("total_pages").notNull().default(0),
   currentPage: integer("current_page").notNull().default(0),
+  coverUrl: text("cover_url").notNull().default(""),
+  externalKey: text("external_key").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -64,6 +84,9 @@ export const monthlyPriorities = sqliteTable("monthly_priorities", {
   gymWeight: integer("gym_weight").notNull().default(2),
   nutritionWeight: integer("nutrition_weight").notNull().default(2),
   readingWeight: integer("reading_weight").notNull().default(2),
+  sleepWeight: integer("sleep_weight").notNull().default(2),
+  focusWeight: integer("focus_weight").notNull().default(2),
+  goalsWeight: integer("goals_weight").notNull().default(2),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("priority_user_month_unique").on(table.userEmail, table.monthKey)]);
 
@@ -72,7 +95,7 @@ export const goals = sqliteTable("goals", {
   userEmail: text("user_email").notNull(),
   title: text("title").notNull(),
   period: text("period", { enum: ["weekly", "monthly", "annual", "custom"] }).notNull(),
-  category: text("category", { enum: ["general", "gym", "training", "nutrition", "reading", "study", "work", "sleep"] }).notNull().default("general"),
+  category: text("category", { enum: ["general", "gym", "training", "nutrition", "reading", "study", "work", "sleep", "score", "calendar", "stats", "goals"] }).notNull().default("general"),
   targetDate: text("target_date").notNull(),
   completedAt: text("completed_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

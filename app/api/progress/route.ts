@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { bookNotes, books, calendarEvents, dailyCheckins, exerciseLogs, focusProjects, focusSessions, goals, gymAttendance, meals, monthlyPriorities, profiles, readingLogs, tasks, trainingDisciplines, trainingLogs } from "../../../db/schema";
+import { bookNotes, books, calendarEvents, dailyCheckins, dietPlans, exerciseLogs, focusProjects, focusSessions, goals, gymAttendance, meals, monthlyPriorities, profiles, readingLogs, tasks, trainingDisciplines, trainingLogs } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -56,11 +56,12 @@ export async function GET(request: Request) {
     for (const row of legacyGym) await db.insert(trainingLogs).values({ userEmail: user.email, disciplineId: strengthDiscipline.id, trainingDate: row.attendedDate }).onConflictDoNothing();
   }
 
-  const [trainingRows, exerciseRows, mealRows, mealHistoryRows, bookRows, logRows, readingHistoryRows, noteRows, priorityRows, goalRows, dailyRows, projectRows, focusRows, taskRows, eventRows] = await Promise.all([
+  const [trainingRows, exerciseRows, mealRows, mealHistoryRows, dietPlanRows, bookRows, logRows, readingHistoryRows, noteRows, priorityRows, goalRows, dailyRows, projectRows, focusRows, taskRows, eventRows] = await Promise.all([
     db.select().from(trainingLogs).where(and(eq(trainingLogs.userEmail, user.email), gte(trainingLogs.trainingDate, historyStart), lte(trainingLogs.trainingDate, date))).orderBy(desc(trainingLogs.trainingDate), desc(trainingLogs.id)),
     db.select().from(exerciseLogs).where(eq(exerciseLogs.userEmail, user.email)).orderBy(desc(exerciseLogs.createdAt), desc(exerciseLogs.id)),
     db.select().from(meals).where(and(eq(meals.userEmail, user.email), eq(meals.mealDate, date))).orderBy(asc(meals.createdAt), asc(meals.id)),
     db.select().from(meals).where(and(eq(meals.userEmail, user.email), gte(meals.mealDate, historyStart), lte(meals.mealDate, date))).orderBy(desc(meals.mealDate)),
+    db.select().from(dietPlans).where(eq(dietPlans.userEmail, user.email)).limit(1),
     db.select().from(books).where(eq(books.userEmail, user.email)).orderBy(desc(books.createdAt), desc(books.id)),
     db.select().from(readingLogs).where(and(eq(readingLogs.userEmail, user.email), eq(readingLogs.logDate, date))),
     db.select().from(readingLogs).where(and(eq(readingLogs.userEmail, user.email), gte(readingLogs.logDate, historyStart), lte(readingLogs.logDate, date))).orderBy(desc(readingLogs.logDate)),
@@ -82,11 +83,12 @@ export async function GET(request: Request) {
     exerciseLogs: exerciseRows,
     meals: mealRows,
     mealHistory: mealHistoryRows,
+    dietPlan: dietPlanRows[0] ?? null,
     books: bookRows,
     readingLogs: logRows,
     readingHistory: readingHistoryRows,
     notes: noteRows,
-    priorities: priorityRows[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2 },
+    priorities: priorityRows[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
     goals: goalRows,
     dailyCheckin: dailyRows.find((row) => row.entryDate === date) ?? null,
     dailyCheckins: dailyRows,
@@ -200,6 +202,7 @@ export async function POST(request: Request) {
     const note = String(payload.note ?? "").trim().slice(0, 1000);
     const project = await db.select({ id: focusProjects.id }).from(focusProjects).where(and(eq(focusProjects.id, projectId), eq(focusProjects.userEmail, user.email))).limit(1);
     if (!project[0] || !DATE_PATTERN.test(date)) return Response.json({ error: "Elegí un proyecto y una fecha válidos." }, { status: 400 });
+    await db.delete(focusSessions).where(and(eq(focusSessions.userEmail, user.email), eq(focusSessions.projectId, projectId), eq(focusSessions.sessionDate, date)));
     await db.insert(focusSessions).values({ userEmail: user.email, projectId, sessionDate: date, minutes, note });
     return Response.json({ ok: true });
   }
@@ -265,13 +268,57 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   }
 
+  if (action === "save_diet_plan") {
+    const age = Math.round(Number(payload.age) || 0);
+    const sex = String(payload.sex ?? "unspecified");
+    const heightCm = Math.round(Number(payload.heightCm) || 0);
+    const currentWeightDeciKg = Math.round((Number(payload.currentWeightKg) || 0) * 10);
+    const targetWeightDeciKg = Math.round((Number(payload.targetWeightKg) || 0) * 10);
+    const activityLevel = String(payload.activityLevel ?? "light");
+    const goalPace = String(payload.goalPace ?? "gentle");
+    const preferences = String(payload.preferences ?? "").trim().slice(0, 500);
+    const details = String(payload.details ?? "").trim().slice(0, 2000);
+    const targetCalories = Math.round(Number(payload.targetCalories) || 0);
+    const plan = payload.plan;
+    if (age < 18 || age > 100 || heightCm < 120 || heightCm > 230 || currentWeightDeciKg < 350 || currentWeightDeciKg > 3000 || targetWeightDeciKg < 350 || targetWeightDeciKg > 3000) {
+      return Response.json({ error: "Revisá edad, altura y pesos antes de guardar." }, { status: 400 });
+    }
+    if (!['female', 'male', 'unspecified'].includes(sex) || !['sedentary', 'light', 'moderate', 'high'].includes(activityLevel) || !['gentle', 'moderate'].includes(goalPace)) {
+      return Response.json({ error: "La configuración del plan no es válida." }, { status: 400 });
+    }
+    if (!plan || typeof plan !== "object" || targetCalories < 1000 || targetCalories > 6000) {
+      return Response.json({ error: "Generá un plan válido antes de guardarlo." }, { status: 400 });
+    }
+    const values = {
+      userEmail: user.email,
+      age,
+      sex: sex as "female" | "male" | "unspecified",
+      heightCm,
+      currentWeightDeciKg,
+      targetWeightDeciKg,
+      activityLevel: activityLevel as "sedentary" | "light" | "moderate" | "high",
+      goalPace: goalPace as "gentle" | "moderate",
+      preferences,
+      details,
+      targetCalories,
+      planJson: JSON.stringify(plan).slice(0, 30000),
+    };
+    await db.insert(dietPlans).values(values).onConflictDoUpdate({
+      target: dietPlans.userEmail,
+      set: { ...values, updatedAt: sql`CURRENT_TIMESTAMP` },
+    });
+    return Response.json({ ok: true });
+  }
+
   if (action === "add_book") {
     const title = String(payload.title ?? "").trim();
     const author = String(payload.author ?? "").trim();
     const status = ["reading", "read", "wishlist"].includes(String(payload.status)) ? String(payload.status) as "reading" | "read" | "wishlist" : "reading";
     const totalPages = Math.max(0, Math.min(20000, Number(payload.totalPages) || 0));
+    const coverUrl = String(payload.coverUrl ?? "").trim().slice(0, 1000);
+    const externalKey = String(payload.externalKey ?? "").trim().slice(0, 300);
     if (!title) return Response.json({ error: "Ingresá el título del libro." }, { status: 400 });
-    await db.insert(books).values({ userEmail: user.email, title, author, status, totalPages, currentPage: status === "read" ? totalPages : 0 });
+    await db.insert(books).values({ userEmail: user.email, title, author, status, totalPages, currentPage: status === "read" ? totalPages : 0, coverUrl, externalKey });
     return Response.json({ ok: true });
   }
 
@@ -317,8 +364,11 @@ export async function POST(request: Request) {
     const gymWeight = normalizeWeight(payload.gymWeight);
     const nutritionWeight = normalizeWeight(payload.nutritionWeight);
     const readingWeight = normalizeWeight(payload.readingWeight);
-    await db.insert(monthlyPriorities).values({ userEmail: user.email, monthKey, gymWeight, nutritionWeight, readingWeight })
-      .onConflictDoUpdate({ target: [monthlyPriorities.userEmail, monthlyPriorities.monthKey], set: { gymWeight, nutritionWeight, readingWeight, updatedAt: sql`CURRENT_TIMESTAMP` } });
+    const sleepWeight = normalizeWeight(payload.sleepWeight);
+    const focusWeight = normalizeWeight(payload.focusWeight);
+    const goalsWeight = normalizeWeight(payload.goalsWeight);
+    await db.insert(monthlyPriorities).values({ userEmail: user.email, monthKey, gymWeight, nutritionWeight, readingWeight, sleepWeight, focusWeight, goalsWeight })
+      .onConflictDoUpdate({ target: [monthlyPriorities.userEmail, monthlyPriorities.monthKey], set: { gymWeight, nutritionWeight, readingWeight, sleepWeight, focusWeight, goalsWeight, updatedAt: sql`CURRENT_TIMESTAMP` } });
     return Response.json({ ok: true });
   }
 
@@ -329,13 +379,13 @@ export async function POST(request: Request) {
     const targetDate = String(payload.targetDate ?? "");
     if (!title || title.length > 180) return Response.json({ error: "Escribí un objetivo más breve." }, { status: 400 });
     if (!["weekly", "monthly", "annual", "custom"].includes(period)) return Response.json({ error: "Plazo inválido." }, { status: 400 });
-    if (!["general", "gym", "training", "nutrition", "reading", "study", "work", "sleep"].includes(category)) return Response.json({ error: "Categoría inválida." }, { status: 400 });
+    if (!["general", "gym", "training", "nutrition", "reading", "study", "work", "sleep", "score", "calendar", "stats", "goals"].includes(category)) return Response.json({ error: "Categoría inválida." }, { status: 400 });
     if (!DATE_PATTERN.test(targetDate)) return Response.json({ error: "Elegí una fecha válida." }, { status: 400 });
     await db.insert(goals).values({
       userEmail: user.email,
       title,
       period: period as "weekly" | "monthly" | "annual" | "custom",
-      category: category as "general" | "gym" | "training" | "nutrition" | "reading" | "study" | "work" | "sleep",
+      category: category as "general" | "gym" | "training" | "nutrition" | "reading" | "study" | "work" | "sleep" | "score" | "calendar" | "stats" | "goals",
       targetDate,
     });
     return Response.json({ ok: true });

@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const audio = form.get("audio");
   const date = String(form.get("date") ?? "");
   if (!(audio instanceof File) || !audio.size) return Response.json({ error: "No recibimos una grabación." }, { status: 400 });
-  if (audio.size > 12 * 1024 * 1024) return Response.json({ error: "La grabación es demasiado grande. Probá con menos de un minuto." }, { status: 400 });
+  if (audio.size > 900 * 1024) return Response.json({ error: "La grabación es demasiado grande. Probá nuevamente; la aplicación la comprimirá automáticamente." }, { status: 413 });
 
   const transcriptionForm = new FormData();
   transcriptionForm.append("file", audio, audio.name || "cierre-del-dia.webm");
