@@ -4,6 +4,9 @@ import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core
 export const profiles = sqliteTable("profiles", {
   email: text("email").primaryKey(),
   displayName: text("display_name").notNull(),
+  onboardingCompleted: integer("onboarding_completed", { mode: "boolean" }).notNull().default(false),
+  mainGoalsJson: text("main_goals_json").notNull().default("[]"),
+  usagePreferencesJson: text("usage_preferences_json").notNull().default("[]"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

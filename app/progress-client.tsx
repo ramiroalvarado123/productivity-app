@@ -2,7 +2,7 @@
 
 import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type User = { displayName: string; email: string };
+type User = { displayName: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[] };
 type Meal = { id: number; name: string; detail: string; calories: number; protein: number; carbs: number; fat: number; mealDate: string };
 type BookStatus = "reading" | "read" | "wishlist";
 type Book = { id: number; title: string; author: string; status: BookStatus; totalPages: number; currentPage: number; coverUrl: string; externalKey: string };
@@ -188,6 +188,10 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [onboardingStep, setOnboardingStep] = useState<1 | 2>(1);
+  const [onboardingName, setOnboardingName] = useState(initialUser.displayName);
+  const [onboardingGoals, setOnboardingGoals] = useState<string[]>([]);
+  const [onboardingPreferences, setOnboardingPreferences] = useState<string[]>([]);
   const [priorityDraft, setPriorityDraft] = useState<Priorities>({ monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 });
   const [selectedDisciplineId, setSelectedDisciplineId] = useState<number | null>(null);
   const [trainingDate, setTrainingDate] = useState(today);
@@ -913,6 +917,43 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     books: ["Biblioteca", "Lecturas, páginas e ideas"], goals: ["Objetivos", "Elegí qué importa y hacia dónde vas"],
   };
   const dateHeading = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "long", day: "numeric", month: "long" }).format(new Date(today + "T12:00:00")).toUpperCase();
+
+  const onboardingGoalOptions = [
+    ["training", "↗", "Entrenamiento", "Mejorar constancia y rendimiento"],
+    ["focus", "⌁", "Estudio / Trabajo", "Avanzar con foco y organización"],
+    ["nutrition", "◇", "Alimentación", "Comer de acuerdo con mis objetivos"],
+    ["reading", "▱", "Lectura", "Leer y recordar más"],
+    ["sleep", "☾", "Sueño", "Descansar mejor y con regularidad"],
+    ["goals", "◎", "Objetivos", "Cumplir metas concretas"],
+  ];
+  const onboardingPreferenceOptions = [
+    ["quick", "Carga rápida diaria"], ["weekly", "Resumen semanal"], ["ai", "Usar IA para organizar"],
+  ];
+
+  if (!loading && !data.profile.onboardingCompleted) {
+    const toggleGoal = (goal: string) => setOnboardingGoals((current) => current.includes(goal) ? current.filter((item) => item !== goal) : current.length < 3 ? [...current, goal] : current);
+    const togglePreference = (preference: string) => setOnboardingPreferences((current) => current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference]);
+    return <main className="onboarding-page">
+      <header className="onboarding-header"><div className="access-brand"><div className="brand-mark small">M</div><b>Mi Progreso</b></div><span>PASO {onboardingStep} DE 2</span></header>
+      <section className="onboarding-card">
+        <div className="onboarding-progress"><i className={onboardingStep === 2 ? "complete" : ""} /></div>
+        {onboardingStep === 1 ? <>
+          <p className="step-label">TU PERFIL</p><h1>Bienvenido a Mi Progreso.</h1>
+          <p className="onboarding-lead">Empecemos por lo esencial. Este es el nombre que vas a ver dentro de la aplicación.</p>
+          <label className="onboarding-name">¿Cómo querés que te llamemos?<input autoFocus value={onboardingName} onChange={(event) => setOnboardingName(event.target.value)} maxLength={60} placeholder="Tu nombre" /></label>
+          <button className="onboarding-primary" disabled={onboardingName.trim().length < 2} onClick={() => setOnboardingStep(2)}>Continuar <span>→</span></button>
+        </> : <>
+          <p className="step-label">TUS PRIORIDADES</p><h1>¿Qué querés mejorar primero?</h1>
+          <p className="onboarding-lead">Elegí entre 1 y 3 áreas. Las usaremos para personalizar tu Daily Score; después podés cambiarlas cuando quieras.</p>
+          <div className="onboarding-goals">{onboardingGoalOptions.map(([value, icon, label, copy]) => <button type="button" aria-pressed={onboardingGoals.includes(value)} className={onboardingGoals.includes(value) ? "selected" : ""} key={value} onClick={() => toggleGoal(value)}><span>{icon}</span><p><b>{label}</b><small>{copy}</small></p><i>{onboardingGoals.includes(value) ? "✓" : "+"}</i></button>)}</div>
+          <div className="onboarding-preferences"><label>¿Cómo preferís usar la app? <small>Opcional</small></label><div>{onboardingPreferenceOptions.map(([value, label]) => <button type="button" aria-pressed={onboardingPreferences.includes(value)} className={onboardingPreferences.includes(value) ? "selected" : ""} key={value} onClick={() => togglePreference(value)}>{onboardingPreferences.includes(value) ? "✓ " : "+ "}{label}</button>)}</div></div>
+          {error && <div className="error-banner">{error}</div>}
+          <div className="onboarding-actions"><button type="button" className="onboarding-back" onClick={() => setOnboardingStep(1)}>← Atrás</button><button type="button" className="onboarding-primary" disabled={!onboardingGoals.length || saving} onClick={() => void save({ action: "complete_onboarding", displayName: onboardingName, mainGoals: onboardingGoals, usagePreferences: onboardingPreferences, monthKey })}>{saving ? "Configurando…" : "Entrar a Mi Progreso"} <span>→</span></button></div>
+        </>}
+      </section>
+      <p className="onboarding-security">🔒 Tus preferencias quedan asociadas únicamente a tu cuenta.</p>
+    </main>;
+  }
 
   return <main className="app-shell">
     <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">M</span><b>Mi Progreso</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="profile-chip"><span>{displayName.charAt(0)}</span><div><b>{displayName}</b><small>Datos guardados</small></div><a href="/signout-with-chatgpt?return_to=/" title="Cerrar sesión">↗</a></div></aside>

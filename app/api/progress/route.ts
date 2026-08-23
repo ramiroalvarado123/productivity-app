@@ -25,8 +25,17 @@ async function authenticatedUser() {
   if (!user) return null;
   const db = getDb();
   await db.insert(profiles).values({ email: user.email, displayName: user.displayName })
-    .onConflictDoUpdate({ target: profiles.email, set: { displayName: user.displayName, updatedAt: sql`CURRENT_TIMESTAMP` } });
+    .onConflictDoNothing();
   return user;
+}
+
+function jsonStringArray(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function GET(request: Request) {
@@ -40,6 +49,7 @@ export async function GET(request: Request) {
   const monthKey = MONTH_PATTERN.test(url.searchParams.get("month") ?? "") ? String(url.searchParams.get("month")) : date.slice(0, 7);
   const db = getDb();
   const historyStart = daysBefore(date, 365);
+  const profileRow = (await db.select().from(profiles).where(eq(profiles.email, user.email)).limit(1))[0];
 
   let disciplineRows = await db.select().from(trainingDisciplines).where(eq(trainingDisciplines.userEmail, user.email)).orderBy(asc(trainingDisciplines.createdAt), asc(trainingDisciplines.id));
   if (!disciplineRows.length) {
@@ -76,7 +86,13 @@ export async function GET(request: Request) {
   ]);
 
   return Response.json({
-    profile: { email: user.email, displayName: user.displayName },
+    profile: {
+      email: user.email,
+      displayName: profileRow?.displayName ?? user.displayName,
+      onboardingCompleted: profileRow?.onboardingCompleted ?? false,
+      mainGoals: jsonStringArray(profileRow?.mainGoalsJson ?? "[]"),
+      usagePreferences: jsonStringArray(profileRow?.usagePreferencesJson ?? "[]"),
+    },
     gymDates: strengthDiscipline ? trainingRows.filter((row) => row.disciplineId === strengthDiscipline.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
     disciplines: disciplineRows,
     trainingLogs: trainingRows,
@@ -105,6 +121,35 @@ export async function POST(request: Request) {
   const payload = await request.json() as Record<string, unknown>;
   const action = String(payload.action ?? "");
   const db = getDb();
+
+  if (action === "complete_onboarding") {
+    const displayName = String(payload.displayName ?? "").trim().slice(0, 60);
+    const allowedGoals = ["training", "nutrition", "focus", "reading", "sleep", "goals"];
+    const allowedPreferences = ["quick", "weekly", "ai"];
+    const mainGoals = Array.isArray(payload.mainGoals) ? payload.mainGoals.map(String).filter((goal) => allowedGoals.includes(goal)).slice(0, 3) : [];
+    const usagePreferences = Array.isArray(payload.usagePreferences) ? payload.usagePreferences.map(String).filter((preference) => allowedPreferences.includes(preference)) : [];
+    const monthKey = String(payload.monthKey ?? "");
+    if (displayName.length < 2) return Response.json({ error: "Ingresá tu nombre." }, { status: 400 });
+    if (!mainGoals.length) return Response.json({ error: "Elegí al menos un objetivo principal." }, { status: 400 });
+    if (!MONTH_PATTERN.test(monthKey)) return Response.json({ error: "Mes inválido." }, { status: 400 });
+
+    await db.update(profiles).set({
+      displayName,
+      onboardingCompleted: true,
+      mainGoalsJson: JSON.stringify(mainGoals),
+      usagePreferencesJson: JSON.stringify(usagePreferences),
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    }).where(eq(profiles.email, user.email));
+
+    const weight = (goal: string) => mainGoals.includes(goal) ? 3 : 2;
+    const priorityValues = {
+      gymWeight: weight("training"), nutritionWeight: weight("nutrition"), focusWeight: weight("focus"),
+      readingWeight: weight("reading"), sleepWeight: weight("sleep"), goalsWeight: weight("goals"),
+    };
+    await db.insert(monthlyPriorities).values({ userEmail: user.email, monthKey, ...priorityValues })
+      .onConflictDoUpdate({ target: [monthlyPriorities.userEmail, monthlyPriorities.monthKey], set: { ...priorityValues, updatedAt: sql`CURRENT_TIMESTAMP` } });
+    return Response.json({ ok: true });
+  }
 
   if (action === "toggle_gym") {
     const date = String(payload.date ?? "");
