@@ -367,6 +367,17 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   }
 
+  if (action === "delete_book") {
+    const bookId = Number(payload.bookId);
+    if (!Number.isInteger(bookId) || bookId <= 0) return Response.json({ error: "Libro inválido." }, { status: 400 });
+    const owned = await db.select({ id: books.id }).from(books).where(and(eq(books.id, bookId), eq(books.userEmail, user.email))).limit(1);
+    if (!owned[0]) return Response.json({ error: "Libro no encontrado." }, { status: 404 });
+    await db.delete(readingLogs).where(and(eq(readingLogs.bookId, bookId), eq(readingLogs.userEmail, user.email)));
+    await db.delete(bookNotes).where(and(eq(bookNotes.bookId, bookId), eq(bookNotes.userEmail, user.email)));
+    await db.delete(books).where(and(eq(books.id, bookId), eq(books.userEmail, user.email)));
+    return Response.json({ ok: true });
+  }
+
   if (action === "set_pages") {
     const bookId = Number(payload.bookId);
     const date = String(payload.date ?? "");
