@@ -5,6 +5,18 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Hora del día normalizada. Devuelve `""` cuando no vino ninguna hora (quitarle
+ * el horario a algo es una operación válida) y `null` cuando vino algo que no
+ * es una hora, para poder rechazarlo en vez de borrar el horario en silencio.
+ */
+function cleanTime(value: unknown): string | null {
+  const time = String(value ?? "").trim();
+  if (!time) return "";
+  return TIME_PATTERN.test(time) ? time : null;
+}
 
 function cleanDate(value: string | null, fallback: string) {
   return value && DATE_PATTERN.test(value) ? value : fallback;
@@ -92,6 +104,8 @@ export async function GET(request: Request) {
       onboardingCompleted: profileRow?.onboardingCompleted ?? false,
       mainGoals: jsonStringArray(profileRow?.mainGoalsJson ?? "[]"),
       usagePreferences: jsonStringArray(profileRow?.usagePreferencesJson ?? "[]"),
+      isPro: Boolean(profileRow?.proSince),
+      proSince: profileRow?.proSince ?? "",
     },
     gymDates: strengthDiscipline ? trainingRows.filter((row) => row.disciplineId === strengthDiscipline.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
     disciplines: disciplineRows,
@@ -149,6 +163,17 @@ export async function POST(request: Request) {
     await db.insert(monthlyPriorities).values({ userEmail: user.email, monthKey, ...priorityValues })
       .onConflictDoUpdate({ target: [monthlyPriorities.userEmail, monthlyPriorities.monthKey], set: { ...priorityValues, updatedAt: sql`CURRENT_TIMESTAMP` } });
     return Response.json({ ok: true });
+  }
+
+  // Simulación de la suscripción Pro. No hay cobro ni pasarela de pago: guarda
+  // la fecha de activación para que el desbloqueo sobreviva a recargas y se vea
+  // igual en el celular y en la computadora.
+  if (action === "set_pro") {
+    const active = Boolean(payload.active);
+    await db.update(profiles)
+      .set({ proSince: active ? todayUtc() : "", updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(profiles.email, user.email));
+    return Response.json({ ok: true, isPro: active });
   }
 
   if (action === "toggle_gym") {
@@ -256,12 +281,36 @@ export async function POST(request: Request) {
     const title = String(payload.title ?? "").trim().slice(0, 180);
     const projectId = Number(payload.projectId) || null;
     const dueDate = String(payload.dueDate ?? "");
+    const startTime = cleanTime(payload.startTime);
+    const durationMinutes = Math.max(0, Math.min(1440, Math.round(Number(payload.durationMinutes) || 0)));
     if (!title || (dueDate && !DATE_PATTERN.test(dueDate))) return Response.json({ error: "Completá una tarea y una fecha válida." }, { status: 400 });
+    if (startTime === null) return Response.json({ error: "La hora no es válida." }, { status: 400 });
+    if (startTime && !dueDate) return Response.json({ error: "Para darle un horario, la tarea necesita una fecha." }, { status: 400 });
     if (projectId) {
       const project = await db.select({ id: focusProjects.id }).from(focusProjects).where(and(eq(focusProjects.id, projectId), eq(focusProjects.userEmail, user.email))).limit(1);
       if (!project[0]) return Response.json({ error: "Proyecto no encontrado." }, { status: 404 });
     }
-    await db.insert(tasks).values({ userEmail: user.email, projectId, title, dueDate: dueDate || null });
+    await db.insert(tasks).values({ userEmail: user.email, projectId, title, dueDate: dueDate || null, startTime, durationMinutes: startTime ? durationMinutes || 60 : durationMinutes });
+    return Response.json({ ok: true });
+  }
+
+  // Le pone, cambia o le saca el horario a una tarea que ya existe. Es lo que
+  // ejecutan las sugerencias del plan del día ("moverlo a las 17:00").
+  if (action === "schedule_task") {
+    const id = Number(payload.id);
+    const startTime = cleanTime(payload.startTime);
+    const dueDate = String(payload.dueDate ?? "");
+    const durationMinutes = Math.max(0, Math.min(1440, Math.round(Number(payload.durationMinutes) || 0)));
+    if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Tarea inválida." }, { status: 400 });
+    if (startTime === null) return Response.json({ error: "La hora no es válida." }, { status: 400 });
+    if (dueDate && !DATE_PATTERN.test(dueDate)) return Response.json({ error: "Fecha inválida." }, { status: 400 });
+    const owned = await db.select({ id: tasks.id, dueDate: tasks.dueDate }).from(tasks).where(and(eq(tasks.id, id), eq(tasks.userEmail, user.email))).limit(1);
+    if (!owned[0]) return Response.json({ error: "Tarea no encontrada." }, { status: 404 });
+    const nextDueDate = dueDate || owned[0].dueDate;
+    if (startTime && !nextDueDate) return Response.json({ error: "Para darle un horario, la tarea necesita una fecha." }, { status: 400 });
+    await db.update(tasks)
+      .set({ startTime, durationMinutes: startTime ? durationMinutes || 60 : 0, dueDate: nextDueDate })
+      .where(and(eq(tasks.id, id), eq(tasks.userEmail, user.email)));
     return Response.json({ ok: true });
   }
 
@@ -280,11 +329,13 @@ export async function POST(request: Request) {
   if (action === "add_event") {
     const title = String(payload.title ?? "").trim().slice(0, 180);
     const eventDate = String(payload.eventDate ?? "");
-    const eventTime = String(payload.eventTime ?? "").trim().slice(0, 10);
+    const eventTime = cleanTime(payload.eventTime);
+    const durationMinutes = Math.max(15, Math.min(1440, Math.round(Number(payload.durationMinutes) || 60)));
     const category = String(payload.category ?? "personal");
     const notes = String(payload.notes ?? "").trim().slice(0, 1500);
+    if (eventTime === null) return Response.json({ error: "La hora no es válida." }, { status: 400 });
     if (!title || !DATE_PATTERN.test(eventDate) || !["personal", "study", "work", "training", "health", "other"].includes(category)) return Response.json({ error: "Completá un evento válido." }, { status: 400 });
-    await db.insert(calendarEvents).values({ userEmail: user.email, title, eventDate, eventTime, category: category as "personal" | "study" | "work" | "training" | "health" | "other", notes });
+    await db.insert(calendarEvents).values({ userEmail: user.email, title, eventDate, eventTime, durationMinutes, category: category as "personal" | "study" | "work" | "training" | "health" | "other", notes });
     return Response.json({ ok: true });
   }
 

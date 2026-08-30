@@ -11,7 +11,7 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
   const user = await getChatGPTUser();
 
   if (user) {
-    return <ProgressClient initialUser={{ displayName: user.displayName, email: user.email, onboardingCompleted: false, mainGoals: [], usagePreferences: [] }} />;
+    return <ProgressClient initialUser={{ displayName: user.displayName, email: user.email, onboardingCompleted: false, mainGoals: [], usagePreferences: [], isPro: false, proSince: "" }} />;
   }
 
   const signInPath = chatGPTSignInPath("/");

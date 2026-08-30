@@ -16,10 +16,28 @@ const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
 
+/**
+ * Usuario simulado para desarrollo.
+ *
+ * El login lo resuelve la plataforma de ChatGPT: en local `/signin-with-chatgpt`
+ * no existe, así que sin esto no hay forma de entrar a probar la aplicación con
+ * datos reales.
+ *
+ * `import.meta.env.DEV` no es una variable que se lea en tiempo de ejecución:
+ * Vite la reemplaza por `true` o `false` al compilar. En el build de producción
+ * queda `false` y el bloque entero desaparece del bundle, así que esta puerta no
+ * puede quedar abierta sin querer al publicar.
+ */
+const DEV_USER = { displayName: "Tommy", email: "varastommy@gmail.com", fullName: "Tommy Varas" };
+
+function developmentUser(): ChatGPTUser | null {
+  return import.meta.env.DEV ? DEV_USER : null;
+}
+
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!email) return null;
+  if (!email) return developmentUser();
 
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
   const fullName =
