@@ -1817,7 +1817,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     const toggleGoal = (goal: string) => setOnboardingGoals((current) => current.includes(goal) ? current.filter((item) => item !== goal) : current.length < 3 ? [...current, goal] : current);
     const togglePreference = (preference: string) => setOnboardingPreferences((current) => current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference]);
     return <main className="editorial-onboarding">
-      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div><span>Paso {onboardingStep} de 2</span></header>
+      <header className="editorial-onboarding-header"><button type="button" className="lifetrack-brand onboarding-brand-back" onClick={() => setOnboardingStep(1)} aria-label="Volver al primer paso"><span className="brand-mark">A</span><b>AVORA</b></button><span>Paso {onboardingStep} de 2</span></header>
       <div className="editorial-stepper" aria-label={`Paso ${onboardingStep} de 2`}>
         <div className="active"><span>01</span><b>Perfil</b><i /></div><div className={onboardingStep === 2 ? "active" : ""}><span>02</span><b>Prioridades</b></div>
       </div>
