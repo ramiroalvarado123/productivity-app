@@ -63,6 +63,18 @@ export async function GET(request: Request) {
   const historyStart = daysBefore(date, 365);
   const profileRow = (await db.select().from(profiles).where(eq(profiles.email, user.email)).limit(1))[0];
 
+  // Existing AVORA accounts may predate Supabase auth. Copy their completed
+  // onboarding into auth metadata once so future Google/password logins can
+  // recognize the account before the application data finishes loading.
+  if (profileRow?.onboardingCompleted && !user.onboardingCompleted) {
+    await updateChatGPTUserMetadata({
+      displayName: profileRow.displayName,
+      onboardingCompleted: true,
+      mainGoals: jsonStringArray(profileRow.mainGoalsJson),
+      usagePreferences: jsonStringArray(profileRow.usagePreferencesJson),
+    });
+  }
+
   let disciplineRows = await db.select().from(trainingDisciplines).where(eq(trainingDisciplines.userEmail, user.email)).orderBy(asc(trainingDisciplines.createdAt), asc(trainingDisciplines.id));
   if (!disciplineRows.length) {
     await db.insert(trainingDisciplines).values([
