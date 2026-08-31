@@ -11,7 +11,15 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
 
   const user = await getChatGPTUser();
   if (user) {
-    return <ProgressClient initialUser={{ displayName: user.displayName, email: user.email, onboardingCompleted: false, mainGoals: [], usagePreferences: [], isPro: false, proSince: "" }} />;
+    return <ProgressClient initialUser={{
+      displayName: user.displayName,
+      email: user.email,
+      onboardingCompleted: user.onboardingCompleted,
+      mainGoals: user.mainGoals,
+      usagePreferences: user.usagePreferences,
+      isPro: false,
+      proSince: "",
+    }} />;
   }
   return <AuthPanel />;
 }
