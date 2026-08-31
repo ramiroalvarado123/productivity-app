@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { bookNotes, books, calendarEvents, dailyCheckins, dietPlans, exerciseLogs, focusProjects, focusSessions, goals, gymAttendance, meals, monthlyPriorities, profiles, readingLogs, tasks, trainingDisciplines, trainingLogs } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
@@ -101,9 +101,9 @@ export async function GET(request: Request) {
     profile: {
       email: user.email,
       displayName: profileRow?.displayName ?? user.displayName,
-      onboardingCompleted: profileRow?.onboardingCompleted ?? false,
-      mainGoals: jsonStringArray(profileRow?.mainGoalsJson ?? "[]"),
-      usagePreferences: jsonStringArray(profileRow?.usagePreferencesJson ?? "[]"),
+      onboardingCompleted: Boolean(profileRow?.onboardingCompleted || user.onboardingCompleted),
+      mainGoals: profileRow?.onboardingCompleted ? jsonStringArray(profileRow.mainGoalsJson) : user.mainGoals,
+      usagePreferences: profileRow?.onboardingCompleted ? jsonStringArray(profileRow.usagePreferencesJson) : user.usagePreferences,
       isPro: Boolean(profileRow?.proSince),
       proSince: profileRow?.proSince ?? "",
     },
@@ -134,7 +134,6 @@ export async function POST(request: Request) {
   if (!user) return Response.json({ error: "Necesitás iniciar sesión." }, { status: 401 });
   const payload = await request.json() as Record<string, unknown>;
   const action = String(payload.action ?? "");
-  const db = getDb();
 
   if (action === "complete_onboarding") {
     const displayName = String(payload.displayName ?? "").trim().slice(0, 60);
@@ -147,6 +146,17 @@ export async function POST(request: Request) {
     if (!mainGoals.length) return Response.json({ error: "Elegí al menos un objetivo principal." }, { status: 400 });
     if (!MONTH_PATTERN.test(monthKey)) return Response.json({ error: "Mes inválido." }, { status: 400 });
 
+    const metadataSaved = await updateChatGPTUserMetadata({
+      displayName,
+      onboardingCompleted: true,
+      mainGoals,
+      usagePreferences,
+    });
+    if (!metadataSaved) {
+      return Response.json({ error: "La sesión venció. Volvé a iniciar sesión para guardar tus preferencias." }, { status: 401 });
+    }
+
+    const db = getDb();
     await db.update(profiles).set({
       displayName,
       onboardingCompleted: true,
@@ -164,6 +174,8 @@ export async function POST(request: Request) {
       .onConflictDoUpdate({ target: [monthlyPriorities.userEmail, monthlyPriorities.monthKey], set: { ...priorityValues, updatedAt: sql`CURRENT_TIMESTAMP` } });
     return Response.json({ ok: true });
   }
+
+  const db = getDb();
 
   // Simulación de la suscripción Pro. No hay cobro ni pasarela de pago: guarda
   // la fecha de activación para que el desbloqueo sobreviva a recargas y se vea
