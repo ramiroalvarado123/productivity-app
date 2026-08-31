@@ -1,8 +1,15 @@
 "use client";
 
-import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
+import { quoteForDate } from "./lib/quotes";
+import { sparklinePath, streakFor, sumByDate, trendFor, type Trend } from "./lib/streaks";
+import { dayBlocks, dayWindow, freeSlots, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
+import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
+import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
+import { dayFactors, scoreFrom, scoreLabel, type DayRecord, type ScoreWeights } from "./lib/score";
 
-type User = { displayName: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[] };
+type User = { displayName: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string };
 type Meal = { id: number; name: string; detail: string; calories: number; protein: number; carbs: number; fat: number; mealDate: string };
 type BookStatus = "reading" | "read" | "wishlist";
 type Book = { id: number; title: string; author: string; status: BookStatus; totalPages: number; currentPage: number; coverUrl: string; externalKey: string };
@@ -19,8 +26,8 @@ type TrainingLog = { id: number; disciplineId: number; trainingDate: string; dur
 type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean };
 type FocusProject = { id: number; name: string; kind: "study" | "work" };
 type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
-type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; completedAt: string | null };
-type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; category: "personal" | "study" | "work" | "training" | "health" | "other"; notes: string };
+type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null };
+type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "other"; notes: string };
 type VoiceCheckin = { transcript: string; summary: string; gym: { attended: boolean | null; detail: string }; meals: Array<{ name: string; detail: string; calories: number; protein: number; carbs: number; fat: number }>; reading: { bookTitle: string; pages: number; minutes: number; note: string }; habits: string[]; study: { minutes: number; detail: string; tasks: string[] }; sleep: { minutes: number; bedtime: string; wakeTime: string }; waterMl: number; journal: string; goals: Array<{ title: string; period: GoalPeriod; category: GoalCategory; targetDate: string }>; confidence: "low" | "medium" | "high" };
 type MealEstimate = { mealName: string; detail: string; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
 type DietPlanContent = {
@@ -45,21 +52,53 @@ type ProgressData = {
   goals: Goal[]; priorities: Priorities; dailyCheckin: DailyCheckin | null; dailyCheckins: DailyCheckin[];
   focusProjects: FocusProject[]; focusSessions: FocusSession[]; tasks: Task[]; events: CalendarEvent[]; dietPlan: DietPlanRecord | null;
 };
-type Section = "summary" | "score" | "training" | "meals" | "sleep" | "focus" | "calendar" | "stats" | "books" | "goals";
+type Section = "summary" | "score" | "physical" | "focus" | "sleep" | "plan" | "stats" | "friends" | "pro";
+type PhysicalTab = "training" | "meals";
+type FocusTab = "study" | "work";
+/** Área de la vida a la que apunta un aviso, y dónde vive ahora en la interfaz. */
+type InsightTarget = { section: Section; physicalTab?: PhysicalTab; focusTab?: FocusTab };
 type StatsPeriod = "weekly" | "monthly" | "annual";
 
-const navItems: Array<{ id: Section; icon: string; label: string; mobile: string }> = [
+type NavItem = { id: Section; icon: ReactNode; label: string; mobile: string; center?: true };
+
+const friendsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" /><circle cx="16.5" cy="9" r="2.5" /><path d="M2.5 19c.5-4 2.4-6 5.5-6s5 2 5.5 6M13 14.5c1-.8 2.1-1.1 3.5-1.1 2.8 0 4.4 1.8 5 5.1" /></svg>;
+const physicalIcon = <svg className="physical-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5c1.8-2 2.7-4.4 2.7-7.2V9.8a1.8 1.8 0 0 1 3.6 0v2.1l1.8-5.1a2 2 0 0 1 2.6-1.2l.7.3" /><path d="m15 6 .8-.8a1.9 1.9 0 0 1 2.7.1l.6.7c.6.7.9 1.5.9 2.4v2.1a8.8 8.8 0 0 1-8.8 8.8H7.4c-1.4 0-2.5-.3-3.4.2Z" /><path d="M9.8 14.6c2.1-2.2 5.2-2.6 7.6-.8M10.3 11.9h2.8M15.4 6l1.8 1.9" /></svg>;
+const focusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 5.2a3.4 3.4 0 0 0-5.3 2.9c0 .5.1.9.3 1.3A3.7 3.7 0 0 0 5 16.5a3.5 3.5 0 0 0 4.2 2.3M14.8 5.2a3.4 3.4 0 0 1 5.3 2.9c0 .5-.1.9-.3 1.3a3.7 3.7 0 0 1-.8 7.1 3.5 3.5 0 0 1-4.2 2.3M12 4v16M8 9.2c1.1.1 2 .7 2.4 1.6M16 9.2c-1.1.1-2 .7-2.4 1.6M8.4 15.1c1-.1 1.7-.5 2.2-1.2M15.6 15.1c-1-.1-1.7-.5-2.2-1.2" /></svg>;
+const statsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 18 5-5 4 2 6-8" /><circle cx="4" cy="18" r="1.5" /><circle cx="9" cy="13" r="1.5" /><circle cx="13" cy="15" r="1.5" /><circle cx="19" cy="7" r="1.5" /></svg>;
+
+// En escritorio Inicio queda primero. En el celular usamos el mismo conjunto,
+// pero Inicio ocupa el cuarto lugar para quedar exactamente en el centro.
+const navItems: NavItem[] = [
   { id: "summary", icon: "⌂", label: "Inicio", mobile: "Inicio" },
-  { id: "score", icon: "◉", label: "Daily score", mobile: "Score" },
-  { id: "training", icon: "↗", label: "Entrenamiento", mobile: "Entreno" },
-  { id: "focus", icon: "⌁", label: "Estudio / Trabajo", mobile: "Foco" },
-  { id: "meals", icon: "◇", label: "Comidas", mobile: "Comidas" },
-  { id: "books", icon: "▱", label: "Biblioteca", mobile: "Libros" },
+  { id: "friends", icon: friendsIcon, label: "Amigos", mobile: "Amigos" },
+  { id: "physical", icon: physicalIcon, label: "Físico", mobile: "Físico" },
+  { id: "focus", icon: focusIcon, label: "Foco", mobile: "Foco" },
   { id: "sleep", icon: "☾", label: "Sueño", mobile: "Sueño" },
-  { id: "goals", icon: "◎", label: "Objetivos", mobile: "Metas" },
-  { id: "calendar", icon: "□", label: "Calendario", mobile: "Agenda" },
-  { id: "stats", icon: "▥", label: "Estadísticas", mobile: "Datos" },
+  { id: "plan", icon: "◎", label: "Plan", mobile: "Plan" },
+  { id: "stats", icon: statsIcon, label: "Estadísticas", mobile: "Datos" },
 ];
+const mobileNavItems: NavItem[] = [
+  navItems.find((item) => item.id === "physical")!,
+  navItems.find((item) => item.id === "focus")!,
+  navItems.find((item) => item.id === "sleep")!,
+  { ...navItems.find((item) => item.id === "summary")!, center: true },
+  navItems.find((item) => item.id === "plan")!,
+  navItems.find((item) => item.id === "stats")!,
+  navItems.find((item) => item.id === "friends")!,
+];
+
+/** Adónde lleva cada aviso ahora que las secciones se agruparon. */
+const insightTargets: Record<string, InsightTarget> = {
+  training: { section: "physical", physicalTab: "training" },
+  meals: { section: "physical", physicalTab: "meals" },
+  focus: { section: "focus" },
+  books: { section: "focus", focusTab: "study" },
+  sleep: { section: "sleep" },
+  goals: { section: "plan" },
+  calendar: { section: "plan" },
+  score: { section: "score" },
+  stats: { section: "stats" },
+};
 const priorityLabels = ["", "Secundario", "Importante", "Prioridad"];
 const MAX_VOICE_UPLOAD_BYTES = 900 * 1024;
 const VOICE_AUTO_STOP_BYTES = 800 * 1024;
@@ -78,6 +117,11 @@ const bookLanguageOptions = [
 
 function argentinaDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+/** Hora actual en Buenos Aires, en minutos desde medianoche. */
+function argentinaMinutes() {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  return minutesFromClock(parts) ?? 0;
 }
 function weekFor(date: string) {
   const center = new Date(date + "T12:00:00");
@@ -106,6 +150,24 @@ function formatDate(date: string) {
 }
 function dayDistance(from: string, to: string) {
   return Math.ceil((new Date(to + "T12:00:00").getTime() - new Date(from + "T12:00:00").getTime()) / 86400000);
+}
+function datePlus(date: string, days: number) {
+  const value = new Date(date + "T12:00:00");
+  value.setDate(value.getDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+/** "mañana" / "el miércoles": cómo se nombra un día cercano al hablar. */
+function weekdayLabel(date: string) {
+  const name = new Intl.DateTimeFormat("es-AR", { weekday: "long" }).format(new Date(date + "T12:00:00"));
+  return name === "sábado" || name === "domingo" ? `el ${name}` : `el ${name}`;
+}
+/** Días con actividad dentro de los últimos siete, para el corte semanal. */
+function countActiveDays(byDate: Record<string, number>, today: string, days = 7) {
+  let count = 0;
+  for (let offset = 0; offset < days; offset += 1) {
+    if ((byDate[dateMinus(today, offset)] ?? 0) > 0) count += 1;
+  }
+  return count;
 }
 function dateMinus(date: string, days: number) {
   const value = new Date(date + "T12:00:00");
@@ -157,6 +219,23 @@ async function preparePhoto(file: File) {
   }
 }
 
+/**
+ * Envuelve una función de pago: muestra el contenido real detrás de un velo
+ * borroso con candado. El contenido queda inerte, así que no se puede tocar ni
+ * llegar con el teclado; el candado lleva a la comparación de planes.
+ */
+function LockedFeature({ title, note, onOpen, children }: { title: string; note: string; onOpen: () => void; children: React.ReactNode }) {
+  return <div className="pro-locked">
+    <div className="pro-locked-content" inert>{children}</div>
+    <button type="button" className="pro-lock-veil" onClick={onOpen}>
+      <span className="pro-lock-badge" aria-hidden="true">🔒</span>
+      <b>{title}</b>
+      <small>{note}</small>
+      <span className="pro-lock-cta">Ver AVORA Pro <i>→</i></span>
+    </button>
+  </div>;
+}
+
 function SavedBookCover({ book }: { book: Book }) {
   const [imageFailed, setImageFailed] = useState(false);
   if (book.coverUrl && !imageFailed) {
@@ -197,6 +276,20 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   const [trainingDate, setTrainingDate] = useState(today);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
   const [calendarCursor, setCalendarCursor] = useState(today.slice(0, 7));
+  const [physicalTab, setPhysicalTab] = useState<PhysicalTab>("training");
+  const [focusTab, setFocusTab] = useState<FocusTab>("study");
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutPlan, setCheckoutPlan] = useState<"monthly" | "annual">("annual");
+  const [checkoutStep, setCheckoutStep] = useState<"form" | "processing" | "done">("form");
+  const [friendsNotice, setFriendsNotice] = useState("");
+  // Tildado optimista: la fila responde al toque y recién después se confirma
+  // contra el servidor, así no hay medio segundo de pantalla muerta.
+  const [pendingTasks, setPendingTasks] = useState<Record<number, boolean>>({});
+  const [agendaView, setAgendaView] = useState<"week" | "month">("week");
+  const [weekAnchor, setWeekAnchor] = useState(today);
+  const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string } | null>(null);
+  const [nowMinutes, setNowMinutes] = useState(argentinaMinutes);
   const [dietCalendarCursor, setDietCalendarCursor] = useState(today.slice(0, 7));
   const [bookTab, setBookTab] = useState<BookStatus>("reading");
   const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
@@ -293,6 +386,11 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   // Initial synchronization with the signed-in user's persisted workspace.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadData(); }, [loadData]);
+  // El plan del día marca "ahora" y no ofrece horarios que ya pasaron.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMinutes(argentinaMinutes()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     const title = bookDraft.title.trim();
     if (!bookForm || !bookSuggestionOpen || title.length < 2) {
@@ -345,28 +443,68 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     }
   }
 
+  const uniqueFocusSessions = useMemo(
+    () => data.focusSessions.filter((item, index, rows) => rows.findIndex((candidate) => candidate.projectId === item.projectId && candidate.sessionDate === item.sessionDate) === index),
+    [data.focusSessions],
+  );
+
+  // Series por fecha. Alimentan las tendencias de Estadísticas y también el
+  // Daily Score, para que el puntaje de hoy y el del histórico salgan del
+  // mismo lugar y nunca se contradigan entre pantallas.
+  const trainingByDate = sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1);
+  const focusByDate = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
+  const readingByDate = sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages);
+  const caloriesByDay = sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories);
+  const mealCountByDate = sumByDate(data.mealHistory, (row) => row.mealDate, () => 1);
+  const sleepMinutesByDate = sumByDate(data.dailyCheckins.filter((row) => row.sleepMinutes > 0), (row) => row.entryDate, (row) => row.sleepMinutes);
+
+  // Fechas en las que cerraste algo. Se arma una vez porque el histórico del
+  // Daily Score pregunta por cientos de días seguidos.
+  const completionDates = new Set([
+    ...data.goals.filter((goal) => goal.completedAt).map((goal) => (goal.completedAt as string).slice(0, 10)),
+    ...data.tasks.filter((task) => task.completedAt).map((task) => (task.completedAt as string).slice(0, 10)),
+  ]);
+
+  /** Lo que registraste un día cualquiera, tal cual, sin interpretar. */
+  const dayRecordFor = (date: string): DayRecord => ({
+    trainingSessions: trainingByDate[date] ?? 0,
+    meals: mealCountByDate[date] ?? 0,
+    sleepMinutes: sleepMinutesByDate[date] ?? 0,
+    focusMinutes: focusByDate[date] ?? 0,
+    pages: readingByDate[date] ?? 0,
+    completedSomething: completionDates.has(date),
+    // Un objetivo cuenta como abierto ese día si ya existía y todavía no
+    // estaba cerrado: así el histórico no se contamina con objetivos que
+    // creaste después.
+    hasOpenGoals: data.goals.some((goal) => goal.createdAt.slice(0, 10) <= date && (!goal.completedAt || goal.completedAt.slice(0, 10) >= date)),
+  });
+
   const trainingToday = data.trainingLogs.filter((log) => log.trainingDate === today);
   const trainedToday = trainingToday.length > 0;
   const calories = data.meals.reduce((sum, meal) => sum + meal.calories, 0);
   const pagesToday = data.readingLogs.reduce((sum, log) => sum + log.pages, 0);
   const sleepToday = data.dailyCheckins.find((item) => item.entryDate === today)?.sleepMinutes ?? 0;
-  const uniqueFocusSessions = data.focusSessions.filter((item, index, rows) => rows.findIndex((candidate) => candidate.projectId === item.projectId && candidate.sessionDate === item.sessionDate) === index);
   const focusToday = uniqueFocusSessions.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0);
-  const completedPlanToday = data.goals.some((goal) => goal.completedAt?.startsWith(today)) || data.tasks.some((task) => task.completedAt?.startsWith(today));
-  const factors = {
-    training: trainedToday ? 100 : 0,
-    nutrition: Math.min(100, Math.round(data.meals.length / 3 * 100)),
-    sleep: sleepToday ? Math.min(100, Math.round(sleepToday / 480 * 100)) : 0,
-    focus: Math.min(100, Math.round(focusToday / 120 * 100)),
-    reading: Math.min(100, pagesToday * 10),
-    goals: completedPlanToday ? 100 : data.goals.some((goal) => !goal.completedAt) ? 50 : 0,
-  };
-  const totalWeight = priorityDraft.gymWeight + priorityDraft.nutritionWeight + priorityDraft.sleepWeight + priorityDraft.focusWeight + priorityDraft.readingWeight + priorityDraft.goalsWeight;
-  const score = Math.round((factors.training * priorityDraft.gymWeight + factors.nutrition * priorityDraft.nutritionWeight + factors.sleep * priorityDraft.sleepWeight + factors.focus * priorityDraft.focusWeight + factors.reading * priorityDraft.readingWeight + factors.goals * priorityDraft.goalsWeight) / totalWeight);
+  const scoreWeights: ScoreWeights = priorityDraft;
+  const factors = dayFactors(dayRecordFor(today));
+  const score = scoreFrom(factors, scoreWeights);
+  /** El mismo puntaje, para cualquier día del historial cargado. */
+  const scoreForDate = (date: string) => scoreFrom(dayFactors(dayRecordFor(date)), scoreWeights);
   const priorityPairs: Array<[string, number]> = [["Entrenamiento", priorityDraft.gymWeight], ["Alimentación", priorityDraft.nutritionWeight], ["Sueño", priorityDraft.sleepWeight], ["Estudio / Trabajo", priorityDraft.focusWeight], ["Lectura", priorityDraft.readingWeight], ["Objetivos", priorityDraft.goalsWeight]];
   const highestPriority = Math.max(...priorityPairs.map((item) => item[1]));
   const topPriorities = priorityPairs.filter((item) => item[1] === highestPriority);
-  const mainPriority = topPriorities.length === 1 ? topPriorities[0][0] : "Equilibrio";
+  // Elegir dos o tres áreas en el onboarding es lo normal, así que un empate no
+  // significa "equilibrio": significa que esas áreas son las prioritarias.
+  // Sólo hay equilibrio real cuando las seis pesan lo mismo.
+  const priorityNames = topPriorities.map((item) => item[0]);
+  // Con más de tres áreas empatadas arriba ya no hay foco: enumerarlas cinco
+  // por cinco no dice nada y llena la tarjeta de texto.
+  const balanced = topPriorities.length > 3;
+  const priorityCaption = balanced
+    ? "Las seis áreas pesan lo mismo en tu Daily Score."
+    : priorityNames.length === 1
+      ? `${priorityNames[0]} pesa más que el resto en tu Daily Score.`
+      : `${listPhrase(priorityNames)} pesan más que el resto en tu Daily Score.`;
   const displayName = data.profile.displayName.split(" ")[0] || "Usuario";
   const activeGoals = data.goals.filter((goal) => !goal.completedAt);
   const selectedDiscipline = data.disciplines.find((item) => item.id === selectedDisciplineId) ?? data.disciplines[0] ?? null;
@@ -384,6 +522,104 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   const bedtimeValue = clock24(sleepBedHour, sleepBedMinute, sleepBedPeriod);
   const wakeTimeValue = clock24(sleepWakeHour, sleepWakeMinute, sleepWakePeriod);
   const calculatedSleepMinutes = sleepDuration(bedtimeValue, wakeTimeValue);
+
+  // ---------------------------------------------------------------------------
+  // Plan del día: la agenda con horarios, los huecos libres y los avisos que
+  // cruzan datos entre secciones. Todo derivado de `data`, sin pedidos extra.
+  // ---------------------------------------------------------------------------
+  const projectNames = useMemo(
+    () => Object.fromEntries(data.focusProjects.map((project) => [project.id, project.name])) as Record<number, string>,
+    [data.focusProjects],
+  );
+  const scheduleInput = useMemo(
+    () => ({ tasks: data.tasks, events: data.events, projectNames }),
+    [data.tasks, data.events, projectNames],
+  );
+  const todayBlocks = useMemo(() => dayBlocks(scheduleInput, today), [scheduleInput, today]);
+  const todayUnscheduled = useMemo(() => unscheduledTasks(scheduleInput, today), [scheduleInput, today]);
+  const lastCheckin = data.dailyCheckins.find((item) => item.sleepMinutes > 0);
+  const todayWindow = useMemo(
+    () => dayWindow(lastCheckin?.wakeTime ?? "", lastCheckin?.bedtime ?? ""),
+    [lastCheckin?.wakeTime, lastCheckin?.bedtime],
+  );
+  const todaySlots = useMemo(
+    () => freeSlots(todayBlocks, todayWindow.start, todayWindow.end),
+    [todayBlocks, todayWindow.start, todayWindow.end],
+  );
+
+  // Rachas: días consecutivos con actividad en cada área.
+  const trainingDates = useMemo(() => new Set(data.trainingLogs.map((item) => item.trainingDate)), [data.trainingLogs]);
+  const readingDates = useMemo(() => new Set(data.readingHistory.filter((item) => item.pages > 0).map((item) => item.logDate)), [data.readingHistory]);
+  const focusDates = useMemo(() => new Set(uniqueFocusSessions.map((item) => item.sessionDate)), [uniqueFocusSessions]);
+  const goodSleepDates = useMemo(() => new Set(data.dailyCheckins.filter((item) => item.sleepMinutes >= 420).map((item) => item.entryDate)), [data.dailyCheckins]);
+  const loggingDates = useMemo(() => new Set([...data.mealHistory.map((item) => item.mealDate), ...data.dailyCheckins.map((item) => item.entryDate)]), [data.mealHistory, data.dailyCheckins]);
+  const streaks = useMemo(() => ({
+    training: streakFor(trainingDates, today),
+    reading: streakFor(readingDates, today),
+    focus: streakFor(focusDates, today),
+    sleep: streakFor(goodSleepDates, today),
+    logging: streakFor(loggingDates, today),
+  }), [trainingDates, readingDates, focusDates, goodSleepDates, loggingDates, today]);
+
+  // Sueño reciente contra la semana anterior, para detectar la caída.
+  const sleepByDate = useMemo(
+    () => Object.fromEntries(data.dailyCheckins.filter((item) => item.sleepMinutes > 0).map((item) => [item.entryDate, item.sleepMinutes])) as Record<string, number>,
+    [data.dailyCheckins],
+  );
+  const recentSleepNights = useMemo(
+    () => Array.from({ length: 3 }, (_, index) => sleepByDate[dateMinus(today, index)]).filter((value): value is number => Boolean(value)),
+    [sleepByDate, today],
+  );
+  const earlierSleepNights = useMemo(
+    () => Array.from({ length: 7 }, (_, index) => sleepByDate[dateMinus(today, index + 3)]).filter((value): value is number => Boolean(value)),
+    [sleepByDate, today],
+  );
+
+  // Áreas con actividad reciente, para saber qué objetivo está realmente parado.
+  const activeCategories = useMemo(() => {
+    const since = dateMinus(today, 5);
+    const categories = new Set<string>();
+    if (data.trainingLogs.some((item) => item.trainingDate >= since)) { categories.add("training"); categories.add("gym"); }
+    if (data.mealHistory.some((item) => item.mealDate >= since)) categories.add("nutrition");
+    if (data.readingHistory.some((item) => item.logDate >= since && item.pages > 0)) categories.add("reading");
+    if (uniqueFocusSessions.some((item) => item.sessionDate >= since)) { categories.add("study"); categories.add("work"); }
+    if (data.dailyCheckins.some((item) => item.entryDate >= since && item.sleepMinutes > 0)) categories.add("sleep");
+    return categories;
+  }, [data.trainingLogs, data.mealHistory, data.readingHistory, data.dailyCheckins, uniqueFocusSessions, today]);
+
+  // Los tres días siguientes con sus huecos: es lo que permite que un aviso
+  // diga "pasalo al miércoles" en vez de "mirá si algo puede pasar a mañana".
+  const comingDays = useMemo<ComingDay[]>(() => Array.from({ length: 3 }, (_, index) => {
+    const date = datePlus(today, index + 1);
+    const blocks = dayBlocks(scheduleInput, date);
+    return { date, label: weekdayLabel(date), slots: freeSlots(blocks, todayWindow.start, todayWindow.end) };
+  }), [today, scheduleInput, todayWindow.start, todayWindow.end]);
+
+  const insights = useMemo(() => buildInsights({
+    today,
+    nowMinutes,
+    blocks: todayBlocks,
+    slots: todaySlots,
+    dayWindow: todayWindow,
+    unscheduled: todayUnscheduled.map((task) => ({ id: task.id, title: task.title, durationMinutes: task.durationMinutes })),
+    sleepLastNight: sleepByDate[today] ?? sleepByDate[dateMinus(today, 1)] ?? 0,
+    sleepRecent: recentSleepNights,
+    sleepEarlier: earlierSleepNights,
+    caloriesToday: calories,
+    targetCalories: dietTargetCalories,
+    pagesLast3Days: data.readingHistory.filter((item) => item.logDate >= dateMinus(today, 2)).reduce((sum, item) => sum + item.pages, 0),
+    booksInProgress: data.books.filter((book) => book.status === "reading").length,
+    goalsDueSoon: data.goals
+      .filter((goal) => !goal.completedAt && dayDistance(today, goal.targetDate) >= 0 && dayDistance(today, goal.targetDate) <= 7)
+      .map((goal) => ({ title: goal.title, days: dayDistance(today, goal.targetDate), category: goal.category })),
+    activeCategories,
+    overlaps: overlappingBlocks(todayBlocks),
+    comingDays,
+  }), [today, nowMinutes, todayBlocks, todaySlots, todayWindow, todayUnscheduled, sleepByDate, recentSleepNights, earlierSleepNights, calories, dietTargetCalories, data.readingHistory, data.books, data.goals, activeCategories, comingDays]);
+  const planNotices = useMemo(() => planInsights(insights), [insights]);
+  const closeNotices = useMemo(() => closeInsights(insights), [insights]);
+
+  const quote = useMemo(() => quoteForDate(today), [today]);
   useEffect(() => {
     if (selectedBook) {
       setSelectedBookId(selectedBook.id);
@@ -679,10 +915,139 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     if (dietRecorderRef.current?.state === "recording") dietRecorderRef.current.stop();
   }
 
+  const isPro = data.profile.isPro;
+  /** Manda al comparador de planes desde cualquier candado. */
+  const openPro = () => openSection("pro");
+
+  /**
+   * Simulación de la compra. No hay pasarela ni cobro: espera un momento para
+   * que se sienta como un pago real y después activa Pro de verdad en la base,
+   * que es lo que hace que los candados se abran en toda la aplicación.
+   */
+  async function simulatePayment() {
+    setCheckoutStep("processing");
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    const ok = await save({ action: "set_pro", active: true });
+    setCheckoutStep(ok ? "done" : "form");
+  }
+
+  async function cancelPro() {
+    await save({ action: "set_pro", active: false });
+  }
+
+  /** Abre la sección —y la sub-pestaña— donde vive un área. */
+  function openArea(area: string) {
+    const target = insightTargets[area] ?? { section: "summary" as Section };
+    if (target.physicalTab) setPhysicalTab(target.physicalTab);
+    if (target.focusTab) setFocusTab(target.focusTab);
+    openSection(target.section);
+  }
+
+  /** Ejecuta la acción sugerida por un aviso del plan del día. */
+  async function applyInsightAction(action: InsightAction) {
+    if (action.kind === "open") return openArea(action.section);
+    await save({ action: "schedule_task", id: action.taskId, startTime: action.startTime, durationMinutes: action.durationMinutes, dueDate: action.date ?? today });
+  }
+
+  /**
+   * Tilda una tarea sin esperar al servidor. Mientras la petición viaja, la fila
+   * ya muestra el estado nuevo; si falla, `loadData` la devuelve a su lugar.
+   */
+  async function toggleTask(id: number, completed: boolean) {
+    setPendingTasks((current) => ({ ...current, [id]: completed }));
+    const ok = await save({ action: "toggle_task", id, completed });
+    setPendingTasks((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    return ok;
+  }
+
+  /** Estado visible de una tarea: el optimista si lo hay, si no el guardado. */
+  const taskDone = (id: number, savedDone: boolean) => pendingTasks[id] ?? savedDone;
+
   const scoreCard = <article className="score-card">
-    <div><p>DAILY SCORE</p><h2>{score >= 75 ? <>Tu día va<br /><em>muy bien.</em></> : <>Cada acción<br /><em>suma.</em></>}</h2><span>{mainPriority === "Equilibrio" ? "Tus áreas principales tienen el mismo peso." : mainPriority + " tiene un peso especial este mes."}</span></div>
+    <div><p>DAILY SCORE</p><h2>{score >= 75 ? <>Tu día va<br /><em>muy bien.</em></> : <>Cada acción<br /><em>suma.</em></>}</h2><span>{priorityCaption}</span></div>
     <div className="score-ring" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
   </article>;
+
+  // Versión compacta para la fila de Inicio: entra al lado de las métricas y
+  // es el único acceso al Daily Score, que ya no está en el menú.
+  const compactScoreCard = <button
+    type="button"
+    className="score-tile"
+    onClick={() => openSection("score")}
+    aria-label={`Daily Score ${score} de 100. Abrir el detalle.`}
+  >
+    <div className="score-ring small" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
+    <div className="score-tile-copy">
+      <p>DAILY SCORE</p>
+      <b>{scoreLabel(score)}</b>
+      <small>{balanced ? "Ajustar prioridades" : listPhrase(priorityNames)}</small>
+    </div>
+    <span className="score-tile-go" aria-hidden="true">→</span>
+  </button>;
+
+  // El cierre por voz comparte la primera fila con el Daily Score: es una
+  // acción principal del día, no un control secundario escondido en la agenda.
+  const compactVoiceButton = <button
+    type="button"
+    className={"voice-hero-button" + (isPro ? "" : " is-locked")}
+    onClick={() => isPro ? setVoiceOpen(true) : openPro()}
+    aria-label={isPro ? "Grabar mi día" : "Conocer el cierre del día con AVORA Pro"}
+  >
+    <span className="voice-hero-record" aria-hidden="true">●</span>
+    <span className="voice-hero-copy">
+      <small>CIERRE DEL DÍA</small>
+      <b>Grabar mi día</b>
+      <em>Contalo en 60 segundos</em>
+    </span>
+    {isPro ? <span className="voice-hero-go" aria-hidden="true">→</span> : <span className="voice-hero-lock" aria-hidden="true"><i>🔒</i><strong>PRO</strong></span>}
+  </button>;
+
+  // Las métricas de Inicio siguen a las prioridades del mes: si te importa
+  // dormir, la tarjeta que ves es la de sueño.
+  const areaMetrics: Record<string, { icon: string; tone: string; label: string; value: string; unit: string; caption: string; area: string }> = {
+    gymWeight: {
+      icon: "↗", tone: "violet", label: "ENTRENAMIENTOS", area: "training",
+      value: String(data.trainingLogs.filter((item) => item.trainingDate >= week[0].iso).length), unit: "esta semana",
+      caption: streaks.training.current ? pluralize(streaks.training.current, "día seguido", "días seguidos") : `${data.disciplines.length} disciplinas`,
+    },
+    focusWeight: {
+      icon: "⌁", tone: "coral", label: "FOCO HOY", area: "focus",
+      value: (focusToday / 60).toFixed(focusToday % 60 ? 1 : 0), unit: "h",
+      caption: `${focusToday} minutos`,
+    },
+    sleepWeight: {
+      icon: "☾", tone: "mint", label: "SUEÑO", area: "sleep",
+      value: sleepToday ? String(Math.round(sleepToday / 6) / 10) : "—", unit: "h",
+      caption: sleepToday ? "Último registro" : "Sin registrar",
+    },
+    nutritionWeight: {
+      icon: "◇", tone: "sand", label: "CALORÍAS", area: "meals",
+      value: calories ? calories.toLocaleString("es-AR") : "—", unit: "kcal",
+      caption: dietTargetCalories ? `de ${dietTargetCalories.toLocaleString("es-AR")} objetivo` : `${data.meals.length} comidas hoy`,
+    },
+    readingWeight: {
+      icon: "▱", tone: "sky", label: "LECTURA", area: "books",
+      value: String(pagesToday), unit: "pág.",
+      caption: streaks.reading.current ? pluralize(streaks.reading.current, "día leyendo", "días leyendo") : `${data.books.filter((book) => book.status === "reading").length} libros abiertos`,
+    },
+    goalsWeight: {
+      icon: "◎", tone: "violet", label: "OBJETIVOS", area: "goals",
+      value: String(activeGoals.length), unit: "activos",
+      caption: data.goals.filter((goal) => goal.completedAt).length + " cumplidos",
+    },
+  };
+  // Orden estable cuando varias áreas empatan en peso.
+  const metricOrder = ["gymWeight", "focusWeight", "sleepWeight", "nutritionWeight", "readingWeight", "goalsWeight"];
+  // Inicio muestra exactamente tus prioridades: si elegiste dos áreas ves dos
+  // bloques a mitad de ancho cada uno, si elegiste cuatro ves cuatro en
+  // cuartos. Cuando las seis pesan lo mismo no hay prioridad que respetar, así
+  // que caemos a las tres primeras en el orden de siempre.
+  const priorityMetricKeys = metricOrder.filter((key) => priorityDraft[key as keyof Omit<Priorities, "monthKey">] === highestPriority);
+  const heroMetrics = (balanced ? metricOrder.slice(0, 3) : priorityMetricKeys.slice(0, 4)).map((key) => areaMetrics[key]);
 
   const voiceRecorder = <article className="panel voice-capture-panel">
     <div className="voice-copy"><p className="voice-eyebrow">CIERRE RÁPIDO CON IA</p><h2>Contá tu día en un minuto.</h2><span>Decí qué entrenaste, qué comiste, cuánto trabajaste o estudiaste, cuánto leíste y dormiste. Revisás el resultado antes de guardarlo.</span><div className="voice-hints"><small>“Corrí 5 km…”</small><small>“Hice sentadilla…”</small><small>“Trabajé 2 horas…”</small><small>“Dormí 7 horas…”</small></div></div>
@@ -721,16 +1086,19 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
         </div>;
       })}</div>
     </article>
-    {selectedDiscipline && <div className="training-detail-grid">
+    {selectedDiscipline && <div className={"training-detail-grid " + (selectedDiscipline.kind === "strength" ? "strength-session" : "single-session")}>
       <article className="panel">
-        <div className="panel-heading"><div><p>DETALLE DE SESIÓN</p><h2>{selectedDiscipline.name}</h2></div><input className="date-control" type="date" value={trainingDate} onChange={(event) => setTrainingDate(event.target.value)} /></div>
-        <form className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: form.get("distanceKm"), notes: form.get("notes") }); }}>
-          <div className="two-fields"><label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label><label>Distancia (km)<input name="distanceKm" type="number" min="0" step=".01" defaultValue={selectedTrainingLog?.distanceMeters ? selectedTrainingLog.distanceMeters / 1000 : ""} /></label></div>
-          <label>Notas<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Ritmo, sensaciones, rutina…" /></label>
+        <div className="panel-heading"><div><p>{selectedDiscipline.kind === "strength" ? "SESIÓN DE GIMNASIO" : selectedDiscipline.kind === "running" ? "SESIÓN DE RUNNING" : "DETALLE DE SESIÓN"}</p><h2>{selectedDiscipline.name}</h2></div><input className="date-control" type="date" value={trainingDate} onChange={(event) => setTrainingDate(event.target.value)} /></div>
+        <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: form.get("distanceKm"), notes: form.get("notes") }); }}>
+          <div className={selectedDiscipline.kind === "running" || selectedDiscipline.kind === "cycling" || selectedDiscipline.kind === "swimming" ? "two-fields" : ""}>
+            <label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label>
+            {(selectedDiscipline.kind === "running" || selectedDiscipline.kind === "cycling" || selectedDiscipline.kind === "swimming") && <label>Distancia (km)<input name="distanceKm" type="number" min="0" step=".01" defaultValue={selectedTrainingLog?.distanceMeters ? selectedTrainingLog.distanceMeters / 1000 : ""} /></label>}
+          </div>
+          <label>Notas<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder={selectedDiscipline.kind === "strength" ? "Rutina, sensaciones, técnica…" : selectedDiscipline.kind === "running" ? "Ritmo, sensaciones, recorrido…" : "Sensaciones y detalle de la sesión…"} /></label>
           <button className="primary-action" disabled={saving}>Guardar sesión</button>
         </form>
       </article>
-      <article className="panel">
+      {selectedDiscipline.kind === "strength" && <article className="panel">
         <div className="panel-heading"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
         <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: form.get("weightKg"), sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
           <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
@@ -739,7 +1107,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
           <button className="primary-action" disabled={saving}>Agregar ejercicio</button>
         </form>
         <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
-      </article>
+      </article>}
     </div>}
   </section>;
 
@@ -764,21 +1132,30 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     <article className="panel wearable-panel"><div className="wearable-copy"><span className="wearable-icon">⌚</span><div><p>DISPOSITIVO DE SALUD</p><h2>Importar el sueño desde tu reloj</h2><small>Al conectarlo podremos traer duración real, etapas del sueño, frecuencia cardíaca, oxígeno y regularidad, según lo que admita tu dispositivo.</small></div></div><div className="wearable-actions"><div className="wearable-badges"><span>Apple Health</span><span>Health Connect</span><span>Garmin</span></div><button type="button" disabled>Elegir dispositivo · próximo paso</button></div></article>
   </section>;
 
+  const focusProjectsInTab = data.focusProjects.filter((project) => project.kind === focusTab);
+  const focusProjectIds = new Set(focusProjectsInTab.map((project) => project.id));
+  const focusSessionsInTab = uniqueFocusSessions.filter((session) => focusProjectIds.has(session.projectId));
+  // Las tareas sin proyecto se muestran en las dos vistas: no pertenecen a
+  // ninguna de las dos y esconderlas en ambas sería peor.
+  const tasksInTab = data.tasks.filter((task) => !task.projectId || focusProjectIds.has(task.projectId));
+  const focusTodayInTab = focusSessionsInTab.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0);
+  const focusWeekInTab = focusSessionsInTab.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0);
+
   const focusPanel = <section className="module-stack">
-      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>Materias y proyectos</h2></div><span className="week-pill">{data.focusProjects.length} activas</span></div>
-        <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: form.get("kind") }); }}><input name="name" required placeholder="Ej. Física o Proyecto web" /><select name="kind"><option value="study">Estudio</option><option value="work">Trabajo</option></select><button>＋ Agregar</button></form>
-        <div className="focus-project-grid">{data.focusProjects.map((project) => { const todayMinutes = uniqueFocusSessions.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0); const weekMinutes = uniqueFocusSessions.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? (todayMinutes / 60).toFixed(todayMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? (weekMinutes / 60).toFixed(weekMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>semana</small></p></article>; })}{!data.focusProjects.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
-        {data.focusProjects.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = focusUnit === "hours" ? Math.round(focusAmount * 60) : Math.round(focusAmount); void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
-          <label>Materia / proyecto<select name="projectId">{data.focusProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div>
+        <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button>＋ Agregar</button></form>
+        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? (todayMinutes / 60).toFixed(todayMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? (weekMinutes / 60).toFixed(weekMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
+        {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = focusUnit === "hours" ? Math.round(focusAmount * 60) : Math.round(focusAmount); void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
+          <label>{focusTab === "study" ? "Materia" : "Proyecto"}<select name="projectId">{focusProjectsInTab.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
           <label>Trabajo profundo<div className="focus-duration-control"><input type="number" min={focusUnit === "hours" ? .25 : 1} max={focusUnit === "hours" ? 24 : 1440} step={focusUnit === "hours" ? .25 : 1} value={focusAmount} onChange={(event) => setFocusAmount(Number(event.target.value) || 0)} required /><select value={focusUnit} onChange={(event) => setFocusUnit(event.target.value as "minutes" | "hours")}><option value="minutes">minutos</option><option value="hours">horas</option></select></div><small className="field-help">Se guardará como {focusUnit === "hours" ? Math.round(focusAmount * 60) : Math.round(focusAmount)} minutos para calcular las estadísticas.</small></label>
           <label>Qué avanzaste<input name="note" placeholder="Tema, entrega o avance…" /></label>
           <button className="primary-action">Guardar bloque de foco</button>
         </form>}
       </article>
-    <article className="panel weekly-focus"><div><p>FOCO DE HOY</p><b>{(focusToday / 60).toFixed(focusToday % 60 ? 1 : 0)} h</b><small>{focusToday} minutos de trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{(uniqueFocusSessions.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0) / 60).toFixed(1)} h</b><small>calculadas desde minutos reales</small></div><button onClick={() => openSection("goals")}>Crear objetivo semanal →</button></article>
-      <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{data.tasks.filter((item) => item.completedAt).length}/{data.tasks.length} hechas</span></div>
-        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate") }); }}><input name="title" required placeholder="Nueva tarea…" /><select name="projectId"><option value="">Sin proyecto</option>{data.focusProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><input name="dueDate" type="date" /><button>＋</button></form>
-        <div className="task-list compact-task-list">{data.tasks.map((task) => <div className={task.completedAt ? "completed" : ""} key={task.id}><button className="task-check" onClick={() => void save({ action: "toggle_task", id: task.id, completed: !task.completedAt })}>{task.completedAt ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? "Fecha: " + formatDate(task.dueDate) : "Sin fecha"}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>)}{!data.tasks.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
+    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE HOY" : "TRABAJO DE HOY"}</p><b>{(focusTodayInTab / 60).toFixed(focusTodayInTab % 60 ? 1 : 0)} h</b><small>{focusTodayInTab} minutos de trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{(focusWeekInTab / 60).toFixed(1)} h</b><small>calculadas desde minutos reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
+      <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{tasksInTab.filter((item) => item.completedAt).length}/{tasksInTab.length} hechas</span></div>
+        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><select name="projectId"><option value="">Sin proyecto</option>{focusProjectsInTab.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><select name="durationMinutes" defaultValue="60" aria-label="Duración">{[30, 45, 60, 90, 120].map((minutes) => <option key={minutes} value={minutes}>{formatMinutes(minutes)}</option>)}</select><button>＋</button></form>
+        <div className="task-list compact-task-list">{tasksInTab.map((task) => { const done = taskDone(task.id, Boolean(task.completedAt)); return <div className={done ? "completed" : ""} key={task.id}><button className="task-check" aria-pressed={done} onClick={() => void toggleTask(task.id, !done)}>{done ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? formatDate(task.dueDate) : "Sin fecha"}{task.startTime ? ` · ${task.startTime}${task.durationMinutes ? " (" + formatMinutes(task.durationMinutes) + ")" : ""}` : task.dueDate ? " · sin horario" : ""}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>; })}{!tasksInTab.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
       </article>
   </section>;
 
@@ -797,21 +1174,279 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     ...activeGoals.map((item) => ({ key: "g" + item.id, date: item.targetDate, title: item.title, type: "goal", id: item.id, source: "goal" })),
   ].sort((a, b) => a.date.localeCompare(b.date));
   const upcoming = calendarItems.filter((item) => item.date >= today).slice(0, 8);
-  const calendarPanel = <section className="module-stack">
-    <div className="calendar-layout">
-      <article className="panel calendar-panel"><div className="calendar-head"><button onClick={() => shiftCalendar(-1)}>‹</button><h2>{calendarMonthName}</h2><button onClick={() => shiftCalendar(1)}>›</button></div><div className="calendar-grid"><div className="calendar-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((item, index) => <b key={item + index}>{item}</b>)}</div><div className="calendar-cells">{Array.from({ length: calendarOffset }, (_, index) => <span className="blank" key={"blank" + index} />)}{Array.from({ length: calendarDays }, (_, index) => {
-        const date = calendarCursor + "-" + String(index + 1).padStart(2, "0");
-        const items = calendarItems.filter((item) => item.date === date);
-        const daySummary = items.map((item) => item.title).join(", ");
-        return <button className={date === today ? "today" : ""} key={date} aria-label={items.length ? `${index + 1}: ${daySummary}` : String(index + 1)} title={daySummary || undefined}><b>{index + 1}</b><div className="calendar-day-events">{items.slice(0, 2).map((item) => <span className={"calendar-event " + item.type} key={item.key}><i />{item.title}</span>)}{items.length > 2 && <small className="calendar-more">+{items.length - 2} más</small>}</div></button>;
-      })}</div></div></article>
-      <article className="panel"><div className="panel-heading"><div><p>NUEVO RECORDATORIO</p><h2>Evento importante</h2></div></div><form className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_event", title: form.get("title"), eventDate: form.get("eventDate"), eventTime: form.get("eventTime"), category: form.get("category"), notes: form.get("notes") }); }}>
-        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="two-fields"><label>Fecha<input name="eventDate" type="date" required /></label><label>Hora<input name="eventTime" type="time" /></label></div><label>Categoría<select name="category"><option value="personal">Personal</option><option value="study">Estudio</option><option value="work">Trabajo</option><option value="training">Entrenamiento</option><option value="health">Salud</option><option value="other">Otro</option></select></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action">Guardar evento</button>
-      </form></article>
-    </div>
-    <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{dayDistance(today, item.date) === 0 ? "Hoy" : "Faltan " + dayDistance(today, item.date) + " días"}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
-  </section>;
+  // ---------------------------------------------------------------------------
+  // Plan del día
+  // ---------------------------------------------------------------------------
+  const blockCategoryLabel: Record<string, string> = {
+    task: "Tarea", study: "Estudio", work: "Trabajo", personal: "Personal",
+    training: "Entrenamiento", health: "Salud", other: "Otro",
+  };
+  const currentBlock = todayBlocks.find((block) => !block.done && block.start <= nowMinutes && block.end > nowMinutes);
+  const nextBlock = todayBlocks.find((block) => !block.done && block.start > nowMinutes);
 
+  const dayPlanPanel = <article className="panel day-plan">
+    <div className="panel-heading">
+      <div><p>PLAN DEL DÍA</p><h2>{todayBlocks.length ? "Tu día, hora por hora" : "Todavía no armaste el día"}</h2></div>
+      <div className="day-plan-actions">
+        <button className="text-link" onClick={() => { setAgendaView("week"); openSection("plan"); }}>Ver la semana →</button>
+      </div>
+    </div>
+    {todayBlocks.length ? <>
+      <div className="day-now">
+        {currentBlock
+          ? <p><i className="live" /><b>Ahora: {currentBlock.title}</b><small>hasta las {clockFromMinutes(currentBlock.end)}</small></p>
+          : nextBlock
+            ? <p><i /><b>Lo próximo: {nextBlock.title}</b><small>a las {clockFromMinutes(nextBlock.start)}</small></p>
+            : <p><i /><b>No queda nada agendado</b><small>el resto del día es tuyo</small></p>}
+      </div>
+      <ol className="day-timeline">
+        {todayBlocks.map((block) => {
+          const done = block.taskId ? taskDone(block.taskId, block.done) : block.done;
+          const past = block.end <= nowMinutes;
+          const live = block.start <= nowMinutes && block.end > nowMinutes;
+          const classes = ["day-block", done ? "done" : "", past ? "past" : "", live ? "live" : ""].filter(Boolean).join(" ");
+          // Para una tarea, toda la fila es el botón: en el celular apuntarle a
+          // un cuadradito de 26 px era la mitad de los toques fallados.
+          return <li key={block.key} className={classes}>
+            {block.taskId ? <button
+              type="button"
+              className="day-block-hit"
+              aria-pressed={done}
+              aria-label={`${block.title}, ${clockFromMinutes(block.start)}. ${done ? "Marcar como pendiente" : "Marcar como hecha"}.`}
+              onClick={() => void toggleTask(block.taskId as number, !done)}
+            >
+              <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
+              <span className={"block-body " + block.category}>
+                <b>{block.title}</b>
+                <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
+              </span>
+              <span className="block-check" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg></span>
+            </button> : <div className="day-block-hit is-event">
+              <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
+              <span className={"block-body " + block.category}>
+                <b>{block.title}</b>
+                <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
+              </span>
+              <span className="block-check block-check-event" aria-hidden="true" title="Evento del calendario">◇</span>
+            </div>}
+          </li>;
+        })}
+      </ol>
+    </> : <div className="inline-empty tall">
+      <span>◷</span>
+      <p><b>Sin bloques para hoy</b><small>Poné una hora a tus tareas y aparecen acá, ordenadas.</small></p>
+    </div>}
+    {todayUnscheduled.length > 0 && <div className="unscheduled-strip">
+      <p>{pluralize(todayUnscheduled.length, "tarea sin horario", "tareas sin horario")}</p>
+      <div>{todayUnscheduled.slice(0, 4).map((task) => <span key={task.id}>{task.title}</span>)}</div>
+      <button className="text-link" onClick={() => openSection("focus")}>Organizarlas →</button>
+    </div>}
+    {todaySlots.length > 0 && <p className="slot-hint">
+      Huecos libres: {todaySlots.slice(0, 3).map((slot) => `${clockFromMinutes(slot.start)}–${clockFromMinutes(slot.end)}`).join(" · ")}
+    </p>}
+  </article>;
+
+  const insightsPanel = <article className="panel insights-panel">
+    <div className="panel-heading">
+      <div><p>LO QUE VEO EN TUS DATOS</p><h2>{insightHeadline(planNotices, score, balanced ? [] : priorityNames)}</h2></div>
+    </div>
+    {planNotices.length ? <div className="insight-list">
+      {planNotices.map((insight) => <article key={insight.id} className={"insight " + insight.tone}>
+        <span className="insight-icon">{insight.icon}</span>
+        <div className="insight-copy">
+          <b>{insight.title}</b>
+          <p>{insight.body}</p>
+          <details><summary>Por qué aparece esto</summary><p>{insight.because}</p></details>
+        </div>
+        {insight.action && <button className="insight-action" disabled={saving} onClick={() => void applyInsightAction(insight.action as InsightAction)}>{insight.action.label}</button>}
+      </article>)}
+    </div> : <div className="inline-empty">
+      <span>✓</span>
+      <p><b>Nada que corregir</b><small>Cuando el sueño, la agenda o las rachas se crucen mal, te aviso acá.</small></p>
+    </div>}
+  </article>;
+
+  // ---------------------------------------------------------------------------
+  // Los dos cortes: el del día y, los domingos, el de la semana.
+  // ---------------------------------------------------------------------------
+  const close = dayClose({
+    score,
+    blocks: todayBlocks,
+    trained: trainedToday,
+    sleepMinutes: sleepToday,
+    focusMinutes: focusToday,
+    pages: pagesToday,
+    meals: data.meals.length,
+    calories,
+  });
+
+  const dayClosePanel = <article className="panel day-close">
+    <div className="panel-heading">
+      <div><p>{nowMinutes >= 18 * 60 ? "CIERRE DEL DÍA" : "CÓMO VIENE EL DÍA"}</p><h2>{close.headline}</h2></div>
+      {close.blocksTotal > 0 && <span className="week-pill">{close.blocksDone} de {close.blocksTotal} bloques</span>}
+    </div>
+    {close.done.length > 0 && <p className="day-close-done">{close.done.join(" · ")}</p>}
+    {close.pending.length > 0 && <p className="day-close-pending">Quedó sin cerrar: {listPhrase(close.pending)}.</p>}
+    {closeNotices.length > 0 && <div className="day-close-notes">
+      {closeNotices.map((notice) => <div key={notice.id}>
+        <span aria-hidden="true">{notice.icon}</span>
+        <p><b>{notice.title}</b><small>{notice.body}</small></p>
+      </div>)}
+    </div>}
+    {close.done.length === 0 && close.pending.length === 0 && closeNotices.length === 0 && <p className="day-close-done">Cuando registres algo, el balance del día aparece acá.</p>}
+  </article>;
+
+  // El corte semanal sólo se arma el domingo: el resto de la semana no hay nada
+  // cerrado que mirar y ocuparía lugar por nada.
+  const review = isReviewDay(today) ? weeklyReview({
+    days: Array.from({ length: 7 }, (_, index) => {
+      const date = dateMinus(today, 6 - index);
+      return { date, blocks: dayBlocks(scheduleInput, date), score: scoreForDate(date) };
+    }),
+    areas: [
+      { label: "Entrenamiento", activeDays: countActiveDays(trainingByDate, today) },
+      { label: "Foco", activeDays: countActiveDays(focusByDate, today) },
+      { label: "Lectura", activeDays: countActiveDays(readingByDate, today) },
+      { label: "Alimentación", activeDays: countActiveDays(mealCountByDate, today) },
+      { label: "Sueño", activeDays: countActiveDays(sleepMinutesByDate, today) },
+    ],
+    staleGoals: data.goals
+      .filter((goal) => !goal.completedAt && !activeCategories.has(goal.category))
+      .map((goal) => ({ id: goal.id, title: goal.title, days: dayDistance(today, goal.targetDate) })),
+  }) : null;
+
+  const weeklyReviewPanel = review && <article className="panel weekly-review">
+    <div className="panel-heading">
+      <div><p>DOMINGO</p><h2>Tu semana</h2></div>
+      <span className="week-pill">Promedio {review.averageScore}/100</span>
+    </div>
+    <div className="review-stats">
+      <div><b>{review.blocksTotal ? `${review.blocksDone} de ${review.blocksTotal}` : "—"}</b><small>{review.blocksTotal ? `bloques cumplidos · ${review.completionPercent} %` : "no agendaste bloques"}</small></div>
+      <div><b>{review.bestDay ? formatDate(review.bestDay.date) : "—"}</b><small>{review.bestDay ? `tu mejor día · ${review.bestDay.score}/100` : "sin registros esta semana"}</small></div>
+      <div><b>{review.quietAreas.length ? listPhrase(review.quietAreas) : "Ninguna"}</b><small>{review.quietAreas.length ? "sin registros en toda la semana" : "todas las áreas tuvieron movimiento"}</small></div>
+    </div>
+    {review.staleGoals.length > 0 && <div className="review-goals">
+      <p>OBJETIVOS SIN MOVIMIENTO</p>
+      {review.staleGoals.map((goal) => <div key={goal.id}>
+        <p><b>{goal.title}</b><small>{countdownLabelCapitalized(goal.days)} · sin actividad en su área</small></p>
+        <button disabled={saving} onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: true })}>Cerrarlo</button>
+        <button className="ghost" disabled={saving} onClick={() => openSection("plan")}>Sigue en pie</button>
+      </div>)}
+    </div>}
+  </article>;
+
+  const quotePanel = <aside className="quote-strip">
+    <span className="quote-mark" aria-hidden="true">“</span>
+    <p>{quote.text}</p>
+    <b>{quote.author}</b>
+  </aside>;
+
+  // ---------------------------------------------------------------------------
+  // Agenda semanal por horas
+  // ---------------------------------------------------------------------------
+  const agendaWeek = useMemo(() => weekFor(weekAnchor), [weekAnchor]);
+  const agendaBlocksByDay = useMemo(
+    () => Object.fromEntries(agendaWeek.map((day) => [day.iso, dayBlocks(scheduleInput, day.iso)])) as Record<string, Block[]>,
+    [agendaWeek, scheduleInput],
+  );
+  const agendaAllBlocks = useMemo(() => Object.values(agendaBlocksByDay).flat(), [agendaBlocksByDay]);
+  const agendaStartHour = Math.floor(Math.min(todayWindow.start, ...agendaAllBlocks.map((block) => block.start), 8 * 60) / 60);
+  const agendaEndHour = Math.ceil(Math.max(todayWindow.end, ...agendaAllBlocks.map((block) => block.end), 21 * 60) / 60);
+  const agendaHours = Array.from({ length: Math.max(1, agendaEndHour - agendaStartHour) }, (_, index) => agendaStartHour + index);
+  const shiftWeek = (amount: number) => setWeekAnchor((current) => dateMinus(current, -amount * 7));
+
+  const weekAgendaPanel = <article className="panel week-agenda">
+    <div className="agenda-head">
+      <button onClick={() => shiftWeek(-1)} aria-label="Semana anterior">‹</button>
+      <div><p>ZOOM DE LA SEMANA</p><h2>{formatDate(agendaWeek[0].iso)} — {formatDate(agendaWeek[6].iso)}</h2></div>
+      <button onClick={() => shiftWeek(1)} aria-label="Semana siguiente">›</button>
+    </div>
+    <div className="agenda-scroll">
+      <div className="agenda-grid" style={{ "--hours": String(agendaHours.length) } as CSSProperties}>
+        <div className="agenda-corner" />
+        {agendaWeek.map((day) => <div className={"agenda-day-head " + (day.iso === today ? "today" : "")} key={day.iso}>
+          <small>{day.short}</small><b>{day.number}</b>
+        </div>)}
+        <div className="agenda-hours">
+          {agendaHours.map((hour) => <span key={hour}>{String(hour).padStart(2, "0")}:00</span>)}
+        </div>
+        {agendaWeek.map((day) => {
+          const blocks = agendaBlocksByDay[day.iso] ?? [];
+          return <div className={"agenda-column " + (day.iso === today ? "today" : "")} key={day.iso}>
+            {agendaHours.map((hour) => <button
+              key={hour}
+              className="agenda-slot"
+              aria-label={`Agregar un bloque el ${formatDate(day.iso)} a las ${String(hour).padStart(2, "0")}:00`}
+              onClick={() => setSlotDraft({ date: day.iso, startTime: `${String(hour).padStart(2, "0")}:00` })}
+            />)}
+            {blocks.map((block) => {
+              const top = (block.start - agendaStartHour * 60) / 60;
+              const height = block.minutes / 60;
+              if (top + height <= 0 || top >= agendaHours.length) return null;
+              return <div
+                key={block.key}
+                className={"agenda-block " + block.category + (block.done ? " done" : "")}
+                style={{ top: `calc(${Math.max(0, top)} * var(--hour-height))`, height: `calc(${Math.min(height, agendaHours.length - top)} * var(--hour-height) - 3px)` }}
+                title={`${block.title} · ${clockFromMinutes(block.start)}–${clockFromMinutes(block.end)}`}
+              >
+                <b>{block.title}</b>
+                <small>{clockFromMinutes(block.start)}</small>
+              </div>;
+            })}
+            {day.iso === today && nowMinutes >= agendaStartHour * 60 && nowMinutes <= agendaEndHour * 60 && <i
+              className="agenda-now"
+              style={{ top: `calc(${(nowMinutes - agendaStartHour * 60) / 60} * var(--hour-height))` }}
+            />}
+          </div>;
+        })}
+      </div>
+    </div>
+    {slotDraft && <form className="slot-form" onSubmit={(event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      void save({
+        action: "add_task",
+        title: form.get("title"),
+        projectId: form.get("projectId"),
+        dueDate: slotDraft.date,
+        startTime: slotDraft.startTime,
+        durationMinutes: Number(form.get("durationMinutes")) || 60,
+      }).then((ok) => { if (ok) setSlotDraft(null); });
+    }}>
+      <p>Nuevo bloque · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
+      <div className="slot-fields">
+        <input name="title" required autoFocus placeholder="Ej. Estudiar capítulo 2" />
+        <select name="projectId"><option value="">Sin proyecto</option>{data.focusProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+        <select name="durationMinutes" defaultValue="60">{[30, 45, 60, 90, 120, 180].map((minutes) => <option key={minutes} value={minutes}>{formatMinutes(minutes)}</option>)}</select>
+      </div>
+      <div className="slot-actions">
+        <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
+        <button className="primary-action" disabled={saving}>{saving ? "Guardando…" : "Agregar bloque"}</button>
+      </div>
+    </form>}
+    <p className="agenda-hint">Tocá cualquier franja vacía para poner un bloque ahí.</p>
+  </article>;
+
+  const monthCalendarPanel = <article className="panel calendar-panel"><div className="calendar-head"><button onClick={() => shiftCalendar(-1)}>‹</button><h2>{calendarMonthName}</h2><button onClick={() => shiftCalendar(1)}>›</button></div><div className="calendar-grid"><div className="calendar-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((item, index) => <b key={item + index}>{item}</b>)}</div><div className="calendar-cells">{Array.from({ length: calendarOffset }, (_, index) => <span className="blank" key={"blank" + index} />)}{Array.from({ length: calendarDays }, (_, index) => {
+    const date = calendarCursor + "-" + String(index + 1).padStart(2, "0");
+    const items = calendarItems.filter((item) => item.date === date);
+    const daySummary = items.map((item) => item.title).join(", ");
+    return <button className={date === today ? "today" : ""} key={date} aria-label={items.length ? `${index + 1}: ${daySummary}` : String(index + 1)} title={daySummary || undefined} onClick={() => { setWeekAnchor(date); setAgendaView("week"); }}><b>{index + 1}</b><div className="calendar-day-events">{items.slice(0, 2).map((item) => <span className={"calendar-event " + item.type} key={item.key}><i />{item.title}</span>)}{items.length > 2 && <small className="calendar-more">+{items.length - 2} más</small>}</div></button>;
+  })}</div></div></article>;
+
+  const calendarPanel = <section className="module-stack">
+    <div className="period-switch agenda-switch">
+      <button className={agendaView === "week" ? "active" : ""} onClick={() => setAgendaView("week")}>Semana por horas</button>
+      <button className={agendaView === "month" ? "active" : ""} onClick={() => setAgendaView("month")}>Mes completo</button>
+    </div>
+    {agendaView === "week" ? weekAgendaPanel : monthCalendarPanel}
+    <div className="calendar-layout">
+      <article className="panel"><div className="panel-heading"><div><p>NUEVO RECORDATORIO</p><h2>Evento importante</h2></div></div><form className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_event", title: form.get("title"), eventDate: form.get("eventDate"), eventTime: form.get("eventTime"), durationMinutes: form.get("durationMinutes"), category: form.get("category"), notes: form.get("notes") }); }}>
+        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="three-fields"><label>Fecha<input name="eventDate" type="date" required /></label><label>Hora<input name="eventTime" type="time" /></label><label>Dura<select name="durationMinutes" defaultValue="60">{[30, 60, 90, 120, 180, 240].map((minutes) => <option key={minutes} value={minutes}>{formatMinutes(minutes)}</option>)}</select></label></div><label>Categoría<select name="category"><option value="personal">Personal</option><option value="study">Estudio</option><option value="work">Trabajo</option><option value="training">Entrenamiento</option><option value="health">Salud</option><option value="other">Otro</option></select></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action">Guardar evento</button>
+      </form></article>
+      <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{countdownLabelCapitalized(dayDistance(today, item.date))}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
+    </div>
+  </section>;
   const periodDays = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 365;
   const statsStart = dateMinus(today, periodDays - 1);
   const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart);
@@ -839,8 +1474,95 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     focus: periodFocus.filter((item) => item.sessionDate >= bucket.start && item.sessionDate <= bucket.end).reduce((sum, item) => sum + item.minutes, 0) / 60,
   }));
   const maxTrend = Math.max(1, ...trendValues.flatMap((item) => [item.training, item.focus]));
+  // Tendencias diarias del período elegido, con comparación contra el período
+  // anterior de la misma longitud.
+  const trendSpan = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 180;
+  const trends: Array<{ key: string; icon: string; label: string; trend: Trend; format: (value: number) => string; caption: string }> = [
+    { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, today, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
+    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, today, (date) => focusByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "tiempo de trabajo concentrado" },
+    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, today, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "horas dormidas registradas" },
+    { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, today, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
+    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, today, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "energía registrada" },
+  ];
+  // El Daily Score también es una tendencia: mismo período, mismo criterio de
+  // comparación que el resto de las métricas de esta sección.
+  const scoreTrend = trendFor(trendSpan, today, scoreForDate);
+  const scoreAverage = Math.round(scoreTrend.average);
+  const scorePreviousAverage = Math.round(scoreTrend.previousTotal / trendSpan);
+  const scoreDelta = scorePreviousAverage > 0 ? scoreAverage - scorePreviousAverage : null;
+
+  const streakCards: Array<{ key: string; icon: string; label: string; streak: typeof streaks.training; unit: string }> = [
+    { key: "training", icon: "↗", label: "Entrenamiento", streak: streaks.training, unit: "día entrenando" },
+    { key: "focus", icon: "⌁", label: "Foco", streak: streaks.focus, unit: "día con foco" },
+    { key: "reading", icon: "▱", label: "Lectura", streak: streaks.reading, unit: "día leyendo" },
+    { key: "sleep", icon: "☾", label: "Sueño de 7 h+", streak: streaks.sleep, unit: "noche completa" },
+    { key: "logging", icon: "✎", label: "Registro diario", streak: streaks.logging, unit: "día registrando" },
+  ];
+
   const statsPanel = <section className="module-stack">
+    {weeklyReviewPanel}
     <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => setStatsPeriod(period)}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
+
+    <article className="panel score-history-panel">
+      <div className="panel-heading">
+        <div><p>DAILY SCORE</p><h2>{statsPeriod === "weekly" ? "Últimos 7 días" : statsPeriod === "monthly" ? "Últimos 30 días" : "Últimos 6 meses"}</h2></div>
+        <button className="text-link" onClick={() => openSection("score")}>Cómo se calcula →</button>
+      </div>
+      <div className="score-history">
+        <div className="score-history-now">
+          <div className="score-ring small" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
+          <p><b>Hoy</b><small>{scoreLabel(score)}</small></p>
+        </div>
+        <div className="score-history-chart">
+          <div className="score-bars" role="img" aria-label={`Daily Score de los últimos ${trendSpan} días. Promedio ${scoreAverage} de 100.`}>
+            <i className="score-average-line" style={{ bottom: String(scoreAverage) + "%" }} aria-hidden="true" />
+            {scoreTrend.points.map((point) => <span
+              key={point.date}
+              className={point.date === today ? "today" : ""}
+              style={{ height: String(Math.max(point.value, 1)) + "%" }}
+              title={`${formatDate(point.date)} · ${point.value}/100`}
+            />)}
+          </div>
+          <div className="score-bars-foot">
+            <small>{formatDate(scoreTrend.points[0]?.date ?? today)}</small>
+            <small>Promedio {scoreAverage}/100{scoreDelta === null ? "" : ` · ${scoreDelta > 0 ? "+" : ""}${scoreDelta} vs. período anterior`}</small>
+            <small>Hoy</small>
+          </div>
+        </div>
+      </div>
+      <p className="formula-note">Cada barra se reconstruye con lo que registraste ese día y las prioridades que tenés hoy. Los días sin registros valen 0.</p>
+    </article>
+
+    <article className="panel streaks-panel">
+      <div className="panel-heading"><div><p>CONSTANCIA</p><h2>Tus rachas</h2></div><span className="week-pill">{streakCards.filter((card) => card.streak.current > 0).length} activas</span></div>
+      <div className="streak-grid">{streakCards.map((card) => <article key={card.key} className={"streak-card " + (card.streak.current > 0 ? "alive" : "cold")}>
+        <span className="streak-icon">{card.icon}</span>
+        <b className="streak-count">{card.streak.current}<small>{card.streak.current === 1 ? " día" : " días"}</small></b>
+        <p>{card.label}</p>
+        <small>{card.streak.pendingToday ? "Hoy todavía no" : card.streak.best > card.streak.current ? `Récord: ${card.streak.best}` : card.streak.current > 0 ? "Tu mejor marca" : "Sin racha activa"}</small>
+        {card.streak.pendingToday && <i className="streak-warning" title={`Registrá ${card.unit} hoy para no cortarla`} />}
+      </article>)}</div>
+    </article>
+
+    <article className="panel trend-rows-panel">
+      <div className="panel-heading"><div><p>TENDENCIA</p><h2>{statsPeriod === "weekly" ? "Últimos 7 días" : statsPeriod === "monthly" ? "Últimos 30 días" : "Últimos 6 meses"}</h2></div><small className="trend-note">Comparado con el período anterior</small></div>
+      <div className="trend-rows">{trends.map((row) => {
+        const delta = row.trend.deltaPercent;
+        const direction = delta === null ? "flat" : delta > 4 ? "up" : delta < -4 ? "down" : "flat";
+        return <div className="trend-row" key={row.key}>
+          <span className={"trend-icon " + row.key}>{row.icon}</span>
+          <div className="trend-label"><b>{row.label}</b><small>{row.caption}</small></div>
+          <svg className="sparkline" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true">
+            <path d={sparklinePath(row.trend.points, 120, 28)} fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          </svg>
+          <div className="trend-values">
+            <b>{row.format(row.trend.total)}</b>
+            <small className={"trend-delta " + direction}>{delta === null ? "sin base previa" : `${delta > 0 ? "+" : ""}${delta} %`}</small>
+          </div>
+        </div>;
+      })}</div>
+    </article>
+
     <div className="metrics-grid">
       <article><span>↗</span><p>ENTRENAMIENTOS<b>{periodTraining.length}</b><small>{(periodTraining.reduce((sum, item) => sum + item.distanceMeters, 0) / 1000).toFixed(1)} km recorridos</small></p></article>
       <article><span>☾</span><p>SUEÑO PROMEDIO<b>{periodSleep.length ? (periodSleep.reduce((sum, item) => sum + item.sleepMinutes, 0) / periodSleep.length / 60).toFixed(1) : "0"} h</b><small>{periodSleep.length} noches registradas</small></p></article>
@@ -848,9 +1570,8 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
       <article><span>▱</span><p>PÁGINAS LEÍDAS<b>{periodReading.reduce((sum, item) => sum + item.pages, 0)}</b><small>{periodReading.reduce((sum, item) => sum + item.minutes, 0)} min de lectura</small></p></article>
       <article><span>◇</span><p>CALORÍAS REGISTRADAS<b>{periodMeals.reduce((sum, item) => sum + item.calories, 0).toLocaleString("es-AR")}</b><small>estimación del período</small></p></article>
     </div>
-    <article className="panel trend-panel"><div className="panel-heading"><div><p>TENDENCIA</p><h2>Constancia y foco</h2></div><div className="chart-legend"><span><i className="training" />Entrenamientos</span><span><i className="focus" />Horas de foco</span></div></div><div className="trend-chart">{trendValues.map((item) => <div key={item.label}><div className="bar-pair"><i className="training" style={{ height: String(item.training / maxTrend * 100) + "%" }} title={item.training + " entrenamientos"} /><i className="focus" style={{ height: String(item.focus / maxTrend * 100) + "%" }} title={item.focus.toFixed(1) + " h de foco"} /></div><small>{item.label}</small></div>)}</div></article>
+    <article className="panel trend-panel"><div className="panel-heading"><div><p>COMPARACIÓN</p><h2>Constancia y foco</h2></div><div className="chart-legend"><span><i className="training" />Entrenamientos</span><span><i className="focus" />Horas de foco</span></div></div><div className="trend-chart">{trendValues.map((item) => <div key={item.label}><div className="bar-pair"><i className="training" style={{ height: String(item.training / maxTrend * 100) + "%" }} title={item.training + " entrenamientos"} /><i className="focus" style={{ height: String(item.focus / maxTrend * 100) + "%" }} title={item.focus.toFixed(1) + " h de foco"} /></div><small>{item.label}</small></div>)}</div></article>
   </section>;
-
   const dietCalendarStart = new Date(dietCalendarCursor + "-01T12:00:00");
   const dietCalendarMonthName = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(dietCalendarStart);
   const dietCalendarOffset = (dietCalendarStart.getDay() + 6) % 7;
@@ -872,9 +1593,13 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   };
 
   const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE HOY</p><h2>Comidas</h2></div><button className="add-button light" onClick={() => setMealForm(!mealForm)}>＋ Carga manual</button></div>
-    <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><img src={photoPreview} alt="Comida a analizar" /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
+    {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><img src={photoPreview} alt="Comida a analizar" /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
       {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" onClick={() => void saveEstimate()}>Confirmar y guardar</button></div>}
-    </div>
+    </div> : <LockedFeature
+      title="Calorías con IA"
+      note="Escribí qué comiste o sacale una foto al plato: la app estima calorías y macros."
+      onOpen={openPro}
+    ><div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea readOnly value="" placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><span className="photo-button">📷 Sacar o subir foto</span><span className="analyze-button">Analizar comida</span></div></div></LockedFeature>}
     {mealForm && <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: today, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}><input name="name" required placeholder="Comida" /><input name="detail" required placeholder="Detalle" /><input name="calories" type="number" min="0" placeholder="kcal" /><button>Guardar</button></form>}
     <div className="meal-list">{data.meals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!data.meals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{calories.toLocaleString("es-AR")} kcal</b></div>
   </article>;
@@ -916,15 +1641,167 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     ["readingWeight", "Lectura", "▱", "Leer y avanzar en tus libros"],
     ["goalsWeight", "Objetivos y organización", "◎", "Completar metas y próximos pasos"],
   ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Estadísticas reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}>Guardar prioridades</button></article>;
-  const goalsPanel = <section className="goals-page">{priorityEditor}<div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalDeadline(today, goalPeriod, customLength, customUnit) }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<select name="category">{goalAreaOptions.map((area) => <option key={area.value} value={area.value}>{area.label}</option>)}</select></label><label>Plazo<select value={goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="annual">Este año</option><option value="custom">Personalizado</option></select></label>{goalPeriod === "custom" && <div className="custom-duration"><label>Dentro de<input type="number" min="1" value={customLength} onChange={(event) => setCustomLength(Number(event.target.value) || 1)} /></label><label>Unidad<select value={customUnit} onChange={(event) => setCustomUnit(event.target.value as "months" | "years")}><option value="months">meses</option><option value="years">años</option></select></label></div>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalDeadline(today, goalPeriod, customLength, customUnit))}</b></p></div><button className="primary-action">Crear objetivo</button></form></article>
-    <article className="panel goal-list-panel"><div className="panel-heading"><div><p>TU CAMINO</p><h2>Objetivos guardados</h2></div><span className="week-pill">{activeGoals.length} activos</span></div><div className="goal-list">{data.goals.map((goal) => <div className={"goal-row " + (goal.completedAt ? "completed" : "")} key={goal.id}><button className="goal-check" onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: !goal.completedAt })}>{goal.completedAt ? "✓" : ""}</button><div><div className="goal-meta"><span className={"category-chip " + goal.category}>{categoryLabels[goal.category]}</span><span>{periodLabels[goal.period]}</span></div><b>{goal.title}</b><small>{goal.completedAt ? "Objetivo cumplido" : formatDate(goal.targetDate) + " · faltan " + Math.max(0, dayDistance(today, goal.targetDate)) + " días"}</small></div><button className="goal-delete" onClick={() => void save({ action: "delete_goal", id: goal.id })}>×</button></div>)}{!data.goals.length && <div className="inline-empty tall"><span>◎</span><p><b>Todavía no hay objetivos</b><small>Empezá con uno concreto.</small></p></div>}</div></article></div></section>;
+  const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalDeadline(today, goalPeriod, customLength, customUnit) }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<select name="category">{goalAreaOptions.map((area) => <option key={area.value} value={area.value}>{area.label}</option>)}</select></label><label>Plazo<select value={goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="annual">Este año</option><option value="custom">Personalizado</option></select></label>{goalPeriod === "custom" && <div className="custom-duration"><label>Dentro de<input type="number" min="1" value={customLength} onChange={(event) => setCustomLength(Number(event.target.value) || 1)} /></label><label>Unidad<select value={customUnit} onChange={(event) => setCustomUnit(event.target.value as "months" | "years")}><option value="months">meses</option><option value="years">años</option></select></label></div>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalDeadline(today, goalPeriod, customLength, customUnit))}</b></p></div><button className="primary-action">Crear objetivo</button></form></article>
+    <article className="panel goal-list-panel"><div className="panel-heading"><div><p>TU CAMINO</p><h2>Objetivos guardados</h2></div><span className="week-pill">{activeGoals.length} activos</span></div><div className="goal-list">{data.goals.map((goal) => <div className={"goal-row " + (goal.completedAt ? "completed" : "")} key={goal.id}><button className="goal-check" onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: !goal.completedAt })}>{goal.completedAt ? "✓" : ""}</button><div><div className="goal-meta"><span className={"category-chip " + goal.category}>{categoryLabels[goal.category]}</span><span>{periodLabels[goal.period]}</span></div><b>{goal.title}</b><small>{goal.completedAt ? "Objetivo cumplido" : formatDate(goal.targetDate) + " · " + countdownLabel(Math.max(0, dayDistance(today, goal.targetDate)))}</small></div><button className="goal-delete" onClick={() => void save({ action: "delete_goal", id: goal.id })}>×</button></div>)}{!data.goals.length && <div className="inline-empty tall"><span>◎</span><p><b>Todavía no hay objetivos</b><small>Empezá con uno concreto.</small></p></div>}</div></article></div></section>;
+
+  // ---------------------------------------------------------------------------
+  // AVORA Pro: comparación de planes y simulación de compra
+  // ---------------------------------------------------------------------------
+  const planRows: Array<{ feature: string; detail: string; free: string | false; pro: string }> = [
+    { feature: "Registro de todo", detail: "Entrenamiento, comidas, sueño, foco, lectura y objetivos", free: "Completo", pro: "Completo" },
+    { feature: "Plan del día", detail: "Tu agenda hora por hora y los huecos libres", free: "Completo", pro: "Completo" },
+    { feature: "Daily Score y rachas", detail: "Puntaje por prioridades, récords y tendencias", free: "Completo", pro: "Completo" },
+    { feature: "Recomendaciones diarias", detail: "Cruza sueño, agenda y rachas para decirte qué mover y a qué hora", free: false, pro: "Ilimitadas" },
+    { feature: "Cierre del día por voz", detail: "Contás tu día en un minuto y se acomoda solo en cada sección", free: false, pro: "Sin límite" },
+    { feature: "Calorías por foto", detail: "Sacás una foto del plato y sale la estimación con macros", free: false, pro: "Sin límite" },
+    { feature: "Plan de alimentación", detail: "Calculado con tus datos y adaptado a tus intolerancias", free: false, pro: "Incluido" },
+    { feature: "Reprogramación automática", detail: "Dormiste poco: te mueve el bloque difícil al mejor hueco del día", free: false, pro: "Incluido" },
+  ];
+  const lockedCount = planRows.filter((row) => row.free === false).length;
+
+  const proPanel = <section className="pro-page">
+    {isPro ? <article className="panel pro-active">
+      <span className="pro-active-badge">✦</span>
+      <p>SUSCRIPCIÓN ACTIVA</p>
+      <h2>Tenés AVORA Pro.</h2>
+      <p className="pro-active-copy">Activada el {formatDate(data.profile.proSince || today)}. Todas las funciones están desbloqueadas en esta cuenta.</p>
+      <div className="pro-active-actions">
+        <button className="primary-action" onClick={() => openSection("summary")}>Volver a Inicio</button>
+        <button className="pro-cancel" disabled={saving} onClick={() => void cancelPro()}>{saving ? "Desactivando…" : "Volver al plan gratuito"}</button>
+      </div>
+      <small className="pro-demo-note">Demostración: la suscripción se simula localmente y no hay ningún cobro.</small>
+    </article> : <>
+      <article className="panel pro-hero">
+        <p className="pro-eyebrow">AVORA PRO</p>
+        <h2>Registrar es la mitad.<br /><em>Decidir es la otra.</em></h2>
+        <p className="pro-hero-copy">
+          Ya anotás todo. Pro es la parte que lee esos datos por vos y te dice qué mover:
+          que dormiste 5 h y tu bloque difícil está a las 8, que hay un hueco libre a las 17,
+          que llevás cinco días de racha y hoy todavía no registraste.
+        </p>
+        <div className="pro-hero-proof">
+          <div><b>{lockedCount}</b><small>funciones bloqueadas hoy</small></div>
+          <div><b>1 min</b><small>para cerrar el día hablando</small></div>
+          <div><b>0</b><small>planillas que llenar a mano</small></div>
+        </div>
+      </article>
+
+      <article className="panel pro-compare">
+        <div className="panel-heading"><div><p>QUÉ CAMBIA</p><h2>Gratis y Pro, lado a lado</h2></div></div>
+        <div className="pro-table" role="table">
+          <div className="pro-table-head" role="row">
+            <span role="columnheader">Función</span>
+            <span role="columnheader">Gratis</span>
+            <span role="columnheader" className="is-pro">Pro</span>
+          </div>
+          {planRows.map((row) => <div className={"pro-table-row " + (row.free === false ? "is-locked" : "")} role="row" key={row.feature}>
+            <span role="cell"><b>{row.feature}</b><small>{row.detail}</small></span>
+            <span role="cell" className="pro-cell-free">{row.free === false ? <i aria-label="No incluido">—</i> : row.free}</span>
+            <span role="cell" className="pro-cell-pro">{row.pro}</span>
+          </div>)}
+        </div>
+      </article>
+
+      <article className="panel pro-pricing">
+        <div className="pro-plan-switch" role="group" aria-label="Elegí la frecuencia de pago">
+          <button className={checkoutPlan === "monthly" ? "active" : ""} onClick={() => setCheckoutPlan("monthly")}>Mensual</button>
+          <button className={checkoutPlan === "annual" ? "active" : ""} onClick={() => setCheckoutPlan("annual")}>Anual <i>2 meses gratis</i></button>
+        </div>
+        <div className="pro-price">
+          <b>{checkoutPlan === "annual" ? "$4.990" : "$5.990"}</b>
+          <small>por mes{checkoutPlan === "annual" ? ", facturado anual" : ""}</small>
+        </div>
+        <p className="pro-price-note">{checkoutPlan === "annual" ? "Pagás $59.880 una vez al año y te ahorrás $11.980." : "Cancelás cuando quieras, sin explicaciones."}</p>
+        <button className="pro-buy" onClick={() => { setCheckoutStep("form"); setCheckoutOpen(true); }}>Empezar con Pro <span>→</span></button>
+        <ul className="pro-reassure">
+          <li>Tus datos siguen siendo tuyos: Pro no cambia quién los ve.</li>
+          <li>Si cancelás, todo lo que registraste sigue estando.</li>
+          <li>Demostración: no se cobra nada y podés volver atrás cuando quieras.</li>
+        </ul>
+      </article>
+    </>}
+  </section>;
+
+  const checkoutDialog = checkoutOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && checkoutStep !== "processing") setCheckoutOpen(false); }}>
+    <section className="checkout-dialog" role="dialog" aria-modal="true" aria-label="Confirmar suscripción">
+      {checkoutStep === "done" ? <div className="checkout-done">
+        <span aria-hidden="true">✓</span>
+        <h2>Listo, ya tenés Pro.</h2>
+        <p>Las recomendaciones, el cierre por voz, las calorías por foto y el plan de alimentación quedaron desbloqueados.</p>
+        <button className="primary-action" onClick={() => { setCheckoutOpen(false); openSection("summary"); }}>Ver mi Inicio</button>
+      </div> : <>
+        <p className="checkout-label">CONFIRMAR SUSCRIPCIÓN</p>
+        <h2>AVORA Pro {checkoutPlan === "annual" ? "anual" : "mensual"}</h2>
+        <div className="checkout-summary">
+          <div><span>Plan</span><b>{checkoutPlan === "annual" ? "Anual (12 meses)" : "Mensual"}</b></div>
+          <div><span>Precio</span><b>{checkoutPlan === "annual" ? "$59.880 por año" : "$5.990 por mes"}</b></div>
+          <div><span>Equivale a</span><b>{checkoutPlan === "annual" ? "$4.990 por mes" : "$5.990 por mes"}</b></div>
+        </div>
+        <div className="checkout-demo">
+          <span aria-hidden="true">ⓘ</span>
+          <p><b>Esto es una demostración.</b> No hay pasarela de pago ni se piden datos de tarjeta: el botón simula la compra y desbloquea las funciones para que puedas probarlas.</p>
+        </div>
+        <div className="checkout-actions">
+          <button type="button" className="checkout-cancel" disabled={checkoutStep === "processing"} onClick={() => setCheckoutOpen(false)}>Cancelar</button>
+          <button type="button" className="checkout-pay" disabled={checkoutStep === "processing"} onClick={() => void simulatePayment()}>
+            {checkoutStep === "processing" ? <><i className="voice-spinner" />Procesando…</> : "Simular pago y activar"}
+          </button>
+        </div>
+      </>}
+    </section>
+  </div>;
+
+  const demoFriends = [
+    { name: "Tomi", initials: "T", score: 84, status: "Cerró su día", detail: "Entrenó y completó 3 tareas", tone: "mint" },
+    { name: "Sofi", initials: "S", score: 76, status: "En progreso", detail: "Le faltan sueño y lectura", tone: "violet" },
+    { name: "Nico", initials: "N", score: 91, status: "Cerró su día", detail: "Nueva mejor marca semanal", tone: "coral" },
+  ];
+  const friendsPanel = <section className="friends-page">
+    <article className="friends-hero">
+      <div className="friends-hero-copy">
+        <span className="friends-preview-pill">VISTA PREVIA</span>
+        <p>ACCOUNTABILITY PARTNERS</p>
+        <h2>Avanzar acompañado<br /><em>cambia el compromiso.</em></h2>
+        <small>Compartí objetivos con personas de confianza, miren su Daily Score y empújense cuando uno esté por aflojar.</small>
+        <div className="friends-hero-actions">
+          <button type="button" onClick={() => setFriendsNotice("La invitación va a funcionar cuando conectemos las cuentas reales.")}>＋ Invitar amigo</button>
+          <button type="button" className="secondary" onClick={() => setFriendsNotice("Elegí un objetivo desde Planificador para compartirlo con tu compañero.")}>Compartir un objetivo</button>
+        </div>
+      </div>
+      <div className="friends-hero-visual" aria-hidden="true">
+        <div className="friend-avatar-stack"><span>R</span><span>T</span><span>S</span><span>N</span></div>
+        <b>4 personas</b><small>en tu círculo</small>
+        <div className="friends-weekly-proof"><strong>12</strong><span>objetivos cumplidos<br />esta semana</span></div>
+      </div>
+    </article>
+    {friendsNotice && <div className="friends-notice"><span>ⓘ</span><p>{friendsNotice}</p><button type="button" onClick={() => setFriendsNotice("")}>×</button></div>}
+    <section className="friends-score-grid">
+      {demoFriends.map((friend) => <article className="panel friend-score-card" key={friend.name}>
+        <div className="friend-score-head"><span className={"friend-avatar " + friend.tone}>{friend.initials}</span><p><b>{friend.name}</b><small>{friend.status}</small></p><button type="button" aria-label={`Ver perfil de ${friend.name}`}>•••</button></div>
+        <div className="friend-score-main"><div className="friend-score-ring" style={{ "--friend-score": `${friend.score}%` } as CSSProperties}><span><b>{friend.score}</b><small>/100</small></span></div><p><small>DAILY SCORE</small><b>{friend.score >= 85 ? "Gran día" : "Buen ritmo"}</b><span>{friend.detail}</span></p></div>
+        <button type="button" className="friend-nudge" onClick={() => setFriendsNotice(`Le mandaste un empujón a ${friend.name} en esta demostración.`)}>Enviar un empujón <span>→</span></button>
+      </article>)}
+    </section>
+    <article className="panel accountability-panel">
+      <div className="panel-heading"><div><p>OBJETIVOS COMPARTIDOS</p><h2>Compromisos del círculo</h2></div><span className="week-pill">2 activos</span></div>
+      <div className="accountability-list">
+        <div><span className="accountability-icon">↗</span><div><small>VOS + TOMI · ESTA SEMANA</small><b>Entrenar 3 veces</b><div className="accountability-track"><i style={{ width: "67%" }} /></div></div><p><strong>2/3</strong><small>Tomi 3/3 ✓</small></p></div>
+        <div><span className="accountability-icon book">▱</span><div><small>VOS + SOFI · 30 DÍAS</small><b>Leer 20 páginas por día</b><div className="accountability-track"><i style={{ width: "43%" }} /></div></div><p><strong>13/30</strong><small>Sofi 15/30</small></p></div>
+      </div>
+      <button type="button" className="accountability-add" onClick={() => setFriendsNotice("Esta opción va a permitir elegir un objetivo existente y el amigo con quien compartirlo.")}>＋ Crear compromiso compartido</button>
+    </article>
+  </section>;
 
   const sectionTitles: Record<Section, [string, string]> = {
-    summary: ["Buen día, " + displayName, "Tu información principal de hoy"], score: ["Daily Score", "Un puntaje alineado con tus prioridades"],
-    training: ["Entrenamiento", "Disciplinas, kilómetros, pesos y evolución"], meals: ["Comidas", "Registrá y entendé tu energía"],
-    sleep: ["Sueño", "Horas de descanso y regularidad"], focus: ["Estudio / Trabajo", "Foco profundo, proyectos y tareas"],
-    calendar: ["Calendario", "Eventos, fechas importantes y objetivos"], stats: ["Estadísticas", "Tendencias semanales, mensuales y anuales"],
-    books: ["Biblioteca", "Lecturas, páginas e ideas"], goals: ["Objetivos", "Elegí qué importa y hacia dónde vas"],
+    summary: ["Buen día, " + displayName, "Tu plan de hoy y lo que conviene acomodar"],
+    score: ["Daily Score", "Cómo se arma el puntaje y qué peso tiene cada área"],
+    physical: ["Físico", "Entrenamiento y alimentación, el mismo cuerpo"],
+    focus: [focusTab === "study" ? "Estudio" : "Trabajo", focusTab === "study" ? "Materias, foco, tareas y lecturas" : "Proyectos, foco profundo y entregas"],
+    sleep: ["Sueño", "Horas de descanso y regularidad"],
+    plan: ["Plan", "Lo que querés lograr y cuándo entra en el calendario"],
+    stats: ["Estadísticas", "Rachas, tendencias y comparaciones"],
+    friends: ["Amigos", "Daily Scores, objetivos compartidos y compromiso mutuo"],
+    pro: [isPro ? "AVORA Pro" : "Pasate a Pro", isPro ? "Tu suscripción y todo lo que incluye" : "Lo que cambia cuando la app piensa con vos"],
   };
   const dateHeading = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "long", day: "numeric", month: "long" }).format(new Date(today + "T12:00:00")).toUpperCase();
 
@@ -940,7 +1817,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     const toggleGoal = (goal: string) => setOnboardingGoals((current) => current.includes(goal) ? current.filter((item) => item !== goal) : current.length < 3 ? [...current, goal] : current);
     const togglePreference = (preference: string) => setOnboardingPreferences((current) => current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference]);
     return <main className="editorial-onboarding">
-      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">L</span><b>LifeTrack</b></div><span>Paso {onboardingStep} de 2</span></header>
+      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div><span>Paso {onboardingStep} de 2</span></header>
       <div className="editorial-stepper" aria-label={`Paso ${onboardingStep} de 2`}>
         <div className="active"><span>01</span><b>Perfil</b><i /></div><div className={onboardingStep === 2 ? "active" : ""}><span>02</span><b>Prioridades</b></div>
       </div>
@@ -959,7 +1836,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
             <div className="editorial-goals">{onboardingGoalOptions.map(([value, icon, label, copy]) => <button type="button" aria-pressed={onboardingGoals.includes(value)} className={onboardingGoals.includes(value) ? "selected" : ""} key={value} onClick={() => toggleGoal(value)}><span>{icon}</span><p><b>{label}</b><small>{copy}</small></p><i>{onboardingGoals.includes(value) ? "✓" : "+"}</i></button>)}</div>
             <label className="weekly-consent"><input type="checkbox" checked={onboardingPreferences.includes("weekly")} onChange={() => togglePreference("weekly")} /><span aria-hidden="true">✉</span><p><b>Quiero recibir un resumen semanal de mi progreso</b><small>Podrás desactivarlo cuando quieras desde tu perfil.</small></p></label>
             {error && <div className="error-banner">{error}</div>}
-            <div className="editorial-actions"><button type="button" className="editorial-back" onClick={() => setOnboardingStep(1)}>← Atrás</button><button type="button" className="editorial-primary" disabled={!onboardingGoals.length || saving} onClick={() => void save({ action: "complete_onboarding", displayName: onboardingName, mainGoals: onboardingGoals, usagePreferences: onboardingPreferences, monthKey })}>{saving ? "Configurando…" : "Entrar a LifeTrack"} <span>→</span></button></div>
+            <div className="editorial-actions"><button type="button" className="editorial-back" onClick={() => setOnboardingStep(1)}>← Atrás</button><button type="button" className="editorial-primary" disabled={!onboardingGoals.length || saving} onClick={() => void save({ action: "complete_onboarding", displayName: onboardingName, mainGoals: onboardingGoals, usagePreferences: onboardingPreferences, monthKey })}>{saving ? "Configurando…" : "Entrar a AVORA"} <span>→</span></button></div>
           </>}
         </div>
       </section>
@@ -967,29 +1844,86 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">L</span><b>LifeTrack</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="profile-chip"><span>{displayName.charAt(0)}</span><div><b>{displayName}</b><small>Datos guardados</small></div><a href="/signout-with-chatgpt?return_to=/" title="Cerrar sesión">↗</a></div></aside>
+    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">A</span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-chip"><span>{displayName.charAt(0)}</span><div><b>{displayName}</b><small>Datos guardados</small></div><a href="/signout-with-chatgpt?return_to=/" title="Cerrar sesión">↗</a></div></aside>
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div></header>
       {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
-      {section === "summary" && <><section className={"hero-grid " + (loading ? "is-loading" : "")}>{scoreCard}<article className="stat-card"><span className="stat-icon violet">↗</span><div><p>ENTRENAMIENTOS</p><b>{data.trainingLogs.filter((item) => item.trainingDate >= week[0].iso).length}<small> esta semana</small></b><span>{data.disciplines.length} disciplinas</span></div></article><article className="stat-card"><span className="stat-icon coral">⌁</span><div><p>FOCO HOY</p><b>{(focusToday / 60).toFixed(focusToday % 60 ? 1 : 0)}<small> h</small></b><span>{focusToday} minutos</span></div></article><article className="stat-card"><span className="stat-icon mint">☾</span><div><p>SUEÑO</p><b>{sleepToday ? Math.round(sleepToday / 6) / 10 : "—"}<small> h</small></b><span>Último registro</span></div></article></section>
-        <section className="summary-grid"><article className="panel summary-focus"><div className="panel-heading"><div><p>FOCO ACTUAL</p><h2>Este mes importa más</h2></div><button className="text-link" onClick={() => openSection("goals")}>Configurar →</button></div><div className="focus-name"><span>◎</span><div><b>{mainPriority}</b><small>Influye directamente en tu Daily Score.</small></div></div></article><article className="panel summary-goals"><div className="panel-heading"><div><p>AGENDA</p><h2>Lo próximo</h2></div><button className="text-link" onClick={() => openSection("calendar")}>Ver calendario →</button></div><div className="mini-goal-list">{upcoming.slice(0, 3).map((item) => <div key={item.key}><span className={"goal-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {dayDistance(today, item.date) === 0 ? "hoy" : "faltan " + dayDistance(today, item.date) + " días"}</small></p></div>)}{!upcoming.length && <div className="inline-empty"><span>□</span><p><b>Agenda libre</b><small>Agregá una fecha importante.</small></p></div>}</div></article></section>{voiceRecorder}</>}
-      {section === "score" && <section className="score-page"><div className="score-main">{scoreCard}<article className="panel score-explanation"><div className="panel-heading"><div><p>CÓMO SE FORMA</p><h2>Tus factores de hoy</h2></div><button className="text-link" onClick={() => openSection("goals")}>Cambiar prioridades →</button></div>{([
-        ["Entrenamiento", factors.training, priorityDraft.gymWeight, "gym"],
-        ["Alimentación", factors.nutrition, priorityDraft.nutritionWeight, "nutrition"],
-        ["Sueño", factors.sleep, priorityDraft.sleepWeight, "sleep"],
-        ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
-        ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
-        ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
-      ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Inicio, Calendario y Estadísticas muestran esos mismos datos y no se cuentan dos veces.</p></article></div></section>}
-      {section === "training" && trainingPanel}
-      {section === "meals" && <section className="single-section meals-section">{mealsPanel}{dietPlannerPanel}{calorieCalendarPanel}</section>}
+      {section === "summary" && <>
+        {quotePanel}
+        <section className={"hero-row " + (loading ? "is-loading" : "")}>
+          <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
+          <div className="hero-metrics" data-tiles={heroMetrics.length}>
+            {heroMetrics.map((metric) => <button
+              type="button"
+              className="stat-tile"
+              key={metric.label}
+              onClick={() => openArea(metric.area)}
+            >
+              <span className={"stat-icon " + metric.tone}>{metric.icon}</span>
+              <p>{metric.label}</p>
+              <b>{metric.value}<small> {metric.unit}</small></b>
+              <span className="stat-caption">{metric.caption}</span>
+            </button>)}
+          </div>
+        </section>
+        <section className="plan-grid">
+          {dayPlanPanel}
+          {isPro ? insightsPanel : <LockedFeature
+            title="Recomendaciones del día"
+            note="La app cruza tu sueño, tu agenda y tus rachas para decirte qué mover y a qué hora."
+            onOpen={openPro}
+          >{insightsPanel}</LockedFeature>}
+        </section>
+      </>}
+      {section === "score" && <section className="score-page">
+        <button className="back-link" onClick={() => openSection("summary")}>← Volver a Inicio</button>
+        <div className="score-main">{scoreCard}<article className="panel score-explanation"><div className="panel-heading"><div><p>CÓMO SE FORMA</p><h2>Tus factores de hoy</h2></div></div>{([
+          ["Entrenamiento", factors.training, priorityDraft.gymWeight, "gym"],
+          ["Alimentación", factors.nutrition, priorityDraft.nutritionWeight, "nutrition"],
+          ["Sueño", factors.sleep, priorityDraft.sleepWeight, "sleep"],
+          ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
+          ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
+          ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
+        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Inicio y Estadísticas muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
+        {priorityEditor}
+      </section>}
+      {section === "physical" && <>
+        <div className="period-switch section-switch">
+          <button className={physicalTab === "training" ? "active" : ""} onClick={() => setPhysicalTab("training")}>Entrenamiento</button>
+          <button className={physicalTab === "meals" ? "active" : ""} onClick={() => setPhysicalTab("meals")}>Alimentación</button>
+        </div>
+        {physicalTab === "training" ? trainingPanel : <section className="single-section meals-section">
+          {mealsPanel}
+          {isPro ? dietPlannerPanel : <LockedFeature
+            title="Plan de alimentación"
+            note="Calculado con tu edad, peso y actividad, y adaptado a tus intolerancias."
+            onOpen={openPro}
+          >{dietPlannerPanel}</LockedFeature>}
+          {calorieCalendarPanel}
+        </section>}
+      </>}
+      {section === "focus" && <>
+        <div className="period-switch section-switch">
+          <button className={focusTab === "study" ? "active" : ""} onClick={() => setFocusTab("study")}>Estudio</button>
+          <button className={focusTab === "work" ? "active" : ""} onClick={() => setFocusTab("work")}>Trabajo</button>
+        </div>
+        {focusPanel}
+        {focusTab === "study" && booksPanel}
+      </>}
       {section === "sleep" && sleepPanel}
-      {section === "focus" && focusPanel}
-      {section === "calendar" && calendarPanel}
+      {section === "plan" && <>{goalsPanel}{calendarPanel}</>}
       {section === "stats" && statsPanel}
-      {section === "books" && booksPanel}
-      {section === "goals" && goalsPanel}
+      {section === "friends" && friendsPanel}
+      {section === "pro" && proPanel}
     </section>
-    <nav className="mobile-nav">{navItems.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => openSection(item.id)}><span>{item.icon}</span>{item.mobile}</button>)}</nav>
+    <nav className="mobile-nav">{mobileNavItems.map((item) => <button key={item.id} className={[section === item.id ? "active" : "", item.center ? "is-center" : ""].filter(Boolean).join(" ")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.mobile}</button>)}</nav>
+    {checkoutDialog}
+    {voiceOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setVoiceOpen(false); }}>
+      <section className="voice-dialog" role="dialog" aria-modal="true" aria-label="Cierre del día">
+        <button className="voice-dialog-close" type="button" onClick={() => setVoiceOpen(false)} aria-label="Cerrar">×</button>
+        {dayClosePanel}
+        {voiceRecorder}
+      </section>
+    </div>}
     {bookToDelete && <div className="delete-book-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookToDelete(null); }}><section className="delete-book-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-book-title"><span className="delete-book-icon" aria-hidden="true">⌫</span><p>ELIMINAR DE TU BIBLIOTECA</p><h2 id="delete-book-title">¿Eliminar “{bookToDelete.title}”?</h2><small>También se eliminarán sus páginas registradas y sus notas. Esta acción no se puede deshacer.</small><div><button type="button" className="delete-book-cancel" disabled={saving} onClick={() => setBookToDelete(null)}>Cancelar</button><button type="button" className="delete-book-confirm" disabled={saving} onClick={() => { const bookId = bookToDelete.id; void save({ action: "delete_book", bookId }).then((ok) => { if (ok) { setBookToDelete(null); setSelectedBookId(null); setBookShelfPage(0); setPagesInput(0); setNote(""); } }); }}>{saving ? "Eliminando…" : "Sí, eliminar libro"}</button></div></section></div>}
   </main>;
 }

@@ -29,7 +29,7 @@ export default function NewUserPreview() {
   if (step === "access") {
     return <main className="lifetrack-access preview-user-flow">
       <header className="lifetrack-access-header">
-        <div className="lifetrack-brand"><span className="brand-mark">L</span><b>LifeTrack</b></div>
+        <div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div>
         <span>VISTA DE USUARIO NUEVO</span>
       </header>
       <section className="lifetrack-access-body">
@@ -41,7 +41,7 @@ export default function NewUserPreview() {
         </div>
         <div className="lifetrack-access-form">
           <p className="step-label">EMPECEMOS</p>
-          <h2>Ingresá a LifeTrack.</h2>
+          <h2>Ingresá a AVORA.</h2>
           <p>Accedé o creá tu cuenta. Tus registros quedan separados y protegidos para cada usuario.</p>
           <div className="lifetrack-auth-options">
             <button className="lifetrack-google-button" type="button" onClick={() => setStep("profile")}><span>G</span>Continuar con Google <b>→</b></button>
@@ -56,9 +56,9 @@ export default function NewUserPreview() {
 
   if (step === "complete") {
     return <main className="editorial-onboarding preview-user-flow">
-      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">L</span><b>LifeTrack</b></div><span>RECORRIDO COMPLETO</span></header>
+      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div><span>RECORRIDO COMPLETO</span></header>
       <section className="preview-complete">
-        <span>✓</span><p className="step-label">TODO LISTO</p><h1>Bienvenido a LifeTrack, {name}.</h1>
+        <span>✓</span><p className="step-label">TODO LISTO</p><h1>Bienvenido a AVORA, {name}.</h1>
         <p>Así termina la configuración inicial de un usuario nuevo. En el uso real, desde acá se abre el Inicio con todas las áreas personalizadas.</p>
         <div><button type="button" onClick={() => { setStep("access"); setName(""); setPriorities([]); setWeeklySummary(false); }}>Volver a empezar</button><Link href="/">Entrar a mi cuenta real →</Link></div>
       </section>
@@ -67,7 +67,7 @@ export default function NewUserPreview() {
 
   const currentStep = step === "profile" ? 1 : 2;
   return <main className="editorial-onboarding preview-user-flow">
-    <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">L</span><b>LifeTrack</b></div><span>Paso {currentStep} de 2 · Vista de usuario nuevo</span></header>
+    <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div><span>Paso {currentStep} de 2 · Vista de usuario nuevo</span></header>
     <div className="editorial-stepper" aria-label={`Paso ${currentStep} de 2`}>
       <div className="active"><span>01</span><b>Perfil</b><i /></div><div className={currentStep === 2 ? "active" : ""}><span>02</span><b>Prioridades</b></div>
     </div>
@@ -85,7 +85,7 @@ export default function NewUserPreview() {
           <div className="editorial-priority-heading"><p>TUS PRIORIDADES</p><h2>¿Cuáles son tus prioridades?</h2><small>Elegí entre 1 y 3 áreas. Después podés cambiarlas cuando quieras.</small></div>
           <div className="editorial-goals">{priorityOptions.map(([value, icon, label, copy]) => <button type="button" aria-pressed={priorities.includes(value)} className={priorities.includes(value) ? "selected" : ""} key={value} onClick={() => togglePriority(value)}><span>{icon}</span><p><b>{label}</b><small>{copy}</small></p><i>{priorities.includes(value) ? "✓" : "+"}</i></button>)}</div>
           <label className="weekly-consent"><input type="checkbox" checked={weeklySummary} onChange={(event) => setWeeklySummary(event.target.checked)} /><span aria-hidden="true">✉</span><p><b>Quiero recibir un resumen semanal de mi progreso</b><small>Podrás desactivarlo cuando quieras desde tu perfil.</small></p></label>
-          <div className="editorial-actions"><button type="button" className="editorial-back" onClick={() => setStep("profile")}>← Atrás</button><button type="button" className="editorial-primary" disabled={!priorities.length} onClick={() => setStep("complete")}>Entrar a LifeTrack <span>→</span></button></div>
+          <div className="editorial-actions"><button type="button" className="editorial-back" onClick={() => setStep("profile")}>← Atrás</button><button type="button" className="editorial-primary" disabled={!priorities.length} onClick={() => setStep("complete")}>Entrar a AVORA <span>→</span></button></div>
         </>}
       </div>
     </section>

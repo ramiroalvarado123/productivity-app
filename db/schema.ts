@@ -7,6 +7,8 @@ export const profiles = sqliteTable("profiles", {
   onboardingCompleted: integer("onboarding_completed", { mode: "boolean" }).notNull().default(false),
   mainGoalsJson: text("main_goals_json").notNull().default("[]"),
   usagePreferencesJson: text("usage_preferences_json").notNull().default("[]"),
+  /** Fecha en que se activó Pro. Vacío = plan gratuito. */
+  proSince: text("pro_since").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -177,6 +179,8 @@ export const tasks = sqliteTable("tasks", {
   projectId: integer("project_id"),
   title: text("title").notNull(),
   dueDate: text("due_date"),
+  startTime: text("start_time").notNull().default(""),
+  durationMinutes: integer("duration_minutes").notNull().default(0),
   completedAt: text("completed_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -187,6 +191,7 @@ export const calendarEvents = sqliteTable("calendar_events", {
   title: text("title").notNull(),
   eventDate: text("event_date").notNull(),
   eventTime: text("event_time").notNull().default(""),
+  durationMinutes: integer("duration_minutes").notNull().default(60),
   category: text("category", { enum: ["personal", "study", "work", "training", "health", "other"] }).notNull().default("personal"),
   notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

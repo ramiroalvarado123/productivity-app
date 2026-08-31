@@ -11,7 +11,7 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
   const user = await getChatGPTUser();
 
   if (user) {
-    return <ProgressClient initialUser={{ displayName: user.displayName, email: user.email, onboardingCompleted: false, mainGoals: [], usagePreferences: [] }} />;
+    return <ProgressClient initialUser={{ displayName: user.displayName, email: user.email, onboardingCompleted: false, mainGoals: [], usagePreferences: [], isPro: false, proSince: "" }} />;
   }
 
   const signInPath = chatGPTSignInPath("/");
@@ -19,7 +19,7 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
   return (
     <main className="lifetrack-access">
       <header className="lifetrack-access-header">
-        <div className="lifetrack-brand"><span className="brand-mark">L</span><b>LifeTrack</b></div>
+        <div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div>
         <span>ACCESO SEGURO</span>
       </header>
       <section className="lifetrack-access-body">
@@ -31,14 +31,14 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
         </div>
         <div className="lifetrack-access-form">
           <p className="step-label">EMPECEMOS</p>
-          <h2>Ingresá a LifeTrack.</h2>
+          <h2>Ingresá a AVORA.</h2>
           <p>Accedé o creá tu cuenta. Tus registros quedan separados y protegidos para cada usuario.</p>
           <div className="lifetrack-auth-options">
             <a className="lifetrack-google-button" href={signInPath}><span>G</span>Continuar con Google <b>→</b></a>
             <div className="lifetrack-auth-divider"><span>O</span></div>
             <a className="lifetrack-email-button" href={signInPath}><span>@</span>Continuar con correo electrónico <b>→</b></a>
           </div>
-          <small>La opción de acceso se confirma en el siguiente paso seguro. LifeTrack no almacena tu contraseña.</small>
+          <small>La opción de acceso se confirma en el siguiente paso seguro. AVORA no almacena tu contraseña.</small>
         </div>
       </section>
     </main>
