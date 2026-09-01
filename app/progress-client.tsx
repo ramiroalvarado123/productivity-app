@@ -1817,11 +1817,18 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     ["sleep", "☾", "Sueño", "Descansar mejor y con regularidad"],
     ["goals", "◎", "Objetivos", "Cumplir metas concretas"],
   ];
+  function goBackFromOnboarding() {
+    if (onboardingStep === 2) {
+      setOnboardingStep(1);
+      return;
+    }
+    window.location.href = "/signout-with-chatgpt?return_to=/";
+  }
   if (!loading && !data.profile.onboardingCompleted) {
     const toggleGoal = (goal: string) => setOnboardingGoals((current) => current.includes(goal) ? current.filter((item) => item !== goal) : current.length < 3 ? [...current, goal] : current);
     const togglePreference = (preference: string) => setOnboardingPreferences((current) => current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference]);
     return <main className="editorial-onboarding">
-      <header className="editorial-onboarding-header"><button type="button" className="lifetrack-brand onboarding-brand-back" onClick={() => setOnboardingStep(1)} aria-label="Volver al primer paso"><span className="brand-mark">A</span><b>AVORA</b></button><span>Paso {onboardingStep} de 2</span></header>
+      <header className="editorial-onboarding-header"><button type="button" className="lifetrack-brand onboarding-brand-back" onClick={goBackFromOnboarding} aria-label={onboardingStep === 2 ? "Volver al primer paso" : "Volver al inicio de sesión"}><span className="brand-mark">A</span><b>AVORA</b></button><span>Paso {onboardingStep} de 2</span></header>
       <div className="editorial-stepper" aria-label={`Paso ${onboardingStep} de 2`}>
         <div className="active"><span>01</span><b>Perfil</b><i /></div><div className={onboardingStep === 2 ? "active" : ""}><span>02</span><b>Prioridades</b></div>
       </div>
@@ -1835,6 +1842,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
             <label className="editorial-name">¿Cómo te llamás?<input autoFocus value={onboardingName} onChange={(event) => setOnboardingName(event.target.value)} maxLength={60} placeholder="Tu nombre" /></label>
             <button className="editorial-primary" disabled={onboardingName.trim().length < 2} onClick={() => setOnboardingStep(2)}>Continuar <span>→</span></button>
             <p className="editorial-note"><span>🔒</span> Podés cambiarlo cuando quieras.</p>
+            <button type="button" className="editorial-back onboarding-login-back" onClick={goBackFromOnboarding}>← Volver al inicio de sesión</button>
           </> : <>
             <div className="editorial-priority-heading"><p>TUS PRIORIDADES</p><h2>¿Cuáles son tus prioridades?</h2><small>Elegí entre 1 y 3 áreas. Después podés cambiarlas cuando quieras.</small></div>
             <div className="editorial-goals">{onboardingGoalOptions.map(([value, icon, label, copy]) => <button type="button" aria-pressed={onboardingGoals.includes(value)} className={onboardingGoals.includes(value) ? "selected" : ""} key={value} onClick={() => toggleGoal(value)}><span>{icon}</span><p><b>{label}</b><small>{copy}</small></p><i>{onboardingGoals.includes(value) ? "✓" : "+"}</i></button>)}</div>
