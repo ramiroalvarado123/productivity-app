@@ -48,7 +48,7 @@ export default function AuthPanel() {
           <button className="lifetrack-email-button" type="submit" disabled={busy}>{busy ? "Procesando…" : mode === "signup" ? "Crear cuenta" : mode === "recover" ? "Enviar correo" : "Iniciar sesión"} <b>→</b></button>
         </form>
         {message && <small>{message}</small>}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="lifetrack-auth-links">
           {mode === "login" && <><button type="button" onClick={() => setMode("signup")}>Crear cuenta</button><button type="button" onClick={() => setMode("recover")}>Olvidé mi contraseña</button></>}
           {mode !== "login" && <button type="button" onClick={() => { setMode("login"); setMessage(""); }}>Volver a iniciar sesión</button>}
         </div>
