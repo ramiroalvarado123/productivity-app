@@ -1847,7 +1847,16 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
             <div className="editorial-goals">{onboardingGoalOptions.map(([value, icon, label, copy]) => <button type="button" aria-pressed={onboardingGoals.includes(value)} className={onboardingGoals.includes(value) ? "selected" : ""} key={value} onClick={() => toggleGoal(value)}><span>{icon}</span><p><b>{label}</b><small>{copy}</small></p><i>{onboardingGoals.includes(value) ? "✓" : "+"}</i></button>)}</div>
             <label className="weekly-consent"><input type="checkbox" checked={onboardingPreferences.includes("weekly")} onChange={() => togglePreference("weekly")} /><span aria-hidden="true">✉</span><p><b>Quiero recibir un resumen semanal de mi progreso</b><small>Podrás desactivarlo cuando quieras desde tu perfil.</small></p></label>
             {error && <div className="error-banner">{error}</div>}
-            <div className="editorial-actions"><button type="button" className="editorial-back" onClick={() => setOnboardingStep(1)}>← Atrás</button><button type="button" className="editorial-primary" disabled={!onboardingGoals.length || saving} onClick={() => void save({ action: "complete_onboarding", displayName: onboardingName, mainGoals: onboardingGoals, usagePreferences: onboardingPreferences, monthKey })}>{saving ? "Configurando…" : "Entrar a AVORA"} <span>→</span></button></div>
+            <div className="editorial-actions">
+              <button type="button" className="editorial-back" onClick={() => setOnboardingStep(1)}>← Atrás</button>
+              <form action="/api/onboarding" method="post" style={{ display: "contents" }}>
+                <input type="hidden" name="displayName" value={onboardingName} />
+                <input type="hidden" name="mainGoals" value={JSON.stringify(onboardingGoals)} />
+                <input type="hidden" name="usagePreferences" value={JSON.stringify(onboardingPreferences)} />
+                <input type="hidden" name="monthKey" value={monthKey} />
+                <button type="submit" className="editorial-primary" disabled={!onboardingGoals.length}>Entrar a AVORA <span>→</span></button>
+              </form>
+            </div>
           </>}
         </div>
       </section>
