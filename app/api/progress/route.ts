@@ -1,615 +1,137 @@
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
-import { getDb } from "../../../db";
-import { bookNotes, books, calendarEvents, dailyCheckins, dietPlans, exerciseLogs, focusProjects, focusSessions, goals, gymAttendance, meals, monthlyPriorities, profiles, readingLogs, tasks, trainingDisciplines, trainingLogs } from "../../../db/schema";
 import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
+import { deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const MONTH_PATTERN = /^\d{4}-\d{2}$/;
-const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH = /^\d{4}-\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const now = () => new Date().toISOString();
+const today = () => now().slice(0, 10);
+const ok = (extra = {}) => Response.json({ ok: true, ...extra });
+const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
 
-/**
- * Hora del día normalizada. Devuelve `""` cuando no vino ninguna hora (quitarle
- * el horario a algo es una operación válida) y `null` cuando vino algo que no
- * es una hora, para poder rechazarlo en vez de borrar el horario en silencio.
- */
 function cleanTime(value: unknown): string | null {
   const time = String(value ?? "").trim();
-  if (!time) return "";
-  return TIME_PATTERN.test(time) ? time : null;
+  return !time ? "" : TIME.test(time) ? time : null;
 }
-
-function cleanDate(value: string | null, fallback: string) {
-  return value && DATE_PATTERN.test(value) ? value : fallback;
-}
-
-function todayUtc() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function daysBefore(date: string, days: number) {
-  const value = new Date(`${date}T12:00:00Z`);
-  value.setUTCDate(value.getUTCDate() - days);
-  return value.toISOString().slice(0, 10);
+  const value = new Date(`${date}T12:00:00Z`); value.setUTCDate(value.getUTCDate() - days); return value.toISOString().slice(0, 10);
 }
-
-async function authenticatedUser() {
+function stringArray(value: unknown) {
+  try { const parsed = JSON.parse(String(value ?? "[]")); return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []; } catch { return []; }
+}
+async function currentUser() {
   const user = await getChatGPTUser();
-  if (!user) return null;
-  const db = getDb();
-  await db.insert(profiles).values({ email: user.email, displayName: user.displayName })
-    .onConflictDoNothing();
+  if (user) await insertRows("profiles", { email: user.email, displayName: user.displayName }, { upsert: true, onConflict: ["email"], ignoreDuplicates: true });
   return user;
 }
-
-function jsonStringArray(value: string) {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
+async function owned(table: string, email: string, where: Record<string, string | number | boolean | null> = {}) {
+  return selectRows<any>(table, { where: { userEmail: email, ...where }, limit: 1 });
+}
+async function upsert(table: string, values: Record<string, unknown>, conflict: string[]) {
+  await insertRows(table, { ...values, updatedAt: now() }, { upsert: true, onConflict: conflict });
 }
 
 export async function GET(request: Request) {
-  const user = await authenticatedUser();
-  if (!user) return Response.json({ error: "Necesitás iniciar sesión." }, { status: 401 });
+  try {
+    const user = await currentUser();
+    if (!user) return fail("Necesitás iniciar sesión.", 401);
+    const params = new URL(request.url).searchParams;
+    const date = DATE.test(params.get("date") ?? "") ? String(params.get("date")) : today();
+    const weekStart = DATE.test(params.get("weekStart") ?? "") ? String(params.get("weekStart")) : date;
+    const weekEnd = DATE.test(params.get("weekEnd") ?? "") ? String(params.get("weekEnd")) : date;
+    const monthKey = MONTH.test(params.get("month") ?? "") ? String(params.get("month")) : date.slice(0, 7);
+    const start = daysBefore(date, 365), email = user.email;
+    const profile = (await selectRows<any>("profiles", { where: { email }, limit: 1 }))[0];
+    if (profile?.onboardingCompleted && !user.onboardingCompleted) await updateChatGPTUserMetadata({ displayName: profile.displayName, onboardingCompleted: true, mainGoals: stringArray(profile.mainGoalsJson), usagePreferences: stringArray(profile.usagePreferencesJson) });
 
-  const url = new URL(request.url);
-  const date = cleanDate(url.searchParams.get("date"), todayUtc());
-  const weekStart = cleanDate(url.searchParams.get("weekStart"), date);
-  const weekEnd = cleanDate(url.searchParams.get("weekEnd"), date);
-  const monthKey = MONTH_PATTERN.test(url.searchParams.get("month") ?? "") ? String(url.searchParams.get("month")) : date.slice(0, 7);
-  const db = getDb();
-  const historyStart = daysBefore(date, 365);
-  const profileRow = (await db.select().from(profiles).where(eq(profiles.email, user.email)).limit(1))[0];
-
-  // Existing AVORA accounts may predate Supabase auth. Copy their completed
-  // onboarding into auth metadata once so future Google/password logins can
-  // recognize the account before the application data finishes loading.
-  if (profileRow?.onboardingCompleted && !user.onboardingCompleted) {
-    await updateChatGPTUserMetadata({
-      displayName: profileRow.displayName,
-      onboardingCompleted: true,
-      mainGoals: jsonStringArray(profileRow.mainGoalsJson),
-      usagePreferences: jsonStringArray(profileRow.usagePreferencesJson),
+    let disciplines = await selectRows<any>("training_disciplines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] });
+    if (!disciplines.length) {
+      await insertRows("training_disciplines", [{ userEmail: email, name: "Gimnasio", kind: "strength" }, { userEmail: email, name: "Running", kind: "running" }], { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true });
+      disciplines = await selectRows<any>("training_disciplines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] });
+    }
+    const result = await Promise.all([
+      selectRows<any>("training_logs", { where: { userEmail: email }, gte: { trainingDate: start }, lte: { trainingDate: date }, order: [["trainingDate", "desc"], ["id", "desc"]] }),
+      selectRows<any>("exercise_logs", { where: { userEmail: email }, order: [["createdAt", "desc"]] }),
+      selectRows<any>("meals", { where: { userEmail: email, mealDate: date }, order: [["createdAt", "asc"]] }),
+      selectRows<any>("meals", { where: { userEmail: email }, gte: { mealDate: start }, lte: { mealDate: date }, order: [["mealDate", "desc"]] }),
+      selectRows<any>("diet_plans", { where: { userEmail: email }, limit: 1 }),
+      selectRows<any>("books", { where: { userEmail: email }, order: [["createdAt", "desc"]] }),
+      selectRows<any>("reading_logs", { where: { userEmail: email, logDate: date } }),
+      selectRows<any>("reading_logs", { where: { userEmail: email }, gte: { logDate: start }, lte: { logDate: date }, order: [["logDate", "desc"]] }),
+      selectRows<any>("book_notes", { where: { userEmail: email }, order: [["createdAt", "desc"]] }),
+      selectRows<any>("monthly_priorities", { where: { userEmail: email, monthKey }, limit: 1 }),
+      selectRows<any>("goals", { where: { userEmail: email }, order: [["completedAt", "asc"], ["targetDate", "asc"], ["createdAt", "desc"]] }),
+      selectRows<any>("daily_checkins", { where: { userEmail: email }, gte: { entryDate: start }, lte: { entryDate: date }, order: [["entryDate", "desc"]] }),
+      selectRows<any>("focus_projects", { where: { userEmail: email }, order: [["createdAt", "asc"]] }),
+      selectRows<any>("focus_sessions", { where: { userEmail: email }, gte: { sessionDate: start }, lte: { sessionDate: date }, order: [["sessionDate", "desc"]] }),
+      selectRows<any>("tasks", { where: { userEmail: email }, order: [["completedAt", "asc"], ["dueDate", "asc"], ["createdAt", "desc"]] }),
+      selectRows<any>("calendar_events", { where: { userEmail: email }, order: [["eventDate", "asc"], ["eventTime", "asc"]] }),
+    ]);
+    const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, goals, dailyCheckins, focusProjects, focusSessions, tasks, events] = result;
+    const strength = disciplines.find((row) => row.kind === "strength");
+    return Response.json({
+      profile: { email, displayName: profile?.displayName ?? user.displayName, onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? stringArray(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "" },
+      gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
+      disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books, readingLogs, readingHistory, notes,
+      priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
+      goals, dailyCheckin: dailyCheckins.find((row) => row.entryDate === date) ?? null, dailyCheckins, focusProjects, focusSessions, tasks, events,
     });
-  }
-
-  let disciplineRows = await db.select().from(trainingDisciplines).where(eq(trainingDisciplines.userEmail, user.email)).orderBy(asc(trainingDisciplines.createdAt), asc(trainingDisciplines.id));
-  if (!disciplineRows.length) {
-    await db.insert(trainingDisciplines).values([
-      { userEmail: user.email, name: "Gimnasio", kind: "strength" },
-      { userEmail: user.email, name: "Running", kind: "running" },
-    ]).onConflictDoNothing();
-    disciplineRows = await db.select().from(trainingDisciplines).where(eq(trainingDisciplines.userEmail, user.email)).orderBy(asc(trainingDisciplines.createdAt), asc(trainingDisciplines.id));
-  }
-
-  const legacyGym = await db.select().from(gymAttendance).where(eq(gymAttendance.userEmail, user.email));
-  const strengthDiscipline = disciplineRows.find((item) => item.kind === "strength");
-  if (strengthDiscipline && legacyGym.length) {
-    for (const row of legacyGym) await db.insert(trainingLogs).values({ userEmail: user.email, disciplineId: strengthDiscipline.id, trainingDate: row.attendedDate }).onConflictDoNothing();
-  }
-
-  const [trainingRows, exerciseRows, mealRows, mealHistoryRows, dietPlanRows, bookRows, logRows, readingHistoryRows, noteRows, priorityRows, goalRows, dailyRows, projectRows, focusRows, taskRows, eventRows] = await Promise.all([
-    db.select().from(trainingLogs).where(and(eq(trainingLogs.userEmail, user.email), gte(trainingLogs.trainingDate, historyStart), lte(trainingLogs.trainingDate, date))).orderBy(desc(trainingLogs.trainingDate), desc(trainingLogs.id)),
-    db.select().from(exerciseLogs).where(eq(exerciseLogs.userEmail, user.email)).orderBy(desc(exerciseLogs.createdAt), desc(exerciseLogs.id)),
-    db.select().from(meals).where(and(eq(meals.userEmail, user.email), eq(meals.mealDate, date))).orderBy(asc(meals.createdAt), asc(meals.id)),
-    db.select().from(meals).where(and(eq(meals.userEmail, user.email), gte(meals.mealDate, historyStart), lte(meals.mealDate, date))).orderBy(desc(meals.mealDate)),
-    db.select().from(dietPlans).where(eq(dietPlans.userEmail, user.email)).limit(1),
-    db.select().from(books).where(eq(books.userEmail, user.email)).orderBy(desc(books.createdAt), desc(books.id)),
-    db.select().from(readingLogs).where(and(eq(readingLogs.userEmail, user.email), eq(readingLogs.logDate, date))),
-    db.select().from(readingLogs).where(and(eq(readingLogs.userEmail, user.email), gte(readingLogs.logDate, historyStart), lte(readingLogs.logDate, date))).orderBy(desc(readingLogs.logDate)),
-    db.select().from(bookNotes).where(eq(bookNotes.userEmail, user.email)).orderBy(desc(bookNotes.createdAt), desc(bookNotes.id)),
-    db.select().from(monthlyPriorities).where(and(eq(monthlyPriorities.userEmail, user.email), eq(monthlyPriorities.monthKey, monthKey))).limit(1),
-    db.select().from(goals).where(eq(goals.userEmail, user.email)).orderBy(asc(goals.completedAt), asc(goals.targetDate), desc(goals.createdAt)),
-    db.select().from(dailyCheckins).where(and(eq(dailyCheckins.userEmail, user.email), gte(dailyCheckins.entryDate, historyStart), lte(dailyCheckins.entryDate, date))).orderBy(desc(dailyCheckins.entryDate)),
-    db.select().from(focusProjects).where(eq(focusProjects.userEmail, user.email)).orderBy(asc(focusProjects.createdAt), asc(focusProjects.id)),
-    db.select().from(focusSessions).where(and(eq(focusSessions.userEmail, user.email), gte(focusSessions.sessionDate, historyStart), lte(focusSessions.sessionDate, date))).orderBy(desc(focusSessions.sessionDate), desc(focusSessions.id)),
-    db.select().from(tasks).where(eq(tasks.userEmail, user.email)).orderBy(asc(tasks.completedAt), asc(tasks.dueDate), desc(tasks.createdAt)),
-    db.select().from(calendarEvents).where(eq(calendarEvents.userEmail, user.email)).orderBy(asc(calendarEvents.eventDate), asc(calendarEvents.eventTime)),
-  ]);
-
-  return Response.json({
-    profile: {
-      email: user.email,
-      displayName: profileRow?.displayName ?? user.displayName,
-      onboardingCompleted: Boolean(profileRow?.onboardingCompleted || user.onboardingCompleted),
-      mainGoals: profileRow?.onboardingCompleted ? jsonStringArray(profileRow.mainGoalsJson) : user.mainGoals,
-      usagePreferences: profileRow?.onboardingCompleted ? jsonStringArray(profileRow.usagePreferencesJson) : user.usagePreferences,
-      isPro: Boolean(profileRow?.proSince),
-      proSince: profileRow?.proSince ?? "",
-    },
-    gymDates: strengthDiscipline ? trainingRows.filter((row) => row.disciplineId === strengthDiscipline.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
-    disciplines: disciplineRows,
-    trainingLogs: trainingRows,
-    exerciseLogs: exerciseRows,
-    meals: mealRows,
-    mealHistory: mealHistoryRows,
-    dietPlan: dietPlanRows[0] ?? null,
-    books: bookRows,
-    readingLogs: logRows,
-    readingHistory: readingHistoryRows,
-    notes: noteRows,
-    priorities: priorityRows[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
-    goals: goalRows,
-    dailyCheckin: dailyRows.find((row) => row.entryDate === date) ?? null,
-    dailyCheckins: dailyRows,
-    focusProjects: projectRows,
-    focusSessions: focusRows,
-    tasks: taskRows,
-    events: eventRows,
-  });
+  } catch (cause) { console.error("progress GET", cause); return fail("No se pudieron cargar tus datos. Verificá Supabase.", 500); }
 }
 
 export async function POST(request: Request) {
-  const user = await authenticatedUser();
-  if (!user) return Response.json({ error: "Necesitás iniciar sesión." }, { status: 401 });
-  const payload = await request.json() as Record<string, unknown>;
-  const action = String(payload.action ?? "");
-
-  if (action === "complete_onboarding") {
-    const displayName = String(payload.displayName ?? "").trim().slice(0, 60);
-    const allowedGoals = ["training", "nutrition", "focus", "reading", "sleep", "goals"];
-    const allowedPreferences = ["quick", "weekly", "ai"];
-    const mainGoals = Array.isArray(payload.mainGoals) ? payload.mainGoals.map(String).filter((goal) => allowedGoals.includes(goal)).slice(0, 3) : [];
-    const usagePreferences = Array.isArray(payload.usagePreferences) ? payload.usagePreferences.map(String).filter((preference) => allowedPreferences.includes(preference)) : [];
-    const monthKey = String(payload.monthKey ?? "");
-    if (displayName.length < 2) return Response.json({ error: "Ingresá tu nombre." }, { status: 400 });
-    if (!mainGoals.length) return Response.json({ error: "Elegí al menos un objetivo principal." }, { status: 400 });
-    if (!MONTH_PATTERN.test(monthKey)) return Response.json({ error: "Mes inválido." }, { status: 400 });
-
-    const metadataSaved = await updateChatGPTUserMetadata({
-      displayName,
-      onboardingCompleted: true,
-      mainGoals,
-      usagePreferences,
-    });
-    if (!metadataSaved) {
-      return Response.json({ error: "La sesión venció. Volvé a iniciar sesión para guardar tus preferencias." }, { status: 401 });
+  try {
+    const user = await currentUser(); if (!user) return fail("Necesitás iniciar sesión.", 401);
+    const p = await request.json() as Record<string, any>, action = String(p.action ?? ""), email = user.email;
+    if (action === "complete_onboarding") {
+      const displayName = String(p.displayName ?? "").trim().slice(0, 60), goals = Array.isArray(p.mainGoals) ? p.mainGoals.map(String).filter((v: string) => ["training", "nutrition", "focus", "reading", "sleep", "goals"].includes(v)).slice(0, 3) : [], preferences = Array.isArray(p.usagePreferences) ? p.usagePreferences.map(String).filter((v: string) => ["quick", "weekly", "ai"].includes(v)) : [], monthKey = String(p.monthKey ?? "");
+      if (displayName.length < 2) return fail("Ingresá tu nombre."); if (!goals.length) return fail("Elegí al menos un objetivo."); if (!MONTH.test(monthKey)) return fail("Mes inválido.");
+      if (!await updateChatGPTUserMetadata({ displayName, onboardingCompleted: true, mainGoals: goals, usagePreferences: preferences })) return fail("La sesión venció. Volvé a iniciar sesión.", 401);
+      await updateRows("profiles", { email }, { displayName, onboardingCompleted: true, mainGoalsJson: JSON.stringify(goals), usagePreferencesJson: JSON.stringify(preferences), updatedAt: now() });
+      const weight = (goal: string) => goals.includes(goal) ? 3 : 2; await upsert("monthly_priorities", { userEmail: email, monthKey, gymWeight: weight("training"), nutritionWeight: weight("nutrition"), focusWeight: weight("focus"), readingWeight: weight("reading"), sleepWeight: weight("sleep"), goalsWeight: weight("goals") }, ["userEmail", "monthKey"]); return ok();
     }
-
-    const db = getDb();
-    await db.update(profiles).set({
-      displayName,
-      onboardingCompleted: true,
-      mainGoalsJson: JSON.stringify(mainGoals),
-      usagePreferencesJson: JSON.stringify(usagePreferences),
-      updatedAt: sql`CURRENT_TIMESTAMP`,
-    }).where(eq(profiles.email, user.email));
-
-    const weight = (goal: string) => mainGoals.includes(goal) ? 3 : 2;
-    const priorityValues = {
-      gymWeight: weight("training"), nutritionWeight: weight("nutrition"), focusWeight: weight("focus"),
-      readingWeight: weight("reading"), sleepWeight: weight("sleep"), goalsWeight: weight("goals"),
-    };
-    await db.insert(monthlyPriorities).values({ userEmail: user.email, monthKey, ...priorityValues })
-      .onConflictDoUpdate({ target: [monthlyPriorities.userEmail, monthlyPriorities.monthKey], set: { ...priorityValues, updatedAt: sql`CURRENT_TIMESTAMP` } });
-    return Response.json({ ok: true });
-  }
-
-  const db = getDb();
-
-  // Simulación de la suscripción Pro. No hay cobro ni pasarela de pago: guarda
-  // la fecha de activación para que el desbloqueo sobreviva a recargas y se vea
-  // igual en el celular y en la computadora.
-  if (action === "set_pro") {
-    const active = Boolean(payload.active);
-    await db.update(profiles)
-      .set({ proSince: active ? todayUtc() : "", updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(profiles.email, user.email));
-    return Response.json({ ok: true, isPro: active });
-  }
-
-  if (action === "toggle_gym") {
-    const date = String(payload.date ?? "");
-    if (!DATE_PATTERN.test(date)) return Response.json({ error: "Fecha inválida." }, { status: 400 });
-    const existing = await db.select({ id: gymAttendance.id }).from(gymAttendance).where(and(eq(gymAttendance.userEmail, user.email), eq(gymAttendance.attendedDate, date))).limit(1);
-    if (existing[0]) await db.delete(gymAttendance).where(eq(gymAttendance.id, existing[0].id));
-    else await db.insert(gymAttendance).values({ userEmail: user.email, attendedDate: date });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_discipline") {
-    const name = String(payload.name ?? "").trim().slice(0, 50);
-    const kind = String(payload.kind ?? "other");
-    if (!name) return Response.json({ error: "Escribí el nombre de la disciplina." }, { status: 400 });
-    if (!["strength", "running", "cycling", "swimming", "sport", "other"].includes(kind)) return Response.json({ error: "Tipo de disciplina inválido." }, { status: 400 });
-    await db.insert(trainingDisciplines).values({ userEmail: user.email, name, kind: kind as "strength" | "running" | "cycling" | "swimming" | "sport" | "other" }).onConflictDoNothing();
-    return Response.json({ ok: true });
-  }
-
-  if (action === "toggle_training") {
-    const disciplineId = Number(payload.disciplineId);
-    const date = String(payload.date ?? "");
-    if (!disciplineId || !DATE_PATTERN.test(date)) return Response.json({ error: "Entrenamiento inválido." }, { status: 400 });
-    const discipline = await db.select({ id: trainingDisciplines.id }).from(trainingDisciplines).where(and(eq(trainingDisciplines.id, disciplineId), eq(trainingDisciplines.userEmail, user.email))).limit(1);
-    if (!discipline[0]) return Response.json({ error: "Disciplina no encontrada." }, { status: 404 });
-    const existing = await db.select().from(trainingLogs).where(and(eq(trainingLogs.userEmail, user.email), eq(trainingLogs.disciplineId, disciplineId), eq(trainingLogs.trainingDate, date))).limit(1);
-    if (existing[0]) {
-      const related = await db.select({ id: exerciseLogs.id }).from(exerciseLogs).where(and(eq(exerciseLogs.userEmail, user.email), eq(exerciseLogs.trainingLogId, existing[0].id))).limit(1);
-      if (existing[0].durationMinutes || existing[0].distanceMeters || existing[0].notes || related[0]) return Response.json({ error: "Este día tiene detalles cargados. Borrá sus registros antes de desmarcarlo." }, { status: 409 });
-      await db.delete(trainingLogs).where(and(eq(trainingLogs.id, existing[0].id), eq(trainingLogs.userEmail, user.email)));
-    } else {
-      await db.insert(trainingLogs).values({ userEmail: user.email, disciplineId, trainingDate: date }).onConflictDoNothing();
+    if (action === "set_pro") { const active = Boolean(p.active); await updateRows("profiles", { email }, { proSince: active ? today() : "", updatedAt: now() }); return ok({ isPro: active }); }
+    if (action === "toggle_gym") {
+      const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); let strength = (await selectRows<any>("training_disciplines", { where: { userEmail: email, kind: "strength" }, limit: 1 }))[0];
+      if (!strength) strength = (await insertRows<any>("training_disciplines", { userEmail: email, name: "Gimnasio", kind: "strength" }, { upsert: true, onConflict: ["userEmail", "name"], returnRows: true }))[0];
+      const row = (await owned("training_logs", email, { disciplineId: strength.id, trainingDate: date }))[0]; if (row) await deleteRows("training_logs", { id: row.id, userEmail: email }); else await insertRows("training_logs", { userEmail: email, disciplineId: strength.id, trainingDate: date }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], ignoreDuplicates: true }); return ok();
     }
-    return Response.json({ ok: true });
-  }
-
-  if (action === "save_training") {
-    const disciplineId = Number(payload.disciplineId);
-    const date = String(payload.date ?? "");
-    const durationMinutes = Math.max(0, Math.min(1440, Math.round(Number(payload.durationMinutes) || 0)));
-    const distanceMeters = Math.max(0, Math.min(1_000_000, Math.round((Number(payload.distanceKm) || 0) * 1000)));
-    const notes = String(payload.notes ?? "").trim().slice(0, 1500);
-    const discipline = await db.select({ id: trainingDisciplines.id }).from(trainingDisciplines).where(and(eq(trainingDisciplines.id, disciplineId), eq(trainingDisciplines.userEmail, user.email))).limit(1);
-    if (!discipline[0] || !DATE_PATTERN.test(date)) return Response.json({ error: "Elegí una disciplina y una fecha válidas." }, { status: 400 });
-    await db.insert(trainingLogs).values({ userEmail: user.email, disciplineId, trainingDate: date, durationMinutes, distanceMeters, notes })
-      .onConflictDoUpdate({ target: [trainingLogs.userEmail, trainingLogs.disciplineId, trainingLogs.trainingDate], set: { durationMinutes, distanceMeters, notes } });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_exercise") {
-    const disciplineId = Number(payload.disciplineId);
-    const date = String(payload.date ?? "");
-    const exercise = String(payload.exercise ?? "").trim().slice(0, 80);
-    const weightDeciKg = Math.max(0, Math.min(10000, Math.round((Number(payload.weightKg) || 0) * 10)));
-    const sets = Math.max(0, Math.min(100, Math.round(Number(payload.sets) || 0)));
-    const reps = Math.max(0, Math.min(1000, Math.round(Number(payload.reps) || 0)));
-    const discipline = await db.select({ id: trainingDisciplines.id }).from(trainingDisciplines).where(and(eq(trainingDisciplines.id, disciplineId), eq(trainingDisciplines.userEmail, user.email))).limit(1);
-    if (!discipline[0] || !DATE_PATTERN.test(date) || !exercise) return Response.json({ error: "Completá ejercicio, disciplina y fecha." }, { status: 400 });
-    await db.insert(trainingLogs).values({ userEmail: user.email, disciplineId, trainingDate: date }).onConflictDoNothing();
-    const log = await db.select({ id: trainingLogs.id }).from(trainingLogs).where(and(eq(trainingLogs.userEmail, user.email), eq(trainingLogs.disciplineId, disciplineId), eq(trainingLogs.trainingDate, date))).limit(1);
-    if (!log[0]) return Response.json({ error: "No se pudo crear el entrenamiento." }, { status: 500 });
-    await db.insert(exerciseLogs).values({ userEmail: user.email, trainingLogId: log[0].id, exercise, weightDeciKg, sets, reps, isRecord: Boolean(payload.isRecord) });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "delete_exercise") {
-    const id = Number(payload.id);
-    await db.delete(exerciseLogs).where(and(eq(exerciseLogs.id, id), eq(exerciseLogs.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "save_sleep") {
-    const date = String(payload.date ?? "");
-    const sleepMinutes = Math.max(0, Math.min(1440, Math.round(Number(payload.sleepMinutes) || 0)));
-    const bedtime = String(payload.bedtime ?? "").trim().slice(0, 20);
-    const wakeTime = String(payload.wakeTime ?? "").trim().slice(0, 20);
-    if (!DATE_PATTERN.test(date)) return Response.json({ error: "Fecha inválida." }, { status: 400 });
-    await db.insert(dailyCheckins).values({ userEmail: user.email, entryDate: date, sleepMinutes, bedtime, wakeTime })
-      .onConflictDoUpdate({ target: [dailyCheckins.userEmail, dailyCheckins.entryDate], set: { sleepMinutes, bedtime, wakeTime, updatedAt: sql`CURRENT_TIMESTAMP` } });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_focus_project") {
-    const name = String(payload.name ?? "").trim().slice(0, 80);
-    const kind = String(payload.kind ?? "study");
-    if (!name || !["study", "work"].includes(kind)) return Response.json({ error: "Completá el nombre y el tipo." }, { status: 400 });
-    await db.insert(focusProjects).values({ userEmail: user.email, name, kind: kind as "study" | "work" }).onConflictDoNothing();
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_focus_session") {
-    const projectId = Number(payload.projectId);
-    const date = String(payload.date ?? "");
-    const minutes = Math.max(1, Math.min(1440, Math.round(Number(payload.minutes) || 0)));
-    const note = String(payload.note ?? "").trim().slice(0, 1000);
-    const project = await db.select({ id: focusProjects.id }).from(focusProjects).where(and(eq(focusProjects.id, projectId), eq(focusProjects.userEmail, user.email))).limit(1);
-    if (!project[0] || !DATE_PATTERN.test(date)) return Response.json({ error: "Elegí un proyecto y una fecha válidos." }, { status: 400 });
-    await db.delete(focusSessions).where(and(eq(focusSessions.userEmail, user.email), eq(focusSessions.projectId, projectId), eq(focusSessions.sessionDate, date)));
-    await db.insert(focusSessions).values({ userEmail: user.email, projectId, sessionDate: date, minutes, note });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_task") {
-    const title = String(payload.title ?? "").trim().slice(0, 180);
-    const projectId = Number(payload.projectId) || null;
-    const dueDate = String(payload.dueDate ?? "");
-    const startTime = cleanTime(payload.startTime);
-    const durationMinutes = Math.max(0, Math.min(1440, Math.round(Number(payload.durationMinutes) || 0)));
-    if (!title || (dueDate && !DATE_PATTERN.test(dueDate))) return Response.json({ error: "Completá una tarea y una fecha válida." }, { status: 400 });
-    if (startTime === null) return Response.json({ error: "La hora no es válida." }, { status: 400 });
-    if (startTime && !dueDate) return Response.json({ error: "Para darle un horario, la tarea necesita una fecha." }, { status: 400 });
-    if (projectId) {
-      const project = await db.select({ id: focusProjects.id }).from(focusProjects).where(and(eq(focusProjects.id, projectId), eq(focusProjects.userEmail, user.email))).limit(1);
-      if (!project[0]) return Response.json({ error: "Proyecto no encontrado." }, { status: 404 });
+    if (action === "add_discipline") { const name = String(p.name ?? "").trim().slice(0, 50), kind = String(p.kind ?? "other"); if (!name || !["strength", "running", "cycling", "swimming", "sport", "other"].includes(kind)) return fail("Disciplina inválida."); await insertRows("training_disciplines", { userEmail: email, name, kind }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }
+    if (action === "toggle_training") {
+      const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""); if (!disciplineId || !DATE.test(date) || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Entrenamiento inválido."); const row = (await owned("training_logs", email, { disciplineId, trainingDate: date }))[0];
+      if (row) { if (row.durationMinutes || row.distanceMeters || row.notes || (await owned("exercise_logs", email, { trainingLogId: row.id }))[0]) return fail("Este día tiene detalles cargados. Borrá sus registros antes de desmarcarlo.", 409); await deleteRows("training_logs", { id: row.id, userEmail: email }); }
+      else await insertRows("training_logs", { userEmail: email, disciplineId, trainingDate: date }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], ignoreDuplicates: true }); return ok();
     }
-    await db.insert(tasks).values({ userEmail: user.email, projectId, title, dueDate: dueDate || null, startTime, durationMinutes: startTime ? durationMinutes || 60 : durationMinutes });
-    return Response.json({ ok: true });
-  }
-
-  // Le pone, cambia o le saca el horario a una tarea que ya existe. Es lo que
-  // ejecutan las sugerencias del plan del día ("moverlo a las 17:00").
-  if (action === "schedule_task") {
-    const id = Number(payload.id);
-    const startTime = cleanTime(payload.startTime);
-    const dueDate = String(payload.dueDate ?? "");
-    const durationMinutes = Math.max(0, Math.min(1440, Math.round(Number(payload.durationMinutes) || 0)));
-    if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Tarea inválida." }, { status: 400 });
-    if (startTime === null) return Response.json({ error: "La hora no es válida." }, { status: 400 });
-    if (dueDate && !DATE_PATTERN.test(dueDate)) return Response.json({ error: "Fecha inválida." }, { status: 400 });
-    const owned = await db.select({ id: tasks.id, dueDate: tasks.dueDate }).from(tasks).where(and(eq(tasks.id, id), eq(tasks.userEmail, user.email))).limit(1);
-    if (!owned[0]) return Response.json({ error: "Tarea no encontrada." }, { status: 404 });
-    const nextDueDate = dueDate || owned[0].dueDate;
-    if (startTime && !nextDueDate) return Response.json({ error: "Para darle un horario, la tarea necesita una fecha." }, { status: 400 });
-    await db.update(tasks)
-      .set({ startTime, durationMinutes: startTime ? durationMinutes || 60 : 0, dueDate: nextDueDate })
-      .where(and(eq(tasks.id, id), eq(tasks.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "toggle_task") {
-    const id = Number(payload.id);
-    await db.update(tasks).set({ completedAt: Boolean(payload.completed) ? sql`CURRENT_TIMESTAMP` : null }).where(and(eq(tasks.id, id), eq(tasks.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "delete_task") {
-    const id = Number(payload.id);
-    await db.delete(tasks).where(and(eq(tasks.id, id), eq(tasks.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_event") {
-    const title = String(payload.title ?? "").trim().slice(0, 180);
-    const eventDate = String(payload.eventDate ?? "");
-    const eventTime = cleanTime(payload.eventTime);
-    const durationMinutes = Math.max(15, Math.min(1440, Math.round(Number(payload.durationMinutes) || 60)));
-    const category = String(payload.category ?? "personal");
-    const notes = String(payload.notes ?? "").trim().slice(0, 1500);
-    if (eventTime === null) return Response.json({ error: "La hora no es válida." }, { status: 400 });
-    if (!title || !DATE_PATTERN.test(eventDate) || !["personal", "study", "work", "training", "health", "other"].includes(category)) return Response.json({ error: "Completá un evento válido." }, { status: 400 });
-    await db.insert(calendarEvents).values({ userEmail: user.email, title, eventDate, eventTime, durationMinutes, category: category as "personal" | "study" | "work" | "training" | "health" | "other", notes });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "delete_event") {
-    const id = Number(payload.id);
-    await db.delete(calendarEvents).where(and(eq(calendarEvents.id, id), eq(calendarEvents.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_meal") {
-    const date = String(payload.date ?? "");
-    const name = String(payload.name ?? "").trim();
-    const detail = String(payload.detail ?? "").trim();
-    const calories = Math.max(0, Math.min(10000, Number(payload.calories) || 0));
-    const protein = Math.max(0, Math.min(1000, Number(payload.protein) || 0));
-    const carbs = Math.max(0, Math.min(2000, Number(payload.carbs) || 0));
-    const fat = Math.max(0, Math.min(1000, Number(payload.fat) || 0));
-    if (!DATE_PATTERN.test(date) || !name) return Response.json({ error: "Completá el nombre y la fecha." }, { status: 400 });
-    await db.insert(meals).values({ userEmail: user.email, mealDate: date, name, detail, calories, protein, carbs, fat });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "delete_meal") {
-    const id = Number(payload.id);
-    await db.delete(meals).where(and(eq(meals.id, id), eq(meals.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "save_diet_plan") {
-    const age = Math.round(Number(payload.age) || 0);
-    const sex = String(payload.sex ?? "unspecified");
-    const heightCm = Math.round(Number(payload.heightCm) || 0);
-    const currentWeightDeciKg = Math.round((Number(payload.currentWeightKg) || 0) * 10);
-    const targetWeightDeciKg = Math.round((Number(payload.targetWeightKg) || 0) * 10);
-    const activityLevel = String(payload.activityLevel ?? "light");
-    const goalPace = String(payload.goalPace ?? "gentle");
-    const preferences = String(payload.preferences ?? "").trim().slice(0, 500);
-    const details = String(payload.details ?? "").trim().slice(0, 2000);
-    const targetCalories = Math.round(Number(payload.targetCalories) || 0);
-    const plan = payload.plan;
-    if (age < 18 || age > 100 || heightCm < 120 || heightCm > 230 || currentWeightDeciKg < 350 || currentWeightDeciKg > 3000 || targetWeightDeciKg < 350 || targetWeightDeciKg > 3000) {
-      return Response.json({ error: "Revisá edad, altura y pesos antes de guardar." }, { status: 400 });
+    if (action === "save_training" || action === "add_exercise") {
+      const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""); if (!disciplineId || !DATE.test(date) || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Elegí una disciplina y fecha válidas.");
+      const logs = await insertRows<any>("training_logs", { userEmail: email, disciplineId, trainingDate: date, durationMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))), distanceMeters: Math.max(0, Math.min(1e6, Math.round((Number(p.distanceKm) || 0) * 1000))), notes: String(p.notes ?? "").trim().slice(0, 1500) }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], returnRows: true });
+      if (action === "add_exercise") { const exercise = String(p.exercise ?? "").trim().slice(0, 80); if (!exercise) return fail("Completá el ejercicio."); await insertRows("exercise_logs", { userEmail: email, trainingLogId: logs[0].id, exercise, weightDeciKg: Math.max(0, Math.min(10000, Math.round((Number(p.weightKg) || 0) * 10))), sets: Math.max(0, Math.min(100, Math.round(Number(p.sets) || 0))), reps: Math.max(0, Math.min(1000, Math.round(Number(p.reps) || 0))), isRecord: Boolean(p.isRecord) }); } return ok();
     }
-    if (!['female', 'male', 'unspecified'].includes(sex) || !['sedentary', 'light', 'moderate', 'high'].includes(activityLevel) || !['gentle', 'moderate'].includes(goalPace)) {
-      return Response.json({ error: "La configuración del plan no es válida." }, { status: 400 });
+    if (action === "delete_exercise") { await deleteRows("exercise_logs", { id: Number(p.id), userEmail: email }); return ok(); }
+    if (action === "save_sleep") { const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); await upsert("daily_checkins", { userEmail: email, entryDate: date, sleepMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.sleepMinutes) || 0))), bedtime: String(p.bedtime ?? "").slice(0, 20), wakeTime: String(p.wakeTime ?? "").slice(0, 20) }, ["userEmail", "entryDate"]); return ok(); }
+    if (action === "add_focus_project") { const name = String(p.name ?? "").trim().slice(0, 80), kind = String(p.kind ?? "study"); if (!name || !["study", "work"].includes(kind)) return fail("Completá el nombre y el tipo."); await insertRows("focus_projects", { userEmail: email, name, kind }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }
+    if (action === "add_focus_session") { const projectId = Number(p.projectId), date = String(p.date ?? ""); if (!DATE.test(date) || !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Elegí un proyecto y fecha válidos."); await deleteRows("focus_sessions", { userEmail: email, projectId, sessionDate: date }); await insertRows("focus_sessions", { userEmail: email, projectId, sessionDate: date, minutes: Math.max(1, Math.min(1440, Math.round(Number(p.minutes) || 0))), note: String(p.note ?? "").slice(0, 1000) }); return ok(); }
+    if (action === "add_task") {
+      const title = String(p.title ?? "").trim().slice(0, 180), projectId = Number(p.projectId) || null, dueDate = String(p.dueDate ?? ""), startTime = cleanTime(p.startTime), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))); if (!title || (dueDate && !DATE.test(dueDate))) return fail("Completá una tarea y fecha válida."); if (startTime === null) return fail("La hora no es válida."); if (startTime && !dueDate) return fail("Para darle un horario, la tarea necesita una fecha."); if (projectId && !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Proyecto no encontrado.", 404); await insertRows("tasks", { userEmail: email, projectId, title, dueDate: dueDate || null, startTime, durationMinutes: startTime ? duration || 60 : duration }); return ok();
     }
-    if (!plan || typeof plan !== "object" || targetCalories < 1000 || targetCalories > 6000) {
-      return Response.json({ error: "Generá un plan válido antes de guardarlo." }, { status: 400 });
-    }
-    const values = {
-      userEmail: user.email,
-      age,
-      sex: sex as "female" | "male" | "unspecified",
-      heightCm,
-      currentWeightDeciKg,
-      targetWeightDeciKg,
-      activityLevel: activityLevel as "sedentary" | "light" | "moderate" | "high",
-      goalPace: goalPace as "gentle" | "moderate",
-      preferences,
-      details,
-      targetCalories,
-      planJson: JSON.stringify(plan).slice(0, 30000),
-    };
-    await db.insert(dietPlans).values(values).onConflictDoUpdate({
-      target: dietPlans.userEmail,
-      set: { ...values, updatedAt: sql`CURRENT_TIMESTAMP` },
-    });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_book") {
-    const title = String(payload.title ?? "").trim();
-    const author = String(payload.author ?? "").trim();
-    const status = ["reading", "read", "wishlist"].includes(String(payload.status)) ? String(payload.status) as "reading" | "read" | "wishlist" : "reading";
-    const totalPages = Math.max(0, Math.min(20000, Number(payload.totalPages) || 0));
-    const coverUrl = String(payload.coverUrl ?? "").trim().slice(0, 1000);
-    const externalKey = String(payload.externalKey ?? "").trim().slice(0, 300);
-    if (!title) return Response.json({ error: "Ingresá el título del libro." }, { status: 400 });
-    await db.insert(books).values({ userEmail: user.email, title, author, status, totalPages, currentPage: status === "read" ? totalPages : 0, coverUrl, externalKey });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "delete_book") {
-    const bookId = Number(payload.bookId);
-    if (!Number.isInteger(bookId) || bookId <= 0) return Response.json({ error: "Libro inválido." }, { status: 400 });
-    const owned = await db.select({ id: books.id }).from(books).where(and(eq(books.id, bookId), eq(books.userEmail, user.email))).limit(1);
-    if (!owned[0]) return Response.json({ error: "Libro no encontrado." }, { status: 404 });
-    await db.delete(readingLogs).where(and(eq(readingLogs.bookId, bookId), eq(readingLogs.userEmail, user.email)));
-    await db.delete(bookNotes).where(and(eq(bookNotes.bookId, bookId), eq(bookNotes.userEmail, user.email)));
-    await db.delete(books).where(and(eq(books.id, bookId), eq(books.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "set_pages") {
-    const bookId = Number(payload.bookId);
-    const date = String(payload.date ?? "");
-    const pages = Math.max(0, Math.min(5000, Number(payload.pages) || 0));
-    const requestedMinutes = payload.minutes === undefined ? null : Math.max(0, Math.min(1440, Number(payload.minutes) || 0));
-    if (!bookId || !DATE_PATTERN.test(date)) return Response.json({ error: "Datos de lectura inválidos." }, { status: 400 });
-    const owned = await db.select({ id: books.id, currentPage: books.currentPage, totalPages: books.totalPages }).from(books).where(and(eq(books.id, bookId), eq(books.userEmail, user.email))).limit(1);
-    if (!owned[0]) return Response.json({ error: "Libro no encontrado." }, { status: 404 });
-    const previous = await db.select({ pages: readingLogs.pages, minutes: readingLogs.minutes }).from(readingLogs).where(and(eq(readingLogs.userEmail, user.email), eq(readingLogs.bookId, bookId), eq(readingLogs.logDate, date))).limit(1);
-    const minutes = requestedMinutes ?? previous[0]?.minutes ?? 0;
-    const delta = pages - (previous[0]?.pages ?? 0);
-    const nextCurrentPage = Math.max(0, owned[0].totalPages ? Math.min(owned[0].totalPages, owned[0].currentPage + delta) : owned[0].currentPage + delta);
-    await db.insert(readingLogs).values({ userEmail: user.email, bookId, logDate: date, pages, minutes })
-      .onConflictDoUpdate({ target: [readingLogs.userEmail, readingLogs.bookId, readingLogs.logDate], set: { pages, minutes, updatedAt: sql`CURRENT_TIMESTAMP` } });
-    await db.update(books).set({ currentPage: nextCurrentPage }).where(and(eq(books.id, bookId), eq(books.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_note") {
-    const bookId = Number(payload.bookId);
-    const content = String(payload.content ?? "").trim();
-    const owned = await db.select({ id: books.id }).from(books).where(and(eq(books.id, bookId), eq(books.userEmail, user.email))).limit(1);
-    if (!owned[0] || !content) return Response.json({ error: "Elegí un libro y escribí una nota." }, { status: 400 });
-    await db.insert(bookNotes).values({ userEmail: user.email, bookId, content });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "update_book_status") {
-    const bookId = Number(payload.bookId);
-    const status = String(payload.status);
-    if (!["reading", "read", "wishlist"].includes(status)) return Response.json({ error: "Estado inválido." }, { status: 400 });
-    await db.update(books).set({ status: status as "reading" | "read" | "wishlist" }).where(and(eq(books.id, bookId), eq(books.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "set_priorities") {
-    const monthKey = String(payload.monthKey ?? "");
-    const normalizeWeight = (value: unknown) => Math.max(1, Math.min(3, Math.round(Number(value) || 2)));
-    if (!MONTH_PATTERN.test(monthKey)) return Response.json({ error: "Mes inválido." }, { status: 400 });
-    const gymWeight = normalizeWeight(payload.gymWeight);
-    const nutritionWeight = normalizeWeight(payload.nutritionWeight);
-    const readingWeight = normalizeWeight(payload.readingWeight);
-    const sleepWeight = normalizeWeight(payload.sleepWeight);
-    const focusWeight = normalizeWeight(payload.focusWeight);
-    const goalsWeight = normalizeWeight(payload.goalsWeight);
-    await db.insert(monthlyPriorities).values({ userEmail: user.email, monthKey, gymWeight, nutritionWeight, readingWeight, sleepWeight, focusWeight, goalsWeight })
-      .onConflictDoUpdate({ target: [monthlyPriorities.userEmail, monthlyPriorities.monthKey], set: { gymWeight, nutritionWeight, readingWeight, sleepWeight, focusWeight, goalsWeight, updatedAt: sql`CURRENT_TIMESTAMP` } });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "add_goal") {
-    const title = String(payload.title ?? "").trim();
-    const period = String(payload.period);
-    const category = String(payload.category);
-    const targetDate = String(payload.targetDate ?? "");
-    if (!title || title.length > 180) return Response.json({ error: "Escribí un objetivo más breve." }, { status: 400 });
-    if (!["weekly", "monthly", "annual", "custom"].includes(period)) return Response.json({ error: "Plazo inválido." }, { status: 400 });
-    if (!["general", "gym", "training", "nutrition", "reading", "study", "work", "sleep", "score", "calendar", "stats", "goals"].includes(category)) return Response.json({ error: "Categoría inválida." }, { status: 400 });
-    if (!DATE_PATTERN.test(targetDate)) return Response.json({ error: "Elegí una fecha válida." }, { status: 400 });
-    await db.insert(goals).values({
-      userEmail: user.email,
-      title,
-      period: period as "weekly" | "monthly" | "annual" | "custom",
-      category: category as "general" | "gym" | "training" | "nutrition" | "reading" | "study" | "work" | "sleep" | "score" | "calendar" | "stats" | "goals",
-      targetDate,
-    });
-    return Response.json({ ok: true });
-  }
-
-  if (action === "toggle_goal") {
-    const id = Number(payload.id);
-    const completed = Boolean(payload.completed);
-    if (!id) return Response.json({ error: "Objetivo inválido." }, { status: 400 });
-    await db.update(goals).set({ completedAt: completed ? sql`CURRENT_TIMESTAMP` : null }).where(and(eq(goals.id, id), eq(goals.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "delete_goal") {
-    const id = Number(payload.id);
-    if (!id) return Response.json({ error: "Objetivo inválido." }, { status: 400 });
-    await db.delete(goals).where(and(eq(goals.id, id), eq(goals.userEmail, user.email)));
-    return Response.json({ ok: true });
-  }
-
-  if (action === "apply_voice_checkin") {
-    const date = String(payload.date ?? "");
-    const raw = payload.checkin;
-    if (!DATE_PATTERN.test(date) || !raw || typeof raw !== "object" || Array.isArray(raw)) return Response.json({ error: "El cierre diario no es válido." }, { status: 400 });
-    const checkin = raw as Record<string, unknown>;
-    const objectValue = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-    const clamp = (value: unknown, maximum: number) => Math.max(0, Math.min(maximum, Math.round(Number(value) || 0)));
-    const gym = objectValue(checkin.gym);
-    const reading = objectValue(checkin.reading);
-    const study = objectValue(checkin.study);
-    const sleep = objectValue(checkin.sleep);
-
-    if (gym.attended === true) {
-      await db.insert(gymAttendance).values({ userEmail: user.email, attendedDate: date }).onConflictDoNothing();
-    }
-
-    const mealRows = Array.isArray(checkin.meals) ? checkin.meals.slice(0, 8) : [];
-    for (const rawMeal of mealRows) {
-      const meal = objectValue(rawMeal);
-      const name = String(meal.name ?? "").trim().slice(0, 80);
-      if (!name) continue;
-      await db.insert(meals).values({
-        userEmail: user.email, mealDate: date, name, detail: String(meal.detail ?? "").trim().slice(0, 300),
-        calories: clamp(meal.calories, 10000), protein: clamp(meal.protein, 1000), carbs: clamp(meal.carbs, 2000), fat: clamp(meal.fat, 1000),
-      });
-    }
-
-    const bookTitle = String(reading.bookTitle ?? "").trim().slice(0, 150);
-    const pages = clamp(reading.pages, 5000);
-    const readingMinutes = clamp(reading.minutes, 1440);
-    const readingNote = String(reading.note ?? "").trim().slice(0, 2000);
-    if (bookTitle || pages || readingMinutes || readingNote) {
-      let owned = bookTitle ? await db.select().from(books).where(and(eq(books.userEmail, user.email), sql`lower(${books.title}) = ${bookTitle.toLowerCase()}`)).limit(1) : [];
-      if (!owned[0]) owned = await db.select().from(books).where(and(eq(books.userEmail, user.email), eq(books.status, "reading"))).orderBy(desc(books.createdAt)).limit(1);
-      if (!owned[0] && bookTitle) {
-        await db.insert(books).values({ userEmail: user.email, title: bookTitle, status: "reading" });
-        owned = await db.select().from(books).where(and(eq(books.userEmail, user.email), sql`lower(${books.title}) = ${bookTitle.toLowerCase()}`)).orderBy(desc(books.id)).limit(1);
-      }
-      const book = owned[0];
-      if (book) {
-        const previous = await db.select().from(readingLogs).where(and(eq(readingLogs.userEmail, user.email), eq(readingLogs.bookId, book.id), eq(readingLogs.logDate, date))).limit(1);
-        const nextPages = Math.max(previous[0]?.pages ?? 0, pages);
-        const delta = nextPages - (previous[0]?.pages ?? 0);
-        const nextCurrentPage = Math.max(0, book.totalPages ? Math.min(book.totalPages, book.currentPage + delta) : book.currentPage + delta);
-        await db.insert(readingLogs).values({ userEmail: user.email, bookId: book.id, logDate: date, pages: nextPages, minutes: Math.max(previous[0]?.minutes ?? 0, readingMinutes) })
-          .onConflictDoUpdate({ target: [readingLogs.userEmail, readingLogs.bookId, readingLogs.logDate], set: { pages: nextPages, minutes: Math.max(previous[0]?.minutes ?? 0, readingMinutes), updatedAt: sql`CURRENT_TIMESTAMP` } });
-        await db.update(books).set({ currentPage: nextCurrentPage }).where(and(eq(books.id, book.id), eq(books.userEmail, user.email)));
-        if (readingNote) await db.insert(bookNotes).values({ userEmail: user.email, bookId: book.id, content: readingNote });
-      }
-    }
-
-    const habits = Array.isArray(checkin.habits) ? checkin.habits.slice(0, 12).map((item) => String(item).trim().slice(0, 80)).filter(Boolean) : [];
-    const tasks = Array.isArray(study.tasks) ? study.tasks.slice(0, 10).map((item) => String(item).trim()).filter(Boolean) : [];
-    const studyDetail = [String(study.detail ?? "").trim(), tasks.length ? `Tareas: ${tasks.join(" · ")}` : ""].filter(Boolean).join(" — ").slice(0, 1500);
-    await db.insert(dailyCheckins).values({
-      userEmail: user.email, entryDate: date, habitsJson: JSON.stringify(habits), workoutDetail: String(gym.detail ?? "").trim().slice(0, 1500),
-      studyMinutes: clamp(study.minutes, 1440), studyDetail, sleepMinutes: clamp(sleep.minutes, 1440), bedtime: String(sleep.bedtime ?? "").trim().slice(0, 20), wakeTime: String(sleep.wakeTime ?? "").trim().slice(0, 20),
-      waterMl: clamp(checkin.waterMl, 20000), journal: String(checkin.journal ?? "").trim().slice(0, 4000), transcript: String(checkin.transcript ?? "").trim().slice(0, 8000), voiceSummary: String(checkin.summary ?? "").trim().slice(0, 1000),
-    }).onConflictDoUpdate({ target: [dailyCheckins.userEmail, dailyCheckins.entryDate], set: {
-      habitsJson: JSON.stringify(habits), workoutDetail: String(gym.detail ?? "").trim().slice(0, 1500), studyMinutes: clamp(study.minutes, 1440), studyDetail,
-      sleepMinutes: clamp(sleep.minutes, 1440), bedtime: String(sleep.bedtime ?? "").trim().slice(0, 20), wakeTime: String(sleep.wakeTime ?? "").trim().slice(0, 20), waterMl: clamp(checkin.waterMl, 20000),
-      journal: String(checkin.journal ?? "").trim().slice(0, 4000), transcript: String(checkin.transcript ?? "").trim().slice(0, 8000), voiceSummary: String(checkin.summary ?? "").trim().slice(0, 1000), updatedAt: sql`CURRENT_TIMESTAMP`,
-    } });
-
-    const goalRows = Array.isArray(checkin.goals) ? checkin.goals.slice(0, 5) : [];
-    for (const rawGoal of goalRows) {
-      const goal = objectValue(rawGoal); const title = String(goal.title ?? "").trim().slice(0, 180); const period = String(goal.period); const category = String(goal.category); const targetDate = String(goal.targetDate ?? "");
-      if (title && ["weekly", "monthly", "annual", "custom"].includes(period) && ["general", "gym", "nutrition", "reading"].includes(category) && DATE_PATTERN.test(targetDate)) {
-        await db.insert(goals).values({ userEmail: user.email, title, period: period as "weekly" | "monthly" | "annual" | "custom", category: category as "general" | "gym" | "nutrition" | "reading", targetDate });
-      }
-    }
-    return Response.json({ ok: true });
-  }
-
-  return Response.json({ error: "Acción desconocida." }, { status: 400 });
+    if (action === "schedule_task") { const id = Number(p.id), startTime = cleanTime(p.startTime), dueDate = String(p.dueDate ?? ""), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))), row = (await owned("tasks", email, { id }))[0]; if (!row) return fail("Tarea no encontrada.", 404); if (startTime === null || (dueDate && !DATE.test(dueDate))) return fail("Fecha u hora inválida."); const nextDate = dueDate || row.dueDate; if (startTime && !nextDate) return fail("La tarea necesita una fecha."); await updateRows("tasks", { id, userEmail: email }, { startTime, dueDate: nextDate, durationMinutes: startTime ? duration || 60 : 0 }); return ok(); }
+    if (action === "toggle_task") { await updateRows("tasks", { id: Number(p.id), userEmail: email }, { completedAt: p.completed ? now() : null }); return ok(); }
+    if (action === "delete_task") { await deleteRows("tasks", { id: Number(p.id), userEmail: email }); return ok(); }
+    if (action === "add_event") { const title = String(p.title ?? "").trim().slice(0, 180), eventDate = String(p.eventDate ?? ""), eventTime = cleanTime(p.eventTime), category = String(p.category ?? "personal"); if (!title || !DATE.test(eventDate) || eventTime === null || !["personal", "study", "work", "training", "health", "other"].includes(category)) return fail("Completá un evento válido."); await insertRows("calendar_events", { userEmail: email, title, eventDate, eventTime, durationMinutes: Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60))), category, notes: String(p.notes ?? "").slice(0, 1500) }); return ok(); }
+    if (action === "delete_event") { await deleteRows("calendar_events", { id: Number(p.id), userEmail: email }); return ok(); }
+    if (action === "add_meal") { const date = String(p.date ?? ""), name = String(p.name ?? "").trim(); if (!DATE.test(date) || !name) return fail("Completá el nombre y la fecha."); await insertRows("meals", { userEmail: email, mealDate: date, name, detail: String(p.detail ?? "").trim(), calories: Math.max(0, Math.min(10000, Number(p.calories) || 0)), protein: Math.max(0, Math.min(1000, Number(p.protein) || 0)), carbs: Math.max(0, Math.min(2000, Number(p.carbs) || 0)), fat: Math.max(0, Math.min(1000, Number(p.fat) || 0)) }); return ok(); }
+    if (action === "delete_meal") { await deleteRows("meals", { id: Number(p.id), userEmail: email }); return ok(); }
+    if (action === "save_diet_plan") { const age = Math.round(Number(p.age) || 0), heightCm = Math.round(Number(p.heightCm) || 0), currentWeightDeciKg = Math.round((Number(p.currentWeightKg) || 0) * 10), targetWeightDeciKg = Math.round((Number(p.targetWeightKg) || 0) * 10), targetCalories = Math.round(Number(p.targetCalories) || 0); if (age < 18 || age > 100 || heightCm < 120 || heightCm > 230 || currentWeightDeciKg < 350 || targetWeightDeciKg < 350 || !p.plan || targetCalories < 1000 || targetCalories > 6000) return fail("Revisá los datos del plan."); await upsert("diet_plans", { userEmail: email, age, sex: String(p.sex ?? "unspecified"), heightCm, currentWeightDeciKg, targetWeightDeciKg, activityLevel: String(p.activityLevel ?? "light"), goalPace: String(p.goalPace ?? "gentle"), preferences: String(p.preferences ?? "").slice(0, 500), details: String(p.details ?? "").slice(0, 2000), targetCalories, planJson: JSON.stringify(p.plan).slice(0, 30000) }, ["userEmail"]); return ok(); }
+    if (action === "add_book") { const title = String(p.title ?? "").trim(); if (!title) return fail("Ingresá el título del libro."); const status = ["reading", "read", "wishlist"].includes(String(p.status)) ? String(p.status) : "reading", totalPages = Math.max(0, Math.min(20000, Number(p.totalPages) || 0)); await insertRows("books", { userEmail: email, title, author: String(p.author ?? "").trim(), status, totalPages, currentPage: status === "read" ? totalPages : 0, coverUrl: String(p.coverUrl ?? "").slice(0, 1000), externalKey: String(p.externalKey ?? "").slice(0, 300) }); return ok(); }
+    if (action === "delete_book") { const bookId = Number(p.bookId); if (!(await owned("books", email, { id: bookId }))[0]) return fail("Libro no encontrado.", 404); await deleteRows("reading_logs", { bookId, userEmail: email }); await deleteRows("book_notes", { bookId, userEmail: email }); await deleteRows("books", { id: bookId, userEmail: email }); return ok(); }
+    if (action === "set_pages") { const bookId = Number(p.bookId), date = String(p.date ?? ""), pages = Math.max(0, Math.min(5000, Number(p.pages) || 0)), book = (await owned("books", email, { id: bookId }))[0]; if (!book || !DATE.test(date)) return fail("Datos de lectura inválidos."); const previous = (await owned("reading_logs", email, { bookId, logDate: date }))[0], minutes = p.minutes === undefined ? previous?.minutes ?? 0 : Math.max(0, Math.min(1440, Number(p.minutes) || 0)), delta = pages - (previous?.pages ?? 0), currentPage = Math.max(0, book.totalPages ? Math.min(book.totalPages, book.currentPage + delta) : book.currentPage + delta); await upsert("reading_logs", { userEmail: email, bookId, logDate: date, pages, minutes }, ["userEmail", "bookId", "logDate"]); await updateRows("books", { id: bookId, userEmail: email }, { currentPage }); return ok(); }
+    if (action === "add_note") { const bookId = Number(p.bookId), content = String(p.content ?? "").trim(); if (!content || !(await owned("books", email, { id: bookId }))[0]) return fail("Elegí un libro y escribí una nota."); await insertRows("book_notes", { userEmail: email, bookId, content }); return ok(); }
+    if (action === "update_book_status") { const status = String(p.status); if (!["reading", "read", "wishlist"].includes(status)) return fail("Estado inválido."); await updateRows("books", { id: Number(p.bookId), userEmail: email }, { status }); return ok(); }
+    if (action === "set_priorities") { const monthKey = String(p.monthKey ?? ""), weight = (v: unknown) => Math.max(1, Math.min(3, Math.round(Number(v) || 2))); if (!MONTH.test(monthKey)) return fail("Mes inválido."); await upsert("monthly_priorities", { userEmail: email, monthKey, gymWeight: weight(p.gymWeight), nutritionWeight: weight(p.nutritionWeight), readingWeight: weight(p.readingWeight), sleepWeight: weight(p.sleepWeight), focusWeight: weight(p.focusWeight), goalsWeight: weight(p.goalsWeight) }, ["userEmail", "monthKey"]); return ok(); }
+    if (action === "add_goal") { const title = String(p.title ?? "").trim(), period = String(p.period), category = String(p.category), targetDate = String(p.targetDate ?? ""); if (!title || !["weekly", "monthly", "annual", "custom"].includes(period) || !DATE.test(targetDate)) return fail("Completá un objetivo válido."); await insertRows("goals", { userEmail: email, title: title.slice(0, 180), period, category, targetDate }); return ok(); }
+    if (action === "toggle_goal") { await updateRows("goals", { id: Number(p.id), userEmail: email }, { completedAt: p.completed ? now() : null }); return ok(); }
+    if (action === "delete_goal") { await deleteRows("goals", { id: Number(p.id), userEmail: email }); return ok(); }
+    if (action === "apply_voice_checkin") { const date = String(p.date ?? ""), c = p.checkin; if (!DATE.test(date) || !c || typeof c !== "object") return fail("El cierre diario no es válido."); const clamp = (v: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(v) || 0))), sleep = c.sleep ?? {}, study = c.study ?? {}, gym = c.gym ?? {}; await upsert("daily_checkins", { userEmail: email, entryDate: date, habitsJson: JSON.stringify(Array.isArray(c.habits) ? c.habits.slice(0, 12) : []), workoutDetail: String(gym.detail ?? "").slice(0, 1500), studyMinutes: clamp(study.minutes, 1440), studyDetail: String(study.detail ?? "").slice(0, 1500), sleepMinutes: clamp(sleep.minutes, 1440), bedtime: String(sleep.bedtime ?? "").slice(0, 20), wakeTime: String(sleep.wakeTime ?? "").slice(0, 20), waterMl: clamp(c.waterMl, 20000), journal: String(c.journal ?? "").slice(0, 4000), transcript: String(c.transcript ?? "").slice(0, 8000), voiceSummary: String(c.summary ?? "").slice(0, 1000) }, ["userEmail", "entryDate"]); for (const meal of Array.isArray(c.meals) ? c.meals.slice(0, 8) : []) if (meal?.name) await insertRows("meals", { userEmail: email, mealDate: date, name: String(meal.name).slice(0, 80), detail: String(meal.detail ?? "").slice(0, 300), calories: clamp(meal.calories, 10000), protein: clamp(meal.protein, 1000), carbs: clamp(meal.carbs, 2000), fat: clamp(meal.fat, 1000) }); return ok(); }
+    return fail("Acción desconocida.");
+  } catch (cause) { console.error("progress POST", cause); return fail("No se pudo guardar. Verificá Supabase.", 500); }
 }
