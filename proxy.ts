@@ -35,7 +35,7 @@ export async function proxy(request: NextRequest) {
   const response = NextResponse.next({ request: { headers } });
   const options = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/" };
   response.cookies.set(ACCESS_COOKIE, session.access_token, { ...options, maxAge: Math.max(60, Number(session.expires_in ?? 3600)) });
-  response.cookies.set(REFRESH_COOKIE, session.refresh_token, { ...options, maxAge: 60 * 60 * 24 * 30 });
+  response.cookies.set(REFRESH_COOKIE, session.refresh_token, { ...options, maxAge: 60 * 60 * 24 * 365 });
   return response;
 }
 
