@@ -42,9 +42,9 @@ export default function AuthPanel() {
         {mode !== "recover" && <button className="lifetrack-google-button" type="button" onClick={google}><span>G</span>Continuar con Google <b>→</b></button>}
         {mode !== "recover" && <div className="lifetrack-auth-divider"><span>O</span></div>}
         <form onSubmit={submit} className="lifetrack-auth-options">
-          {mode === "signup" && <label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" required minLength={2} /></label>}
-          <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@email.com" required /></label>
-          {mode !== "recover" && <label>Contraseña<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" required minLength={8} /></label>}
+          {mode === "signup" && <label className="lifetrack-auth-field"><span>Nombre</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" required minLength={2} /></label>}
+          <label className="lifetrack-auth-field"><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@email.com" required /></label>
+          {mode !== "recover" && <label className="lifetrack-auth-field"><span>Contraseña <small>(mínimo 8 caracteres)</small></span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Ingresá tu contraseña" required minLength={8} /></label>}
           <button className="lifetrack-email-button" type="submit" disabled={busy}>{busy ? "Procesando…" : mode === "signup" ? "Crear cuenta" : mode === "recover" ? "Enviar correo" : "Iniciar sesión"} <b>→</b></button>
         </form>
         {message && <small>{message}</small>}
