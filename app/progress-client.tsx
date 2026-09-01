@@ -102,6 +102,10 @@ const insightTargets: Record<string, InsightTarget> = {
 const priorityLabels = ["", "Secundario", "Importante", "Prioridad"];
 const MAX_VOICE_UPLOAD_BYTES = 900 * 1024;
 const VOICE_AUTO_STOP_BYTES = 800 * 1024;
+// Safari puede rechazar rutas relativas dentro de previews embebidos. Construir
+// la URL desde el origen evita el DOMException "expected pattern" antes de que
+// la solicitud llegue al servidor.
+const apiUrl = (path: string) => `${window.location.origin}${path}`;
 const categoryLabels: Record<GoalCategory, string> = { general: "Personal", gym: "Gimnasio", training: "Entrenamiento", nutrition: "Alimentación", reading: "Lectura", study: "Estudio", work: "Trabajo", sleep: "Sueño", score: "Daily Score", calendar: "Calendario", stats: "Estadísticas", goals: "Objetivos" };
 const goalAreaOptions: Array<{ value: GoalCategory; label: string }> = [
   { value: "general", label: "Personal / Inicio" }, { value: "score", label: "Daily Score" }, { value: "training", label: "Entrenamiento" },
@@ -349,7 +353,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
 
   const loadData = useCallback(async () => {
     try {
-      const response = await fetch("/api/progress?date=" + today + "&weekStart=" + week[0].iso + "&weekEnd=" + week[6].iso + "&month=" + monthKey, { cache: "no-store" });
+      const response = await fetch(apiUrl("/api/progress?date=" + today + "&weekStart=" + week[0].iso + "&weekEnd=" + week[6].iso + "&month=" + monthKey), { cache: "no-store" });
       if (!response.ok) throw new Error("No pudimos cargar tus datos.");
       const next = await response.json() as ProgressData;
       setData(next);
@@ -430,7 +434,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     setSaving(true);
     setError("");
     try {
-      const response = await fetch("/api/progress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch(apiUrl("/api/progress"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "No se pudo guardar.");
       await loadData();
