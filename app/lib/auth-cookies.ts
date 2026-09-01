@@ -12,7 +12,7 @@ export async function setSessionCookies(session: SupabaseSession) {
   const store = await cookies();
   const maxAge = Math.max(60, Number(session.expires_in ?? 3600));
   store.set(ACCESS_COOKIE, session.access_token, { ...COOKIE_OPTIONS, maxAge });
-  store.set(REFRESH_COOKIE, session.refresh_token, { ...COOKIE_OPTIONS, maxAge: 60 * 60 * 24 * 30 });
+  store.set(REFRESH_COOKIE, session.refresh_token, { ...COOKIE_OPTIONS, maxAge: 60 * 60 * 24 * 365 });
 }
 
 export async function clearSessionCookies() {
