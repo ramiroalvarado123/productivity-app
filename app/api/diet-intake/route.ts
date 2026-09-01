@@ -1,10 +1,9 @@
-import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Necesitás iniciar sesión." }, { status: 401 });
-  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return Response.json({ error: "Falta activar la conexión segura de IA." }, { status: 503 });
 
   const form = await request.formData();
