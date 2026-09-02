@@ -153,7 +153,7 @@ export default function AuthPanel() {
               {mode === "signup" && <label className="lifetrack-auth-field"><span>Nombre</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Tu nombre" required minLength={2} /></label>}
               <label className="lifetrack-auth-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@email.com" required /></label>
               {mode !== "recover" && <label className="lifetrack-auth-field"><span>Contraseña <small>(mínimo 8 caracteres)</small></span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Ingresá tu contraseña" required minLength={8} /></label>}
-              <button className="lifetrack-email-button" type="submit" disabled={busy}>{busy ? "Procesando…" : mode === "signup" ? "Crear cuenta" : mode === "recover" ? "Enviar correo" : "Iniciar sesión"} <b>→</b></button>
+              <button className={"lifetrack-email-button" + (mode === "login" ? " is-primary" : "")} type="submit" disabled={busy}>{busy ? "Procesando…" : mode === "signup" ? "Crear cuenta" : mode === "recover" ? "Enviar correo" : "Iniciar sesión"} <b>→</b></button>
             </form>
             {message && <small>{message}</small>}
             <div className="lifetrack-auth-links">
