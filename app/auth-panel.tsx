@@ -21,15 +21,21 @@ export default function AuthPanel() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setMessage("");
-    const endpoint = mode === "recover" ? "/api/auth/recover" : "/api/auth/password";
-    const payload = mode === "recover" ? { email } : { action: mode, email, password, name };
-    const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await response.json().catch(() => ({})) as { error?: string; needsConfirmation?: boolean };
-    setBusy(false);
-    if (!response.ok) { setMessage(data.error ?? "No pudimos completar la operación."); return; }
-    if (mode === "recover") { setMessage("Te enviamos un correo para recuperar tu contraseña."); return; }
-    if (data.needsConfirmation) { setMessage("Revisá tu correo y confirmá tu cuenta para entrar a AVORA."); return; }
-    window.location.reload();
+    try {
+      const endpoint = mode === "recover" ? "/api/auth/recover" : "/api/auth/password";
+      const payload = mode === "recover" ? { email } : { action: mode, email, password, name };
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
+      const text = await response.text();
+      const data = text ? JSON.parse(text) as { error?: string; needsConfirmation?: boolean } : {};
+      if (!response.ok) { setMessage(data.error ?? "No pudimos completar la operación."); return; }
+      if (mode === "recover") { setMessage("Te enviamos un correo para recuperar tu contraseña."); return; }
+      if (data.needsConfirmation) { setMessage("Revisá tu correo y confirmá tu cuenta para entrar a AVORA."); return; }
+      window.location.replace("/");
+    } catch {
+      setMessage("No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá nuevamente.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return <main className="lifetrack-access">
