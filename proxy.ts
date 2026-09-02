@@ -26,7 +26,12 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  const session = await refreshed.json() as SupabaseSession;
+  const session = await refreshed.json().catch(() => null) as SupabaseSession | null;
+  if (!session?.access_token || !session.refresh_token) {
+    const response = NextResponse.next();
+    response.cookies.delete(ACCESS_COOKIE); response.cookies.delete(REFRESH_COOKIE);
+    return response;
+  }
   const headers = new Headers(request.headers);
   const cookie = request.cookies.getAll().filter(({ name }) => name !== ACCESS_COOKIE && name !== REFRESH_COOKIE)
     .map(({ name, value }) => `${name}=${value}`);
