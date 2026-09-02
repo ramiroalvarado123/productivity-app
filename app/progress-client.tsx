@@ -261,6 +261,16 @@ const emptyData = (user: User, monthKey: string): ProgressData => ({
   dietPlan: null,
 });
 
+async function readJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text.trim()) throw new Error("El servidor no devolvió una respuesta. Recargá la página e intentá nuevamente.");
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("No pudimos interpretar la respuesta del servidor. Recargá la página e intentá nuevamente.");
+  }
+}
+
 export default function ProgressClient({ initialUser }: { initialUser: User }) {
   const [today] = useState(argentinaDate);
   const monthKey = today.slice(0, 7);
@@ -353,8 +363,8 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   const loadData = useCallback(async () => {
     try {
       const response = await fetch("/api/progress?date=" + today + "&weekStart=" + week[0].iso + "&weekEnd=" + week[6].iso + "&month=" + monthKey, { cache: "no-store", credentials: "same-origin" });
-      if (!response.ok) throw new Error("No pudimos cargar tus datos.");
-      const next = await response.json() as ProgressData;
+      const next = await readJson<ProgressData & { error?: string }>(response);
+      if (!response.ok) throw new Error(next.error || "No pudimos cargar tus datos.");
       setData(next);
       setPriorityDraft(next.priorities);
       setSelectedDisciplineId((current) => current ?? next.disciplines[0]?.id ?? null);
@@ -388,7 +398,13 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   }, [today, week, monthKey]);
   // Initial synchronization with the signed-in user's persisted workspace.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => {
+    if (!initialUser.onboardingCompleted) {
+      setLoading(false);
+      return;
+    }
+    void loadData();
+  }, [loadData, initialUser.onboardingCompleted]);
   // El plan del día marca "ahora" y no ofrece horarios que ya pasaron.
   useEffect(() => {
     const timer = window.setInterval(() => setNowMinutes(argentinaMinutes()), 60000);
@@ -434,7 +450,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     setError("");
     try {
       const response = await fetch("/api/progress", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
-      const result = await response.json() as { error?: string };
+      const result = await readJson<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo guardar.");
       await loadData();
       return true;
