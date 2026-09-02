@@ -63,7 +63,7 @@ type StatsPeriod = "weekly" | "monthly" | "annual";
 type NavItem = { id: Section; icon: ReactNode; label: string; mobile: string; center?: true };
 
 const friendsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" /><circle cx="16.5" cy="9" r="2.5" /><path d="M2.5 19c.5-4 2.4-6 5.5-6s5 2 5.5 6M13 14.5c1-.8 2.1-1.1 3.5-1.1 2.8 0 4.4 1.8 5 5.1" /></svg>;
-const physicalIcon = <svg className="physical-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5c1.8-2 2.7-4.4 2.7-7.2V9.8a1.8 1.8 0 0 1 3.6 0v2.1l1.8-5.1a2 2 0 0 1 2.6-1.2l.7.3" /><path d="m15 6 .8-.8a1.9 1.9 0 0 1 2.7.1l.6.7c.6.7.9 1.5.9 2.4v2.1a8.8 8.8 0 0 1-8.8 8.8H7.4c-1.4 0-2.5-.3-3.4.2Z" /><path d="M9.8 14.6c2.1-2.2 5.2-2.6 7.6-.8M10.3 11.9h2.8M15.4 6l1.8 1.9" /></svg>;
+const physicalIcon = <svg className="physical-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5c1.8-2.2 2.8-4.6 2.8-7.2v-2.1a2.3 2.3 0 0 1 4.6 0v1.4" /><path d="m10.9 12.6 2.1-5.2a2.2 2.2 0 0 1 3-1.3l1.1.5" /><path d="m16 6.4.7-1a1.8 1.8 0 0 1 2.8-.1l.7.8c.5.6.8 1.4.8 2.2v2.4c0 5.1-4.1 9.3-9.3 9.3H7.5c-1.6 0-2.9.2-4 .5Z" /><path d="M9.8 15.1c2.3-2.1 5.4-2.7 8.2-1.5" /></svg>;
 const focusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 5.2a3.4 3.4 0 0 0-5.3 2.9c0 .5.1.9.3 1.3A3.7 3.7 0 0 0 5 16.5a3.5 3.5 0 0 0 4.2 2.3M14.8 5.2a3.4 3.4 0 0 1 5.3 2.9c0 .5-.1.9-.3 1.3a3.7 3.7 0 0 1-.8 7.1 3.5 3.5 0 0 1-4.2 2.3M12 4v16M8 9.2c1.1.1 2 .7 2.4 1.6M16 9.2c-1.1.1-2 .7-2.4 1.6M8.4 15.1c1-.1 1.7-.5 2.2-1.2M15.6 15.1c-1-.1-1.7-.5-2.2-1.2" /></svg>;
 const statsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 18 5-5 4 2 6-8" /><circle cx="4" cy="18" r="1.5" /><circle cx="9" cy="13" r="1.5" /><circle cx="13" cy="15" r="1.5" /><circle cx="19" cy="7" r="1.5" /></svg>;
 
@@ -1359,7 +1359,7 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
 
   const quotePanel = <aside className="quote-strip">
     <span className="quote-mark" aria-hidden="true">“</span>
-    <p>{quote.text}</p>
+    <p>{quote.text}”</p>
     <b>{quote.author}</b>
   </aside>;
 
