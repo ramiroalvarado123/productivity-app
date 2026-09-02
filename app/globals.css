@@ -1143,3 +1143,212 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .mobile-nav .nav-icon svg{width:17px;height:17px}
 .training-detail-grid.single-session{grid-template-columns:minmax(0,1fr)}
 .training-detail-grid.single-session>article{max-width:760px}
+
+
+/* Pantalla destacada de confirmación de cuenta */
+.lifetrack-confirmation-shell{
+  min-height:calc(100vh - 92px);
+  padding:clamp(28px,5vw,72px);
+  display:grid;
+  place-items:center;
+  background:
+    radial-gradient(circle at 12% 18%,#dcebe3 0 8%,transparent 28%),
+    radial-gradient(circle at 88% 82%,#eef5d8 0 7%,transparent 25%),
+    #fbfaf5;
+}
+.lifetrack-confirmation-card{
+  width:min(1080px,100%);
+  min-height:min(700px,calc(100vh - 150px));
+  border:1px solid #d7e2da;
+  border-radius:34px;
+  background:#fff;
+  box-shadow:0 30px 90px #173e2f1a;
+  padding:clamp(36px,5vw,76px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+}
+.lifetrack-confirmation-card:before{
+  content:"";
+  position:absolute;
+  width:420px;
+  height:420px;
+  border:68px solid #edf3ee;
+  border-radius:50%;
+  top:-270px;
+  right:-170px;
+  pointer-events:none;
+}
+.lifetrack-confirmation-icon{
+  width:104px;
+  height:104px;
+  border-radius:30px;
+  display:grid;
+  place-items:center;
+  margin-bottom:24px;
+  background:var(--green);
+  color:#fff;
+  font-size:45px;
+  line-height:1;
+  box-shadow:0 18px 40px #215c4638;
+  transform:rotate(-3deg);
+}
+.lifetrack-confirmation-card h1{
+  margin:10px 0 14px;
+  font-family:var(--font-serif);
+  font-size:clamp(54px,6vw,82px);
+  font-weight:500;
+  line-height:.98;
+  letter-spacing:-.025em;
+}
+.lifetrack-confirmation-copy{
+  max-width:690px;
+  margin:0;
+  color:#68736d;
+  font-size:clamp(16px,1.6vw,20px);
+  line-height:1.55;
+}
+.lifetrack-confirmation-email{
+  width:min(680px,100%);
+  margin:28px 0;
+  padding:17px 22px;
+  border:2px solid #7fa38f;
+  border-radius:16px;
+  background:#f2f7f3;
+  display:flex;
+  align-items:center;
+  gap:15px;
+  text-align:left;
+}
+.lifetrack-confirmation-email>span{
+  width:40px;
+  height:40px;
+  flex:0 0 auto;
+  border-radius:12px;
+  display:grid;
+  place-items:center;
+  background:var(--green);
+  color:#fff;
+  font-size:22px;
+}
+.lifetrack-confirmation-email div{display:grid;gap:3px;min-width:0}
+.lifetrack-confirmation-email small{
+  color:#708078;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.14em;
+}
+.lifetrack-confirmation-email strong{
+  font-size:clamp(14px,2vw,19px);
+  overflow-wrap:anywhere;
+}
+.lifetrack-confirmation-steps{
+  width:100%;
+  max-width:850px;
+  margin:0 0 28px;
+  padding:0;
+  list-style:none;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+  text-align:left;
+}
+.lifetrack-confirmation-steps li{
+  min-height:112px;
+  padding:17px;
+  border:1px solid #e0e6e1;
+  border-radius:16px;
+  background:#fbfcfa;
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr);
+  gap:11px;
+  align-items:start;
+}
+.lifetrack-confirmation-steps li>span{
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:#e1eee6;
+  color:var(--green);
+  font-size:13px;
+  font-weight:800;
+}
+.lifetrack-confirmation-steps p{margin:2px 0 0;display:grid;gap:6px}
+.lifetrack-confirmation-steps b{font-size:13px}
+.lifetrack-confirmation-steps small{color:#7d8782;font-size:11px;line-height:1.45}
+.lifetrack-confirmation-actions{
+  width:min(680px,100%);
+  display:grid;
+  grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);
+  gap:10px;
+}
+.lifetrack-confirmation-primary,
+.lifetrack-confirmation-secondary{
+  min-height:58px;
+  border-radius:14px;
+  padding:15px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:14px;
+  font-weight:800;
+  text-decoration:none;
+  cursor:pointer;
+}
+.lifetrack-confirmation-primary{
+  border:0;
+  background:var(--green);
+  color:#fff;
+  box-shadow:0 12px 28px #215c4628;
+}
+.lifetrack-confirmation-primary b{font-size:23px}
+.lifetrack-confirmation-secondary{
+  border:1px solid #cfd9d2;
+  background:#fff;
+  color:var(--green);
+  justify-content:center;
+}
+.lifetrack-confirmation-link{
+  grid-column:1/-1;
+  justify-self:center;
+  border:0;
+  background:transparent;
+  color:#64716b;
+  padding:8px 12px;
+  font-size:12px;
+  font-weight:700;
+  text-decoration:underline;
+  text-underline-offset:4px;
+  cursor:pointer;
+}
+.lifetrack-confirmation-note{
+  margin:10px 0 0;
+  color:#8a938e;
+  font-size:11px;
+  line-height:1.45;
+}
+
+@media(max-width:900px){
+  .lifetrack-confirmation-shell{min-height:calc(100dvh - 76px);padding:18px}
+  .lifetrack-confirmation-card{min-height:calc(100dvh - 112px);border-radius:25px;padding:38px 24px}
+  .lifetrack-confirmation-card:before{display:none}
+  .lifetrack-confirmation-icon{width:82px;height:82px;border-radius:24px;font-size:36px}
+  .lifetrack-confirmation-card h1{font-size:clamp(46px,11vw,64px)}
+  .lifetrack-confirmation-steps{grid-template-columns:1fr;max-width:680px}
+  .lifetrack-confirmation-steps li{min-height:0}
+}
+@media(max-width:560px){
+  .lifetrack-confirmation-shell{padding:10px}
+  .lifetrack-confirmation-card{padding:32px 18px;border-radius:21px}
+  .lifetrack-confirmation-copy{font-size:15px}
+  .lifetrack-confirmation-email{margin:22px 0;padding:14px}
+  .lifetrack-confirmation-actions{grid-template-columns:1fr}
+  .lifetrack-confirmation-primary,.lifetrack-confirmation-secondary{grid-column:1}
+  .lifetrack-confirmation-link{grid-column:1}
+}
