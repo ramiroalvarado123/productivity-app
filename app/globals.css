@@ -1352,3 +1352,26 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .lifetrack-confirmation-primary,.lifetrack-confirmation-secondary{grid-column:1}
   .lifetrack-confirmation-link{grid-column:1}
 }
+
+
+/* Inicio de sesión como acción principal */
+.lifetrack-email-button.is-primary{
+  border-color:var(--green);
+  background:var(--green);
+  color:#fff;
+  box-shadow:0 12px 28px #215c4628;
+}
+.lifetrack-email-button.is-primary:hover{
+  background:#194d3a;
+  border-color:#194d3a;
+  transform:translateY(-1px);
+}
+.lifetrack-email-button.is-primary:focus-visible{
+  outline:3px solid #b8dc76;
+  outline-offset:3px;
+}
+.lifetrack-email-button.is-primary:disabled{
+  opacity:.68;
+  transform:none;
+  cursor:wait;
+}
