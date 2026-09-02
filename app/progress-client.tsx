@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { CSSProperties, FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
 import { quoteForDate } from "./lib/quotes";
@@ -242,14 +243,14 @@ function LockedFeature({ title, note, onOpen, children }: { title: string; note:
 function SavedBookCover({ book }: { book: Book }) {
   const [imageFailed, setImageFailed] = useState(false);
   if (book.coverUrl && !imageFailed) {
-    return <div className="book-cover book-cover-original"><img src={book.coverUrl} alt={`Portada de ${book.title}`} onError={() => setImageFailed(true)} /></div>;
+    return <div className="book-cover book-cover-original"><Image src={book.coverUrl} alt={`Portada de ${book.title}`} width={70} height={98} unoptimized onError={() => setImageFailed(true)} /></div>;
   }
   return <div className="book-cover"><small>{book.author || "MI LIBRO"}</small><b>{book.title}</b></div>;
 }
 
 function CatalogBookCover({ book, compact = false }: { book: BookSuggestion; compact?: boolean }) {
   const [imageFailed, setImageFailed] = useState(false);
-  if (book.coverUrl && !imageFailed) return <img src={book.coverUrl} alt={compact ? "" : `Portada de ${book.title}`} loading="lazy" onError={() => setImageFailed(true)} />;
+  if (book.coverUrl && !imageFailed) return <Image src={book.coverUrl} alt={compact ? "" : `Portada de ${book.title}`} width={compact ? 35 : 96} height={compact ? 48 : 145} unoptimized onError={() => setImageFailed(true)} />;
   if (compact) return <span className="mini-book-placeholder">▱</span>;
   return <div className="result-book-placeholder"><span>▱</span><small>SIN PORTADA</small></div>;
 }
@@ -263,7 +264,11 @@ const emptyData = (user: User, monthKey: string): ProgressData => ({
 
 async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
-  if (!text.trim()) throw new Error("El servidor no devolvió una respuesta. Recargá la página e intentá nuevamente.");
+  if (!text.trim()) {
+    if (response.status === 401) throw new Error("Tu sesión venció. Volvé a iniciar sesión.");
+    if (response.status === 413) throw new Error("El archivo es demasiado pesado. Probá nuevamente con uno más chico.");
+    throw new Error("El servidor no devolvió una respuesta. Recargá la página e intentá nuevamente.");
+  }
   try {
     return JSON.parse(text) as T;
   } catch {
@@ -271,15 +276,15 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 }
 
-export default function ProgressClient({ initialUser }: { initialUser: User }) {
+export default function ProgressClient({ initialUser, initialError = "" }: { initialUser: User; initialError?: string }) {
   const [today] = useState(argentinaDate);
   const monthKey = today.slice(0, 7);
   const week = useMemo(() => weekFor(today), [today]);
   const [data, setData] = useState<ProgressData>(() => emptyData(initialUser, monthKey));
   const [section, setSection] = useState<Section>("summary");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialUser.onboardingCompleted);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [onboardingStep, setOnboardingStep] = useState<1 | 2>(1);
   const [onboardingName, setOnboardingName] = useState(initialUser.displayName);
   const [onboardingGoals, setOnboardingGoals] = useState<string[]>([]);
@@ -397,13 +402,8 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     }
   }, [today, week, monthKey]);
   // Initial synchronization with the signed-in user's persisted workspace.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    if (!initialUser.onboardingCompleted) {
-      setLoading(false);
-      return;
-    }
-    void loadData();
+    if (initialUser.onboardingCompleted) void loadData();
   }, [loadData, initialUser.onboardingCompleted]);
   // El plan del día marca "ahora" y no ofrece horarios que ya pasaron.
   useEffect(() => {
@@ -420,7 +420,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
       setBookSuggestLoading(true);
       try {
         const response = await fetch(`/api/book-search?q=${encodeURIComponent(title)}&limit=6`, { signal: controller.signal });
-        const result = await response.json() as { books?: BookSuggestion[]; error?: string };
+        const result = await readJson<{ books?: BookSuggestion[]; error?: string }>(response);
         if (!response.ok) throw new Error(result.error || "No pudimos buscar libros.");
         setBookSuggestions(result.books ?? []);
       } catch (caught) {
@@ -687,7 +687,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
         try {
           const query = [bookDraft.title, bookDraft.author].filter(Boolean).join(" ");
           const response = await fetch(`/api/book-search?q=${encodeURIComponent(query)}&limit=8`);
-          const result = await response.json() as { books?: BookSuggestion[] };
+          const result = await readJson<{ books?: BookSuggestion[] }>(response);
           const normalizedTitle = normalizeBookText(bookDraft.title);
           const normalizedAuthor = normalizeBookText(bookDraft.author);
           const match = result.books?.find((book) => normalizeBookText(book.title) === normalizedTitle && (!normalizedAuthor || normalizeBookText(book.author).includes(normalizedAuthor) || normalizedAuthor.includes(normalizeBookText(book.author))));
@@ -720,7 +720,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     setDiscoverResults([]);
     try {
       const response = await fetch(`/api/book-search?q=${encodeURIComponent(discoverQuery.trim())}&language=${discoverLanguage}&mode=discover&limit=8`);
-      const result = await response.json() as { books?: BookSuggestion[]; error?: string };
+      const result = await readJson<{ books?: BookSuggestion[]; error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "No pudimos buscar recomendaciones.");
       setDiscoverResults(result.books ?? []);
     } catch (caught) {
@@ -744,7 +744,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
       form.append("audio", new File([blob], "cierre-del-dia." + extension, { type: mimeType || "audio/webm" }));
       form.append("date", today);
       const response = await fetch("/api/voice-checkin", { method: "POST", body: form });
-      const result = await response.json().catch(() => ({ error: response.status === 413 ? "La grabación quedó demasiado pesada. Probá nuevamente y la aplicación la comprimirá automáticamente." : "El servidor no pudo leer la grabación. Intentá nuevamente." })) as { checkin?: VoiceCheckin; error?: string };
+      const result = await readJson<{ checkin?: VoiceCheckin; error?: string }>(response);
       if (!response.ok || !result.checkin) throw new Error(result.error || "No pudimos interpretar la grabación.");
       setVoiceResult(result.checkin);
     } catch (caught) {
@@ -824,7 +824,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
       form.append("description", aiDescription.trim());
       if (mealPhoto) form.append("image", mealPhoto);
       const response = await fetch("/api/estimate-calories", { method: "POST", body: form });
-      const result = await response.json() as { estimate?: MealEstimate; error?: string };
+      const result = await readJson<{ estimate?: MealEstimate; error?: string }>(response);
       if (!response.ok || !result.estimate) throw new Error(result.error || "No se pudo estimar la comida.");
       setEstimate(result.estimate);
     } catch (caught) {
@@ -855,7 +855,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
     setError("");
     try {
       const response = await fetch("/api/diet-plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dietForm) });
-      const result = await response.json() as { plan?: DietPlanContent; error?: string };
+      const result = await readJson<{ plan?: DietPlanContent; error?: string }>(response);
       if (!response.ok || !result.plan) throw new Error(result.error || "No pudimos crear el plan.");
       setGeneratedDietPlan(result.plan);
       setDietForm((current) => ({ ...current, details: "" }));
@@ -883,7 +883,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
       const form = new FormData();
       form.append("audio", new File([blob], "preferencias." + extension, { type: mimeType || "audio/webm" }));
       const response = await fetch("/api/diet-intake", { method: "POST", body: form });
-      const result = await response.json().catch(() => ({ error: response.status === 413 ? "La grabación quedó demasiado pesada. Probá nuevamente y la aplicación la comprimirá automáticamente." : "El servidor no pudo leer la grabación." })) as { transcript?: string; error?: string };
+      const result = await readJson<{ transcript?: string; error?: string }>(response);
       if (!response.ok || !result.transcript) throw new Error(result.error || "No pudimos interpretar el audio.");
       setDietForm((current) => ({ ...current, details: [current.details, result.transcript].filter(Boolean).join(current.details ? ". " : "") }));
     } catch (caught) {
@@ -1612,7 +1612,7 @@ export default function ProgressClient({ initialUser }: { initialUser: User }) {
   };
 
   const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE HOY</p><h2>Comidas</h2></div><button className="add-button light" onClick={() => setMealForm(!mealForm)}>＋ Carga manual</button></div>
-    {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><img src={photoPreview} alt="Comida a analizar" /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
+    {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><Image src={photoPreview} alt="Comida a analizar" width={38} height={38} unoptimized /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
       {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" onClick={() => void saveEstimate()}>Confirmar y guardar</button></div>}
     </div> : <LockedFeature
       title="Calorías con IA"
