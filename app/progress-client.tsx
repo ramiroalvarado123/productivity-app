@@ -403,7 +403,9 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
   }, [today, week, monthKey]);
   // Initial synchronization with the signed-in user's persisted workspace.
   useEffect(() => {
-    if (initialUser.onboardingCompleted) void loadData();
+    if (!initialUser.onboardingCompleted) return;
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadData, initialUser.onboardingCompleted]);
   // El plan del día marca "ahora" y no ofrece horarios que ya pasaron.
   useEffect(() => {
