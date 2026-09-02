@@ -32,14 +32,6 @@ export async function POST(request: Request) {
       return NextResponse.redirect(new URL("/?onboarding_error=invalid", request.url), 303);
     }
 
-    const metadataSaved = await updateChatGPTUserMetadata({
-      displayName,
-      onboardingCompleted: true,
-      mainGoals,
-      usagePreferences,
-    });
-    if (!metadataSaved) return NextResponse.redirect(new URL("/?onboarding_error=session", request.url), 303);
-
     const now = new Date().toISOString();
     await insertRows("profiles", {
       email: user.email,
@@ -62,6 +54,14 @@ export async function POST(request: Request) {
       goalsWeight: weight("goals"),
       updatedAt: now,
     }, { upsert: true, onConflict: ["userEmail", "monthKey"] });
+
+    const metadataSaved = await updateChatGPTUserMetadata({
+      displayName,
+      onboardingCompleted: true,
+      mainGoals,
+      usagePreferences,
+    });
+    if (!metadataSaved) console.warn("onboarding: profile saved but auth metadata could not be synchronized");
 
     return NextResponse.redirect(new URL("/", request.url), 303);
   } catch (error) {
