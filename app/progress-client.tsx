@@ -282,6 +282,7 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
   const week = useMemo(() => weekFor(today), [today]);
   const [data, setData] = useState<ProgressData>(() => emptyData(initialUser, monthKey));
   const [section, setSection] = useState<Section>("summary");
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(initialUser.onboardingCompleted);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(initialError);
@@ -1882,7 +1883,26 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">A</span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-chip"><span>{displayName.charAt(0)}</span><div><b>{displayName}</b><small>Datos guardados</small></div><a href="/signout-with-chatgpt?return_to=/" title="Cerrar sesión">↗</a></div></aside>
+    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">A</span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu">
+          {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">
+            <p>CUENTA</p>
+            <a className="profile-menu-signout" href="/signout-with-chatgpt?return_to=/" role="menuitem">
+              <span aria-hidden="true">↪</span>
+              Cerrar sesión
+            </a>
+          </div>}
+          <button
+            type="button"
+            className="profile-chip profile-chip-button"
+            onClick={() => setProfileMenuOpen((open) => !open)}
+            aria-expanded={profileMenuOpen}
+            aria-haspopup="menu"
+          >
+            <span>{displayName.charAt(0)}</span>
+            <div><b>{displayName}</b><small>Datos guardados</small></div>
+            <i className="profile-menu-chevron" aria-hidden="true">{profileMenuOpen ? "⌄" : "⌃"}</i>
+          </button>
+        </div></aside>
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div></header>
       {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
