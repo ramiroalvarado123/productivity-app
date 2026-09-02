@@ -1,38 +1,34 @@
 import type { Metadata } from "next";
+import { Instrument_Sans, Newsreader } from "next/font/google";
 import "./globals.css";
 
+const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument-sans", display: "swap" });
+const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-newsreader", display: "swap" });
+const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://productivity-app-git-feat-vercel-supabase-c7675b-ralvarado-3362.vercel.app");
+
 export const metadata: Metadata = {
+  metadataBase: siteUrl,
   title: "AVORA",
   description: "Todo tu progreso en un solo lugar.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
   openGraph: {
     title: "AVORA",
     description: "Todo tu progreso en un solo lugar.",
-    url: "https://mi-progreso.ralvarado377764.chatgpt.site",
+    url: "/",
     siteName: "AVORA",
-    images: [{ url: "https://mi-progreso.ralvarado377764.chatgpt.site/og.png", width: 1200, height: 630, alt: "AVORA — Todo tu progreso en un solo lugar." }],
     locale: "es_AR",
     type: "website",
   },
   twitter: {
-    card: "summary_large_image",
+    card: "summary",
     title: "AVORA",
     description: "Todo tu progreso en un solo lugar.",
-    images: ["https://mi-progreso.ralvarado377764.chatgpt.site/og.png"],
   },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..600&display=swap"
-        />
-      </head>
+    <html lang="es" className={`${instrumentSans.variable} ${newsreader.variable}`}>
       <body>{children}</body>
     </html>
   );
