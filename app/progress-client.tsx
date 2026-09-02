@@ -1900,7 +1900,7 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
           >
             <span>{displayName.charAt(0)}</span>
             <div><b>{displayName}</b><small>Datos guardados</small></div>
-            <i className="profile-menu-chevron" aria-hidden="true">{profileMenuOpen ? "⌄" : "⌃"}</i>
+            <i className="profile-menu-chevron" aria-hidden="true">{profileMenuOpen ? "▾" : "▴"}</i>
           </button>
         </div></aside>
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div></header>
