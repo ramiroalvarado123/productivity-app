@@ -1139,7 +1139,6 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 /* Iconografía de navegación y formularios específicos por disciplina. */
 .nav-item .nav-icon,.mobile-nav .nav-icon{display:grid;place-items:center;flex:0 0 auto}
 .nav-item .nav-icon svg,.mobile-nav .nav-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.sidebar .nav-icon .physical-icon{stroke:#fff}
 .mobile-nav .nav-icon svg{width:17px;height:17px}
 .training-detail-grid.single-session{grid-template-columns:minmax(0,1fr)}
 .training-detail-grid.single-session>article{max-width:760px}
