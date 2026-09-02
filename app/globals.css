@@ -1375,3 +1375,100 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   transform:none;
   cursor:wait;
 }
+
+
+/* Menú seguro de cuenta en la barra lateral */
+.profile-menu{
+  margin-top:auto;
+  position:relative;
+}
+.profile-menu .profile-chip{
+  margin-top:0;
+}
+.profile-chip-button{
+  width:100%;
+  border:0;
+  border-top:1px solid #ffffff1f;
+  background:transparent;
+  color:#fff;
+  text-align:left;
+  cursor:pointer;
+  padding-right:5px;
+  transition:background .16s ease;
+}
+.profile-chip-button:hover,
+.profile-chip-button[aria-expanded="true"]{
+  background:#ffffff0a;
+}
+.profile-chip-button:focus-visible{
+  outline:2px solid var(--lime);
+  outline-offset:4px;
+}
+.profile-menu-chevron{
+  width:28px;
+  height:28px;
+  border-radius:9px;
+  display:grid;
+  place-items:center;
+  color:#b5c7be;
+  font-size:15px;
+  font-style:normal;
+  background:#ffffff0a;
+}
+.profile-menu-panel{
+  position:absolute;
+  z-index:8;
+  left:0;
+  right:0;
+  bottom:78px;
+  padding:10px;
+  border:1px solid #ead9d7;
+  border-radius:15px;
+  background:#fff;
+  color:var(--ink);
+  box-shadow:0 18px 45px #071d1538;
+}
+.profile-menu-panel:after{
+  content:"";
+  position:absolute;
+  right:16px;
+  bottom:-6px;
+  width:11px;
+  height:11px;
+  border-right:1px solid #ead9d7;
+  border-bottom:1px solid #ead9d7;
+  background:#fff;
+  transform:rotate(45deg);
+}
+.profile-menu-panel>p{
+  margin:2px 5px 8px;
+  color:#929b96;
+  font-size:8px;
+  font-weight:800;
+  letter-spacing:.15em;
+}
+.profile-menu-signout{
+  min-height:44px;
+  border-radius:10px;
+  padding:11px 12px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  background:#fff1f0;
+  color:#b42318;
+  font-size:12px;
+  font-weight:800;
+  text-decoration:none;
+  transition:background .16s ease,color .16s ease;
+}
+.profile-menu-signout:hover{
+  background:#b42318;
+  color:#fff;
+}
+.profile-menu-signout:focus-visible{
+  outline:3px solid #f2b8b5;
+  outline-offset:2px;
+}
+.profile-menu-signout span{
+  font-size:17px;
+}
