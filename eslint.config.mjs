@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Restos del build de Vite anterior a la migración: no son código fuente.
+    "dist/**",
   ]),
 ]);
 
