@@ -5,7 +5,7 @@ import { SUPABASE_URL } from "./lib/supabase-auth";
 
 type Mode = "login" | "signup" | "recover";
 
-export default function AuthPanel() {
+export default function AuthPanel({ notice = "" }: { notice?: string }) {
   const [mode, setMode] = useState<Mode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -145,6 +145,7 @@ export default function AuthPanel() {
           </div>
 
           <div className="lifetrack-access-form">
+            {notice && <p className="lifetrack-access-notice">{notice}</p>}
             <p className="step-label">{mode === "signup" ? "CREAR CUENTA" : mode === "recover" ? "RECUPERAR ACCESO" : "EMPECEMOS"}</p>
             <h2>{mode === "signup" ? "Creá tu cuenta." : mode === "recover" ? "Recuperá tu cuenta." : "Ingresá a AVORA."}</h2>
             {mode !== "recover" && <button className="lifetrack-google-button" type="button" onClick={google}><span>G</span>Continuar con Google <b>→</b></button>}

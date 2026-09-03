@@ -20,3 +20,22 @@ export async function clearSessionCookies() {
   store.set(ACCESS_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: 0 });
   store.set(REFRESH_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: 0 });
 }
+
+/**
+ * Cuando alguien abre un link de invitación sin estar logueado, el código
+ * espera acá hasta que termine de entrar. Sobrevive al login porque el flujo
+ * de Supabase sólo toca las cookies de sesión.
+ */
+export const INVITE_COOKIE = "avora_pending_invite";
+
+export async function setPendingInvite(code: string) {
+  (await cookies()).set(INVITE_COOKIE, code, { ...COOKIE_OPTIONS, maxAge: 60 * 30 });
+}
+
+export async function readPendingInvite() {
+  return (await cookies()).get(INVITE_COOKIE)?.value ?? "";
+}
+
+export async function clearPendingInvite() {
+  (await cookies()).set(INVITE_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: 0 });
+}

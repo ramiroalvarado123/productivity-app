@@ -1471,3 +1471,122 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .profile-menu-signout span{
   font-size:17px;
 }
+
+/* Amigos: invitaciones reales, círculo y grupos */
+.lifetrack-access-notice{background:#e7f2ec;border:1px solid #cfe3d7;color:#215c46;border-radius:12px;padding:11px 13px;font-size:11px;line-height:1.45;margin:0 0 16px}
+.friends-empty{background:#f4f6f2;border:1px dashed #cfd8d0;border-radius:16px;padding:26px;text-align:center;color:#78817c;font-size:11px;line-height:1.6;margin:0}
+.invite-panel .panel-heading{margin-bottom:14px}
+.invite-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}
+.invite-form label{display:grid;gap:6px;font-size:10px;font-weight:600}
+.invite-form label small{color:#8b938f;font-weight:500}
+.invite-form input{border:1px solid #dce1da;background:#fff;border-radius:11px;padding:11px 12px;font-size:11px;outline:none;transition:.2s}
+.invite-form input:focus{border-color:#68a084;box-shadow:0 0 0 4px #3675561a}
+.invite-form button{border:0;border-radius:11px;background:var(--green);color:#fff;padding:12px 16px;font-size:10px;font-weight:700;cursor:pointer;display:flex;gap:8px;align-items:center;white-space:nowrap}
+.invite-form button:disabled{opacity:.55;cursor:progress}
+.invite-hint{display:block;margin-top:9px;font-size:9px;color:#8b938f;line-height:1.5}
+.invite-share{margin-top:14px;background:#f4f6f2;border:1px solid #e2e8e1;border-radius:13px;padding:13px}
+.invite-share p{margin:0;display:grid;gap:5px}
+.invite-share small{font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700}
+.invite-share code{font-size:10px;color:var(--green);word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.invite-share-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+.invite-share-actions button,.invite-share-actions a{border:1px solid #cfdcd4;background:#fff;color:var(--green);border-radius:9px;padding:8px 12px;font-size:9px;font-weight:700;cursor:pointer;text-decoration:none}
+.invite-share-actions button:hover,.invite-share-actions a:hover{background:#edf3ef}
+.invite-inbox .panel-heading{margin-bottom:14px}
+.invite-list{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.invite-list li{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:11px;align-items:center;border:1px solid #e3e8e3;border-radius:13px;padding:11px 13px}
+.invite-list p{display:grid;gap:3px;margin:0;min-width:0}
+.invite-list b{font-size:11px}
+.invite-list small{font-size:8px;color:#87908b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.invite-list li>div{display:flex;gap:6px}
+.invite-list li>div button{border:0;border-radius:9px;padding:8px 11px;font-size:9px;font-weight:700;cursor:pointer;background:#edf3ef;color:var(--green)}
+.invite-accept{background:var(--green)!important;color:#fff!important}
+.invite-decline{background:#fdeeea!important;color:#a4503a!important}
+.invite-list li>div button:disabled{opacity:.55;cursor:progress}
+.friend-score-card.is-me{border-color:#cfe3d7;background:#f7fbf8}
+.friend-score-card.is-stale .friend-score-ring{opacity:.55}
+.friend-score-head>button{font-size:15px;line-height:1}
+.friend-streak-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center;border-top:1px solid #edf0eb;padding-top:11px}
+.friend-streak-bar small{font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700}
+.friend-streak-bar i{display:block;height:5px;background:#edf0ec;border-radius:99px;position:relative}
+.friend-streak-bar i:after{content:"";position:absolute;inset:0;background:var(--green);border-radius:99px}
+.friend-streak-bar b{font-size:11px;color:var(--green)}
+.accountability-add.is-inline{width:auto;margin:0;padding:9px 13px}
+.group-actions .panel-heading{align-items:center;margin-bottom:14px}
+.group-form,.group-join{display:grid;gap:9px;background:#f4f6f2;border:1px solid #e2e8e1;border-radius:13px;padding:13px;margin-top:11px}
+.group-join{grid-template-columns:minmax(0,1fr) auto;align-items:end}
+.group-form label,.group-join label{display:grid;gap:6px;font-size:10px;font-weight:600}
+.group-form label small,.group-join label small{color:#8b938f;font-weight:500}
+.group-form input,.group-join input{border:1px solid #dce1da;background:#fff;border-radius:10px;padding:10px 11px;font-size:11px;outline:none}
+.group-form input:focus,.group-join input:focus{border-color:#68a084}
+.group-form button[type=submit],.group-join button{border:0;border-radius:10px;background:var(--green);color:#fff;padding:11px 15px;font-size:10px;font-weight:700;cursor:pointer;justify-self:start;display:flex;gap:8px;align-items:center}
+.group-join button{justify-self:auto}
+.group-form button:disabled,.group-join button:disabled{opacity:.55}
+.group-accents{display:flex;gap:7px}
+.group-accent{width:26px;height:26px;border-radius:9px;border:2px solid transparent;cursor:pointer}
+.group-accent.mint{background:var(--mint)}.group-accent.violet{background:var(--violet)}.group-accent.coral{background:var(--coral)}
+.group-accent.is-on{border-color:var(--green)}
+.group-card{padding:19px;border-left:4px solid var(--mint)}
+.group-card.violet{border-left-color:var(--violet)}.group-card.coral{border-left-color:var(--coral)}
+.group-card-head{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;margin-bottom:15px}
+.group-card-head p{margin:0;font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700;text-transform:uppercase}
+.group-card-head h3{margin:5px 0 0;font-family:var(--font-serif);font-size:21px;font-weight:500}
+.group-member-stack{display:flex}
+.group-member-stack span{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--mint);color:#285d47;border:2px solid #fff;font-size:9px;font-weight:700;margin-left:-8px}
+.group-member-stack span:first-child{margin-left:0}
+.group-member-stack span.violet{background:var(--violet);color:#62578b}.group-member-stack span.coral{background:var(--coral);color:#91543f}
+.group-toggle{border:1px solid #cfdcd4;background:#fff;color:var(--green);border-radius:9px;padding:8px 12px;font-size:9px;font-weight:700;cursor:pointer}
+.group-goal-list{list-style:none;margin:0;padding:0;display:grid;gap:11px}
+.group-goal-list>li{border:1px solid #e3e8e3;border-radius:13px;padding:13px}
+.group-goal-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:9px}
+.group-goal-head small{font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700}
+.group-goal-head b{display:block;font-size:12px;margin-top:4px}
+.group-goal-head p{margin:0;display:grid;gap:2px;text-align:right;white-space:nowrap}
+.group-goal-head strong{font-size:15px}
+.group-goal-head p small{color:#87908b;letter-spacing:0;font-weight:500;font-size:8px}
+.group-goal-empty{border:1px dashed #cfd8d0!important;color:#8b938f;font-size:10px;text-align:center}
+.group-goal-contributions{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:7px}
+.group-goal-contributions li{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:9px;align-items:center}
+.group-goal-contributions .friend-avatar{width:26px;height:26px;border-radius:9px;font-size:9px}
+.group-goal-contributions b{font-size:10px;font-weight:600}
+.group-goal-contributions small{font-size:9px;color:#87908b}
+.group-goal-mine{display:flex;align-items:center;gap:9px;margin-top:12px;border-top:1px solid #edf0eb;padding-top:11px}
+.group-goal-mine span{font-size:9px;color:#87908b;font-weight:600;margin-right:auto}
+.group-goal-mine button{width:27px;height:27px;border:0;border-radius:8px;background:#eff2ed;color:var(--green);font-weight:700;cursor:pointer}
+.group-goal-mine button:disabled{opacity:.4}
+.group-goal-mine b{font-size:14px;min-width:22px;text-align:center}
+.group-goal-drop{width:auto!important;padding:0 10px;background:#fdeeea!important;color:#a4503a!important;font-size:9px}
+.group-panel{margin-top:15px;border-top:1px solid #edf0eb;padding-top:15px;display:grid;gap:15px}
+.group-goal-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;align-items:end;background:#f4f6f2;border:1px solid #e2e8e1;border-radius:13px;padding:13px}
+.group-goal-form label{display:grid;gap:6px;font-size:9px;font-weight:600}
+.group-goal-form label.wide{grid-column:1/-1}
+.group-goal-form input,.group-goal-form select{border:1px solid #dce1da;background:#fff;border-radius:10px;padding:9px 10px;font-size:10px;outline:none;min-width:0}
+.group-goal-form input:focus,.group-goal-form select:focus{border-color:#68a084}
+.group-goal-form button{border:0;border-radius:10px;background:var(--green);color:#fff;padding:10px 14px;font-size:10px;font-weight:700;cursor:pointer}
+.group-goal-form button:disabled{opacity:.55}
+.group-members-panel{display:grid;gap:11px}
+.group-members-panel ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.group-members-panel li{display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;gap:9px;align-items:center}
+.group-members-panel .friend-avatar{width:30px;height:30px;border-radius:10px;font-size:10px}
+.group-members-panel b{font-size:11px}
+.group-members-panel li small{font-size:8px;color:#87908b}
+.group-members-panel li button{border:0;background:#fdeeea;color:#a4503a;border-radius:8px;padding:6px 10px;font-size:8px;font-weight:700;cursor:pointer}
+.group-add-member{display:grid;gap:7px}
+.group-add-member>span{font-size:9px;color:#87908b;font-weight:600}
+.group-add-member>div{display:flex;flex-wrap:wrap;gap:6px}
+.group-add-member button{border:1px dashed #bfcfc5;background:#f8faf7;color:var(--green);border-radius:9px;padding:7px 11px;font-size:9px;font-weight:700;cursor:pointer}
+.group-code{display:flex;justify-content:space-between;align-items:center;gap:11px;background:#f4f6f2;border:1px solid #e2e8e1;border-radius:11px;padding:11px 13px}
+.group-code p{margin:0;display:grid;gap:4px;min-width:0}
+.group-code small{font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700}
+.group-code code{font-size:10px;color:var(--green);word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.group-code button{border:1px solid #cfdcd4;background:#fff;color:var(--green);border-radius:9px;padding:8px 12px;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap}
+.group-danger button{border:1px solid #f0d7cf;background:#fdeeea;color:#a4503a;border-radius:9px;padding:9px 13px;font-size:9px;font-weight:700;cursor:pointer}
+@media(max-width:760px){
+  .invite-form,.group-join{grid-template-columns:1fr}
+  .group-goal-form{grid-template-columns:1fr 1fr}
+  .group-card-head{grid-template-columns:minmax(0,1fr) auto;row-gap:9px}
+  .group-member-stack{grid-column:1/-1}
+  .invite-list li{grid-template-columns:34px minmax(0,1fr);row-gap:9px}
+  .invite-list li>div{grid-column:1/-1}
+  .group-members-panel li{grid-template-columns:30px minmax(0,1fr) auto}
+  .group-members-panel li small{display:none}
+}

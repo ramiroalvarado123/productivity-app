@@ -3,6 +3,7 @@ import AuthPanel from "./auth-panel";
 import NewUserPreview from "./new-user-preview";
 import ProgressClient from "./progress-client";
 import { selectRows } from "./lib/supabase-db";
+import { readPendingInvite } from "./lib/auth-cookies";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,13 @@ const onboardingErrors: Record<string, string> = {
   save: "No pudimos guardar tus prioridades. Intentá nuevamente.",
 };
 
-export default async function Home({ searchParams }: { searchParams?: Promise<{ demo?: string; onboarding_error?: string }> }) {
+const inviteNotices: Record<string, string> = {
+  pending: "Iniciá sesión o creá tu cuenta y sumamos a tu amigo apenas entres.",
+  ok: "",
+  error: "",
+};
+
+export default async function Home({ searchParams }: { searchParams?: Promise<{ demo?: string; onboarding_error?: string; invite?: string }> }) {
   const params = searchParams ? await searchParams : {};
   if (params.demo === "new-user") return <NewUserPreview />;
 
@@ -42,7 +49,10 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
       console.error("home profile", error);
     }
     const persistedOnboarding = profile?.onboardingCompleted === true;
-    return <ProgressClient initialUser={{
+    // Un link de invitación abierto sin sesión deja el código esperando en una
+    // cookie: el cliente lo canjea apenas monta y la ruta lo borra.
+    const pendingInvite = await readPendingInvite();
+    return <ProgressClient pendingInviteCode={pendingInvite} inviteResult={params.invite === "ok" ? "ok" : params.invite === "error" ? "error" : ""} initialUser={{
       displayName: profile?.displayName || user.displayName,
       email: user.email,
       onboardingCompleted: persistedOnboarding || user.onboardingCompleted,
@@ -52,5 +62,5 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
       proSince: profile?.proSince ?? "",
     }} initialError={params.onboarding_error ? onboardingErrors[params.onboarding_error] : undefined} />;
   }
-  return <AuthPanel />;
+  return <AuthPanel notice={params.invite ? inviteNotices[params.invite] ?? "" : ""} />;
 }

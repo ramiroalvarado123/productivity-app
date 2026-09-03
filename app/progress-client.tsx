@@ -9,6 +9,11 @@ import { dayBlocks, dayWindow, freeSlots, overlappingBlocks, unscheduledTasks, t
 import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, type DayRecord, type ScoreWeights } from "./lib/score";
+import {
+  GOAL_METRICS, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalTotal, initialsFor,
+  inviteMessage, isFresh, mailLink, metricUnit, shareStatus, whatsappLink,
+  type GoalMetric, type GroupAccent, type GroupGoal, type SocialData,
+} from "./lib/social";
 
 type User = { displayName: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string };
 type Meal = { id: number; name: string; detail: string; calories: number; protein: number; carbs: number; fat: number; mealDate: string };
@@ -276,7 +281,14 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 }
 
-export default function ProgressClient({ initialUser, initialError = "" }: { initialUser: User; initialError?: string }) {
+export default function ProgressClient({ initialUser, initialError = "", pendingInviteCode = "", inviteResult = "" }: {
+  initialUser: User;
+  initialError?: string;
+  /** Código guardado al abrir un link de invitación sin sesión. */
+  pendingInviteCode?: string;
+  /** Resultado de un link abierto ya con sesión, para avisar sin recargar. */
+  inviteResult?: "" | "ok" | "error";
+}) {
   const [today] = useState(argentinaDate);
   const monthKey = today.slice(0, 7);
   const week = useMemo(() => weekFor(today), [today]);
@@ -301,7 +313,22 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutPlan, setCheckoutPlan] = useState<"monthly" | "annual">("annual");
   const [checkoutStep, setCheckoutStep] = useState<"form" | "processing" | "done">("form");
-  const [friendsNotice, setFriendsNotice] = useState("");
+  const [friendsNotice, setFriendsNotice] = useState(
+    inviteResult === "ok" ? "¡Listo! Ya son amigos: van a ver el Daily Score del otro." :
+    inviteResult === "error" ? "Esa invitación no se pudo usar: puede estar vencida, ya aceptada o ser para otra cuenta." : "",
+  );
+  const [social, setSocial] = useState<SocialData>(emptySocial);
+  const [friendsTab, setFriendsTab] = useState<"circle" | "groups">("circle");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [groupForm, setGroupForm] = useState(false);
+  const [groupDraft, setGroupDraft] = useState({ name: "", purpose: "", accent: "mint" as GroupAccent });
+  const [joinCode, setJoinCode] = useState("");
+  const [openGroupId, setOpenGroupId] = useState<number | null>(null);
+  const [goalDraft, setGoalDraft] = useState({ title: "", metric: "count" as GoalMetric, targetValue: 3, period: "weekly" as GroupGoal["period"], dueDate: "" });
+  const publishedShareRef = useRef("");
+  const pendingInviteRef = useRef(false);
   // Tildado optimista: la fila responde al toque y recién después se confirma
   // contra el servidor, así no hay medio segundo de pantalla muerta.
   const [pendingTasks, setPendingTasks] = useState<Record<number, boolean>>({});
@@ -465,6 +492,37 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Círculo social. Vive en su propio pedido: es la única parte de la app que
+  // lee filas de otras cuentas, y no tiene por qué demorar el resto del panel.
+  // ---------------------------------------------------------------------------
+  const loadSocial = useCallback(async () => {
+    try {
+      const response = await fetch("/api/friends", { cache: "no-store", credentials: "same-origin" });
+      const next = await readJson<SocialData & { error?: string }>(response);
+      if (!response.ok) throw new Error(next.error || "No pudimos cargar tu círculo.");
+      setSocial(next);
+    } catch (caught) {
+      setFriendsNotice(caught instanceof Error ? caught.message : "No pudimos cargar tu círculo.");
+    }
+  }, []);
+
+  const sendSocial = useCallback(async (payload: Record<string, unknown>) => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/friends", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
+      const result = await readJson<{ error?: string } & Record<string, unknown>>(response);
+      if (!response.ok) throw new Error(result.error || "No se pudo completar la acción.");
+      await loadSocial();
+      return result;
+    } catch (caught) {
+      setFriendsNotice(caught instanceof Error ? caught.message : "No se pudo completar la acción.");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }, [loadSocial]);
+
   const uniqueFocusSessions = useMemo(
     () => data.focusSessions.filter((item, index, rows) => rows.findIndex((candidate) => candidate.projectId === item.projectId && candidate.sessionDate === item.sessionDate) === index),
     [data.focusSessions],
@@ -582,6 +640,43 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
     sleep: streakFor(goodSleepDates, today),
     logging: streakFor(loggingDates, today),
   }), [trainingDates, readingDates, focusDates, goodSleepDates, loggingDates, today]);
+
+  // El círculo se carga una vez que la cuenta ya pasó el onboarding: antes no
+  // hay nada que mostrar y el pedido sólo agregaría ruido.
+  useEffect(() => {
+    if (!initialUser.onboardingCompleted) return;
+    void loadSocial();
+  }, [loadSocial, initialUser.onboardingCompleted]);
+
+  // Un link de invitación abierto sin sesión dejó el código esperando: se
+  // canjea solo, una sola vez, apenas la persona entra.
+  useEffect(() => {
+    if (!pendingInviteCode || pendingInviteRef.current) return;
+    pendingInviteRef.current = true;
+    void (async () => {
+      const result = await sendSocial({ action: "accept_invite", code: pendingInviteCode });
+      if (result) {
+        const name = String(result.friendName ?? "");
+        setFriendsNotice(name ? `Ya son amigos con ${name}.` : "¡Listo! Ya son amigos.");
+        setSection("friends");
+      }
+    })();
+  }, [pendingInviteCode, sendSocial]);
+
+  // La foto del día que ven los amigos: sólo el número y la racha, nunca los
+  // registros que lo componen. Se publica cuando cambia, no en cada render.
+  useEffect(() => {
+    if (!initialUser.onboardingCompleted || loading) return;
+    const signature = `${today}:${score}:${streaks.logging.current}:${streaks.logging.best}`;
+    if (publishedShareRef.current === signature) return;
+    publishedShareRef.current = signature;
+    void fetch("/api/friends", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "publish_share", shareDate: today, score, streak: streaks.logging.current, bestStreak: streaks.logging.best }),
+    }).catch(() => { publishedShareRef.current = ""; });
+  }, [initialUser.onboardingCompleted, loading, today, score, streaks]);
 
   // Sueño reciente contra la semana anterior, para detectar la caída.
   const sleepByDate = useMemo(
@@ -1773,45 +1868,271 @@ export default function ProgressClient({ initialUser, initialError = "" }: { ini
     </section>
   </div>;
 
-  const demoFriends = [
-    { name: "Tomi", initials: "T", score: 84, status: "Cerró su día", detail: "Entrenó y completó 3 tareas", tone: "mint" },
-    { name: "Sofi", initials: "S", score: 76, status: "En progreso", detail: "Le faltan sueño y lectura", tone: "violet" },
-    { name: "Nico", initials: "N", score: 91, status: "Cerró su día", detail: "Nueva mejor marca semanal", tone: "coral" },
-  ];
+  // ---------------------------------------------------------------------------
+  // Amigos y grupos
+  // ---------------------------------------------------------------------------
+  const myEmail = data.profile.email.toLowerCase();
+  const myStreak = streaks.logging;
+
+  async function inviteFriend(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setInviteCopied(false);
+    const result = await sendSocial({ action: "invite_friend", email: inviteEmail.trim() });
+    if (!result) return;
+    const link = String(result.link ?? "");
+    setInviteLink(link);
+    setFriendsNotice(inviteEmail.trim()
+      ? `Invitación lista para ${inviteEmail.trim()}. Si ya tiene cuenta le aparece adentro de AVORA; si no, mandale el link.`
+      : "Link listo. Compartilo con quien quieras sumar.");
+    setInviteEmail("");
+  }
+
+  async function copyInvite(link: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      setInviteCopied(true);
+    } catch {
+      setFriendsNotice("No pudimos copiar el link. Seleccionalo y copialo a mano.");
+    }
+  }
+
+  async function removeFriend(email: string, name: string) {
+    if (!window.confirm(`¿Sacar a ${name} de tu círculo? Dejan de ver el Daily Score del otro.`)) return;
+    if (await sendSocial({ action: "remove_friend", email })) setFriendsNotice(`${name} ya no está en tu círculo.`);
+  }
+
+  async function createGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const result = await sendSocial({ action: "create_group", ...groupDraft });
+    if (!result) return;
+    setGroupDraft({ name: "", purpose: "", accent: "mint" });
+    setGroupForm(false);
+    setOpenGroupId(Number(result.groupId) || null);
+    setFriendsNotice("Grupo creado. Sumá a tus amigos y fijen un objetivo en común.");
+  }
+
+  async function joinGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (await sendSocial({ action: "join_group", code: joinCode.trim() })) {
+      setJoinCode("");
+      setFriendsNotice("Entraste al grupo.");
+    }
+  }
+
+  async function addGroupGoal(event: FormEvent<HTMLFormElement>, groupId: number) {
+    event.preventDefault();
+    if (await sendSocial({ action: "add_group_goal", groupId, ...goalDraft })) {
+      setGoalDraft({ title: "", metric: "count", targetValue: 3, period: "weekly", dueDate: "" });
+      setFriendsNotice("Objetivo fijado. Cada uno carga su parte y el grupo ve el total.");
+    }
+  }
+
+  const inviteText = inviteMessage(data.profile.displayName, inviteLink);
+  const shareBox = inviteLink ? <div className="invite-share">
+    <p><small>LINK DE INVITACIÓN</small><code>{inviteLink}</code></p>
+    <div className="invite-share-actions">
+      <button type="button" onClick={() => void copyInvite(inviteLink)}>{inviteCopied ? "Copiado ✓" : "Copiar link"}</button>
+      <a href={whatsappLink(inviteText)} target="_blank" rel="noreferrer">WhatsApp</a>
+      <a href={mailLink(inviteText)}>Mail</a>
+    </div>
+  </div> : null;
+
+  const circleTab = <>
+    <article className="panel invite-panel">
+      <div className="panel-heading"><div><p>SUMAR GENTE</p><h2>Invitá a un amigo</h2></div></div>
+      <form className="invite-form" onSubmit={inviteFriend}>
+        <label><span>Email de tu amigo <small>(opcional)</small></span>
+          <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="amigo@email.com" />
+        </label>
+        <button type="submit" disabled={saving}>{inviteEmail.trim() ? "Enviar invitación" : "Generar link"} <span>→</span></button>
+      </form>
+      <small className="invite-hint">Con el email le llega la invitación dentro de AVORA. Sin email generás un link para mandar por WhatsApp o mail.</small>
+      {shareBox}
+    </article>
+
+    {social.incoming.length > 0 && <article className="panel invite-inbox">
+      <div className="panel-heading"><div><p>TE INVITARON</p><h2>{pluralize(social.incoming.length, "invitación pendiente", "invitaciones pendientes")}</h2></div></div>
+      <ul className="invite-list">
+        {social.incoming.map((invite) => <li key={invite.code}>
+          <span className={"friend-avatar " + accentFor(invite.fromEmail)}>{initialsFor(invite.fromName || invite.fromEmail)}</span>
+          <p><b>{invite.fromName || invite.fromEmail}</b><small>{invite.fromEmail}</small></p>
+          <div>
+            <button type="button" className="invite-accept" disabled={saving} onClick={() => void sendSocial({ action: "accept_invite", code: invite.code })}>Aceptar</button>
+            <button type="button" className="invite-decline" disabled={saving} onClick={() => void sendSocial({ action: "decline_invite", code: invite.code })}>Rechazar</button>
+          </div>
+        </li>)}
+      </ul>
+    </article>}
+
+    {social.outgoing.length > 0 && <article className="panel invite-inbox">
+      <div className="panel-heading"><div><p>ESPERANDO RESPUESTA</p><h2>Invitaciones que mandaste</h2></div></div>
+      <ul className="invite-list">
+        {social.outgoing.map((invite) => <li key={invite.code}>
+          <span className="friend-avatar">{invite.toEmail ? initialsFor(invite.toEmail) : "↗"}</span>
+          <p><b>{invite.toEmail || "Link abierto"}</b><small>{invite.toEmail ? "Le aparece al iniciar sesión" : "Lo toma quien abra el link"}</small></p>
+          <div>
+            <button type="button" onClick={() => void copyInvite(`${window.location.origin}/invite/${invite.code}`)}>Copiar link</button>
+            <button type="button" className="invite-decline" disabled={saving} onClick={() => void sendSocial({ action: "revoke_invite", code: invite.code })}>Cancelar</button>
+          </div>
+        </li>)}
+      </ul>
+    </article>}
+
+    <section className="friends-score-grid">
+      <article className="panel friend-score-card is-me">
+        <div className="friend-score-head"><span className="friend-avatar">{initialsFor(data.profile.displayName)}</span><p><b>Vos</b><small>{myStreak.current > 0 ? `${pluralize(myStreak.current, "día", "días")} de racha` : "Empezá tu racha hoy"}</small></p></div>
+        <div className="friend-score-main">
+          <div className="friend-score-ring" style={{ "--friend-score": `${score}%` } as CSSProperties}><span><b>{score}</b><small>/100</small></span></div>
+          <p><small>DAILY SCORE</small><b>{scoreLabel(score)}</b><span>Esto es lo único que ven tus amigos: el número y la racha, nunca tus registros.</span></p>
+        </div>
+      </article>
+      {social.friends.map((friend) => {
+        // `share` en una constante propia: el estrechamiento de `isFresh` no
+        // sobrevive a un acceso por propiedad.
+        const share = friend.share;
+        const fresh = isFresh(share, today);
+        const friendScore = fresh ? share.score : 0;
+        return <article className={"panel friend-score-card" + (fresh ? "" : " is-stale")} key={friend.email}>
+          <div className="friend-score-head">
+            <span className={"friend-avatar " + accentFor(friend.email)}>{initialsFor(friend.name)}</span>
+            <p><b>{friend.name}</b><small>{shareStatus(friend.share, today)}</small></p>
+            <button type="button" aria-label={`Sacar a ${friend.name} de tu círculo`} onClick={() => void removeFriend(friend.email, friend.name)}>×</button>
+          </div>
+          <div className="friend-score-main">
+            <div className="friend-score-ring" style={{ "--friend-score": `${friendScore}%` } as CSSProperties}><span><b>{fresh ? friendScore : "–"}</b><small>/100</small></span></div>
+            <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share?.streak ? `${pluralize(share.streak, "día", "días")} de racha · mejor ${share.bestStreak}` : "Todavía sin racha"}</span></p>
+          </div>
+          <div className="friend-streak-bar"><small>RACHA DE USO</small><i style={{ width: `${Math.min(100, (share?.streak ?? 0) / Math.max(1, Math.max(myStreak.current, share?.streak ?? 0)) * 100)}%` }} /><b>{share?.streak ?? 0}</b></div>
+        </article>;
+      })}
+    </section>
+
+    {social.friends.length === 0 && <p className="friends-empty">Todavía no tenés a nadie en tu círculo. Mandá una invitación y empiecen a compararse el Daily Score.</p>}
+  </>;
+
+  const groupsTab = <>
+    <article className="panel group-actions">
+      <div className="panel-heading"><div><p>GRUPOS</p><h2>Objetivos en común</h2></div>
+        <button type="button" className="accountability-add is-inline" onClick={() => setGroupForm((open) => !open)}>{groupForm ? "Cancelar" : "＋ Crear grupo"}</button>
+      </div>
+      {groupForm && <form className="group-form" onSubmit={createGroup}>
+        <label><span>Nombre</span><input value={groupDraft.name} onChange={(event) => setGroupDraft({ ...groupDraft, name: event.target.value })} placeholder="Los del gimnasio" required minLength={2} maxLength={60} /></label>
+        <label><span>Para qué <small>(opcional)</small></span><input value={groupDraft.purpose} onChange={(event) => setGroupDraft({ ...groupDraft, purpose: event.target.value })} placeholder="Entrenar tres veces por semana" maxLength={160} /></label>
+        <div className="group-accents">{GROUP_ACCENTS.map((accent) => <button key={accent} type="button" className={"group-accent " + accent + (groupDraft.accent === accent ? " is-on" : "")} aria-label={`Color ${accent}`} onClick={() => setGroupDraft({ ...groupDraft, accent })} />)}</div>
+        <button type="submit" disabled={saving}>Crear grupo <span>→</span></button>
+      </form>}
+      <form className="group-join" onSubmit={joinGroup}>
+        <label><span>¿Te pasaron un código?</span><input value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Código del grupo" /></label>
+        <button type="submit" disabled={saving || !joinCode.trim()}>Entrar</button>
+      </form>
+    </article>
+
+    {social.groups.map((group) => {
+      const isOwner = group.ownerEmail === myEmail;
+      const expanded = openGroupId === group.id;
+      const candidates = social.friends.filter((friend) => !group.members.some((member) => member.userEmail === friend.email));
+      return <article className={"panel group-card " + group.accent} key={group.id}>
+        <div className="group-card-head">
+          <div>
+            <p>{group.purpose || `${pluralize(group.members.length, "integrante", "integrantes")}`}</p>
+            <h3>{group.name}</h3>
+          </div>
+          <div className="group-member-stack">{group.members.slice(0, 5).map((member) => <span key={member.userEmail} className={accentFor(member.userEmail)} title={member.displayName}>{initialsFor(member.displayName)}</span>)}</div>
+          <button type="button" className="group-toggle" aria-expanded={expanded} onClick={() => setOpenGroupId(expanded ? null : group.id)}>{expanded ? "Cerrar" : "Abrir"}</button>
+        </div>
+
+        <ul className="group-goal-list">
+          {group.goals.map((goal) => {
+            const mine = goal.contributions.find((item) => item.userEmail === myEmail)?.value ?? 0;
+            return <li key={goal.id}>
+              <div className="group-goal-head">
+                <div><small>{goal.period === "weekly" ? "ESTA SEMANA" : goal.period === "monthly" ? "ESTE MES" : goal.dueDate ? `HASTA ${goal.dueDate}` : "SIN PLAZO"}</small><b>{goal.title}</b></div>
+                <p><strong>{goalTotal(goal)}</strong><small>de {goal.targetValue} {metricUnit(goal.metric)}</small></p>
+              </div>
+              <div className="accountability-track"><i style={{ width: `${goalPercent(goal)}%` }} /></div>
+              {expanded && <>
+                <ul className="group-goal-contributions">
+                  {group.members.map((member) => {
+                    const value = goal.contributions.find((item) => item.userEmail === member.userEmail)?.value ?? 0;
+                    return <li key={member.userEmail}><span className={"friend-avatar " + accentFor(member.userEmail)}>{initialsFor(member.displayName)}</span><b>{member.displayName}</b><small>{value} {metricUnit(goal.metric)}</small></li>;
+                  })}
+                </ul>
+                <div className="group-goal-mine">
+                  <span>Tu aporte</span>
+                  <button type="button" disabled={saving || mine <= 0} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine - 1 })}>−</button>
+                  <b>{mine}</b>
+                  <button type="button" disabled={saving} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine + 1 })}>+</button>
+                  {(goal.createdBy === myEmail || isOwner) && <button type="button" className="group-goal-drop" disabled={saving} onClick={() => { if (window.confirm(`¿Borrar el objetivo "${goal.title}"?`)) void sendSocial({ action: "delete_group_goal", goalId: goal.id }); }}>Borrar</button>}
+                </div>
+              </>}
+            </li>;
+          })}
+          {!group.goals.length && <li className="group-goal-empty">Todavía no fijaron ningún objetivo en común.</li>}
+        </ul>
+
+        {expanded && <div className="group-panel">
+          <form className="group-goal-form" onSubmit={(event) => void addGroupGoal(event, group.id)}>
+            <label className="wide"><span>Nuevo objetivo</span><input value={goalDraft.title} onChange={(event) => setGoalDraft({ ...goalDraft, title: event.target.value })} placeholder="Entrenar 12 veces" required minLength={2} maxLength={120} /></label>
+            <label><span>Meta</span><input type="number" min={1} max={100000} value={goalDraft.targetValue} onChange={(event) => setGoalDraft({ ...goalDraft, targetValue: Number(event.target.value) })} /></label>
+            <label><span>Unidad</span><select value={goalDraft.metric} onChange={(event) => setGoalDraft({ ...goalDraft, metric: event.target.value as GoalMetric })}>{GOAL_METRICS.map((metric) => <option key={metric.value} value={metric.value}>{metric.label}</option>)}</select></label>
+            <label><span>Plazo</span><select value={goalDraft.period} onChange={(event) => setGoalDraft({ ...goalDraft, period: event.target.value as GroupGoal["period"] })}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="custom">Fecha propia</option></select></label>
+            {goalDraft.period === "custom" && <label><span>Hasta</span><input type="date" value={goalDraft.dueDate} onChange={(event) => setGoalDraft({ ...goalDraft, dueDate: event.target.value })} /></label>}
+            <button type="submit" disabled={saving}>Fijar objetivo</button>
+          </form>
+
+          <div className="group-members-panel">
+            <p className="step-label">INTEGRANTES</p>
+            <ul>
+              {group.members.map((member) => <li key={member.userEmail}>
+                <span className={"friend-avatar " + accentFor(member.userEmail)}>{initialsFor(member.displayName)}</span>
+                <b>{member.displayName}{member.userEmail === myEmail ? " (vos)" : ""}</b>
+                <small>{member.role === "owner" ? "Creó el grupo" : "Integrante"}</small>
+                {isOwner && member.userEmail !== myEmail && <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Sacar a ${member.displayName} del grupo?`)) void sendSocial({ action: "remove_group_member", groupId: group.id, email: member.userEmail }); }}>Sacar</button>}
+              </li>)}
+            </ul>
+            {candidates.length > 0 && <div className="group-add-member">
+              <span>Sumar a un amigo</span>
+              <div>{candidates.map((friend) => <button key={friend.email} type="button" disabled={saving} onClick={() => void sendSocial({ action: "add_group_member", groupId: group.id, email: friend.email })}>＋ {friend.name}</button>)}</div>
+            </div>}
+            <div className="group-code">
+              <p><small>CÓDIGO DEL GRUPO</small><code>{group.inviteCode}</code></p>
+              <button type="button" onClick={() => void copyInvite(group.inviteCode)}>Copiar</button>
+            </div>
+            <div className="group-danger">
+              {isOwner
+                ? <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Eliminar "${group.name}"? Se borra para todos los integrantes.`)) void sendSocial({ action: "delete_group", groupId: group.id }); }}>Eliminar grupo</button>
+                : <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Salir de "${group.name}"?`)) void sendSocial({ action: "leave_group", groupId: group.id }); }}>Salir del grupo</button>}
+            </div>
+          </div>
+        </div>}
+      </article>;
+    })}
+
+    {!social.groups.length && <p className="friends-empty">Sin grupos todavía. Creá uno, sumá a tus amigos y fijen un objetivo que dependa de todos.</p>}
+  </>;
+
   const friendsPanel = <section className="friends-page">
     <article className="friends-hero">
       <div className="friends-hero-copy">
-        <span className="friends-preview-pill">VISTA PREVIA</span>
         <p>ACCOUNTABILITY PARTNERS</p>
         <h2>Avanzar acompañado<br /><em>cambia el compromiso.</em></h2>
-        <small>Compartí objetivos con personas de confianza, miren su Daily Score y empújense cuando uno esté por aflojar.</small>
+        <small>Tus amigos ven tu Daily Score y tu racha de uso. Nada más: ni tus comidas, ni tu sueño, ni lo que escribís.</small>
         <div className="friends-hero-actions">
-          <button type="button" onClick={() => setFriendsNotice("La invitación va a funcionar cuando conectemos las cuentas reales.")}>＋ Invitar amigo</button>
-          <button type="button" className="secondary" onClick={() => setFriendsNotice("Elegí un objetivo desde Planificador para compartirlo con tu compañero.")}>Compartir un objetivo</button>
+          <button type="button" className={friendsTab === "circle" ? "" : "secondary"} onClick={() => setFriendsTab("circle")}>Mi círculo{social.incoming.length > 0 ? ` (${social.incoming.length})` : ""}</button>
+          <button type="button" className={friendsTab === "groups" ? "" : "secondary"} onClick={() => setFriendsTab("groups")}>Grupos</button>
         </div>
       </div>
       <div className="friends-hero-visual" aria-hidden="true">
-        <div className="friend-avatar-stack"><span>R</span><span>T</span><span>S</span><span>N</span></div>
-        <b>4 personas</b><small>en tu círculo</small>
-        <div className="friends-weekly-proof"><strong>12</strong><span>objetivos cumplidos<br />esta semana</span></div>
+        <div className="friend-avatar-stack">
+          <span>{initialsFor(data.profile.displayName)}</span>
+          {social.friends.slice(0, 3).map((friend) => <span key={friend.email}>{initialsFor(friend.name)}</span>)}
+        </div>
+        <b>{pluralize(social.friends.length, "persona", "personas")}</b><small>en tu círculo</small>
+        <div className="friends-weekly-proof"><strong>{myStreak.current}</strong><span>días seguidos<br />usando AVORA</span></div>
       </div>
     </article>
     {friendsNotice && <div className="friends-notice"><span>ⓘ</span><p>{friendsNotice}</p><button type="button" onClick={() => setFriendsNotice("")}>×</button></div>}
-    <section className="friends-score-grid">
-      {demoFriends.map((friend) => <article className="panel friend-score-card" key={friend.name}>
-        <div className="friend-score-head"><span className={"friend-avatar " + friend.tone}>{friend.initials}</span><p><b>{friend.name}</b><small>{friend.status}</small></p><button type="button" aria-label={`Ver perfil de ${friend.name}`}>•••</button></div>
-        <div className="friend-score-main"><div className="friend-score-ring" style={{ "--friend-score": `${friend.score}%` } as CSSProperties}><span><b>{friend.score}</b><small>/100</small></span></div><p><small>DAILY SCORE</small><b>{friend.score >= 85 ? "Gran día" : "Buen ritmo"}</b><span>{friend.detail}</span></p></div>
-        <button type="button" className="friend-nudge" onClick={() => setFriendsNotice(`Le mandaste un empujón a ${friend.name} en esta demostración.`)}>Enviar un empujón <span>→</span></button>
-      </article>)}
-    </section>
-    <article className="panel accountability-panel">
-      <div className="panel-heading"><div><p>OBJETIVOS COMPARTIDOS</p><h2>Compromisos del círculo</h2></div><span className="week-pill">2 activos</span></div>
-      <div className="accountability-list">
-        <div><span className="accountability-icon">↗</span><div><small>VOS + TOMI · ESTA SEMANA</small><b>Entrenar 3 veces</b><div className="accountability-track"><i style={{ width: "67%" }} /></div></div><p><strong>2/3</strong><small>Tomi 3/3 ✓</small></p></div>
-        <div><span className="accountability-icon book">▱</span><div><small>VOS + SOFI · 30 DÍAS</small><b>Leer 20 páginas por día</b><div className="accountability-track"><i style={{ width: "43%" }} /></div></div><p><strong>13/30</strong><small>Sofi 15/30</small></p></div>
-      </div>
-      <button type="button" className="accountability-add" onClick={() => setFriendsNotice("Esta opción va a permitir elegir un objetivo existente y el amigo con quien compartirlo.")}>＋ Crear compromiso compartido</button>
-    </article>
+    {friendsTab === "circle" ? circleTab : groupsTab}
   </section>;
 
   const sectionTitles: Record<Section, [string, string]> = {

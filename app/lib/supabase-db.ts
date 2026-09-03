@@ -45,11 +45,18 @@ export async function selectRows<T extends Row = Row>(table: string, options: {
   gte?: Record<string, Scalar>;
   lte?: Record<string, Scalar>;
   ilike?: Record<string, string>;
+  /** Filtro por conjunto: `{ userEmail: [...] }` se traduce a `in.(a,b,c)`. */
+  inList?: Record<string, Scalar[]>;
   order?: Array<[string, "asc" | "desc"]>;
   limit?: number;
 } = {}): Promise<T[]> {
   const query = new URLSearchParams({ select: "*" });
   filters(query, options.where);
+  for (const [key, values] of Object.entries(options.inList ?? {})) {
+    // Sin valores PostgREST rechaza `in.()`, y la respuesta correcta es vacía.
+    if (!values.length) return [];
+    query.set(toSnake(key), `in.(${values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")})`);
+  }
   for (const [key, value] of Object.entries(options.gte ?? {})) query.set(toSnake(key), `gte.${String(value)}`);
   for (const [key, value] of Object.entries(options.lte ?? {})) query.set(toSnake(key), `lte.${String(value)}`);
   for (const [key, value] of Object.entries(options.ilike ?? {})) query.set(toSnake(key), `ilike.${value}`);
@@ -95,4 +102,31 @@ export async function deleteRows(table: string, where: Record<string, Scalar>) {
   const query = new URLSearchParams();
   filters(query, where);
   await request(table, { method: "DELETE", headers: { Prefer: "return=minimal" } }, query);
+}
+
+/**
+ * Llama una función `security definer` de Postgres. Se usa para las
+ * operaciones que ninguna política puede autorizar desde el cliente: aceptar
+ * una invitación (escribe la fila del otro lado) o entrar a un grupo (lee una
+ * fila que todavía no es tuya).
+ */
+export async function callRpc<T = unknown>(fn: string, args: Row = {}): Promise<T> {
+  const token = (await cookies()).get(ACCESS_COOKIE)?.value;
+  if (!token) throw new Error("Sesión de Supabase ausente.");
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(args),
+    cache: "no-store",
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    // Postgres devuelve el `raise exception` en `message`: ese texto ya está
+    // escrito para que lo lea una persona, así que se propaga tal cual.
+    let message = `Supabase ${response.status}`;
+    try { message = (JSON.parse(text) as { message?: string }).message || message; } catch { /* respuesta no JSON */ }
+    throw new Error(message);
+  }
+  const parsed = text ? JSON.parse(text) : null;
+  return (Array.isArray(parsed) ? parsed.map((row) => mapKeys(row as Row, toCamel)) : parsed) as T;
 }
