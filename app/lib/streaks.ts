@@ -85,6 +85,51 @@ export function trendFor(days: number, today: string, valueForDate: (date: strin
   };
 }
 
+function startOfWeek(date: string) {
+  const value = new Date(`${date}T12:00:00Z`);
+  const isoDay = (value.getUTCDay() + 6) % 7; // 0 = lunes
+  value.setUTCDate(value.getUTCDate() - isoDay);
+  return value.toISOString().slice(0, 10);
+}
+
+/**
+ * Racha de semanas consecutivas cumpliendo un objetivo semanal (p. ej. "N
+ * entrenamientos por semana"). Misma lógica que `streakFor` pero a nivel
+ * semana: si la semana en curso todavía no llegó al objetivo la racha no se
+ * corta, se cuenta desde la semana anterior y se marca `pendingToday`.
+ */
+export function weeklyStreakFor(valueByDate: Record<string, number>, target: number, today: string): Streak {
+  if (target <= 0) return { current: 0, best: 0, pendingToday: false };
+
+  const totals = new Map<string, number>();
+  for (const [date, value] of Object.entries(valueByDate)) {
+    const week = startOfWeek(date);
+    totals.set(week, (totals.get(week) ?? 0) + value);
+  }
+  const metWeeks = new Set([...totals].filter(([, total]) => total >= target).map(([week]) => week));
+
+  const currentWeek = startOfWeek(today);
+  const pendingToday = !metWeeks.has(currentWeek);
+  let cursor = pendingToday ? shiftDate(currentWeek, -7) : currentWeek;
+  let current = 0;
+  while (metWeeks.has(cursor)) {
+    current += 1;
+    cursor = shiftDate(cursor, -7);
+  }
+
+  const sorted = [...metWeeks].sort();
+  let best = 0;
+  let run = 0;
+  let previous = "";
+  for (const week of sorted) {
+    run = previous && shiftDate(previous, 7) === week ? run + 1 : 1;
+    best = Math.max(best, run);
+    previous = week;
+  }
+
+  return { current, best: Math.max(best, current), pendingToday: pendingToday && current > 0 };
+}
+
 /** Agrupa registros por fecha sumando un campo numérico. */
 export function sumByDate<T>(rows: T[], dateOf: (row: T) => string, valueOf: (row: T) => number) {
   return rows.reduce<Record<string, number>>((totals, row) => {

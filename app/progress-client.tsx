@@ -1,10 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { CSSProperties, FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, FormEvent, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { BrandMark } from "./brand-mark";
+import { DatePicker } from "./date-picker";
+import { Dropdown, type DropdownOption } from "./dropdown";
+import { FULL_DAY_HOUR_OPTIONS, TimeFieldPicker } from "./time-dropdown";
 import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
 import { quoteForDate } from "./lib/quotes";
-import { sparklinePath, streakFor, sumByDate, trendFor, type Trend } from "./lib/streaks";
+import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "./lib/streaks";
 import { dayBlocks, dayWindow, freeSlots, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
 import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
@@ -127,7 +131,26 @@ const goalAreaOptions: Array<{ value: GoalCategory; label: string }> = [
   { value: "reading", label: "Biblioteca / lectura" }, { value: "goals", label: "Objetivos" },
 ];
 const periodLabels: Record<GoalPeriod, string> = { weekly: "Esta semana", monthly: "Este mes", annual: "Este año", custom: "Plazo personal" };
+// Horas que tiene sentido elegir para cada campo del selector de sueño, para
+// que la lista de horas sea corta (nadie se acuesta a las 11 de la mañana).
+const BEDTIME_HOUR_OPTIONS = ["19", "20", "21", "22", "23", "00", "01", "02", "03", "04", "05"];
+const WAKE_HOUR_OPTIONS = ["05", "06", "07", "08", "09", "10", "11", "12", "13", "14"];
+const WEEKLY_TARGET_OPTIONS: DropdownOption[] = Array.from({ length: 14 }, (_, index) => ({ value: String(index + 1), label: `${index + 1} por semana` }));
+const FOCUS_HOUR_OPTIONS: DropdownOption[] = Array.from({ length: 13 }, (_, index) => ({ value: String(index), label: `${index} h` }));
+const FOCUS_MINUTE_OPTIONS: DropdownOption[] = [0, 15, 30, 45].map((minutes) => ({ value: String(minutes), label: `${String(minutes).padStart(2, "0")} min` }));
+const EVENT_CATEGORY_OPTIONS: DropdownOption[] = [
+  { value: "personal", label: "Personal" }, { value: "study", label: "Estudio" }, { value: "work", label: "Trabajo" },
+  { value: "training", label: "Entrenamiento" }, { value: "health", label: "Salud" }, { value: "other", label: "Otro" },
+];
 const kindLabels: Record<Discipline["kind"], string> = { strength: "Fuerza / gimnasio", running: "Running", cycling: "Ciclismo", swimming: "Natación", sport: "Deporte", other: "Otra" };
+/** Mensajes cortos para el botón "Mandar un mensaje" del círculo: un empujón, no una conversación. */
+const FRIEND_NUDGE_MESSAGES = [
+  "¡Vamos que se puede! 💪",
+  "¿Cómo va tu semana?",
+  "Te extrañamos por acá, ¿todo bien?",
+  "¡Gran racha! Seguí así 🔥",
+];
+const disciplineKindOptions: DropdownOption[] = Object.entries(kindLabels).map(([value, label]) => ({ value, label }));
 const bookLanguageOptions = [
   ["es", "Español"], ["en", "Inglés"], ["pt", "Portugués"], ["fr", "Francés"], ["it", "Italiano"], ["de", "Alemán"],
 ] as const;
@@ -140,6 +163,30 @@ function argentinaMinutes() {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   return minutesFromClock(parts) ?? 0;
 }
+
+// Meta semanal de entrenamientos para la racha de constancia: vive en este
+// navegador (localStorage), no en el servidor, así que se lee con
+// useSyncExternalStore en vez de useState+useEffect. Evita el flash de
+// hidratación (el snapshot de servidor siempre es el default) y el
+// cascading-render de hacer setState dentro de un efecto.
+const TRAINING_WEEKLY_TARGET_KEY = "avora:training-weekly-target";
+const trainingWeeklyTargetListeners = new Set<() => void>();
+function subscribeTrainingWeeklyTarget(onChange: () => void) {
+  trainingWeeklyTargetListeners.add(onChange);
+  return () => trainingWeeklyTargetListeners.delete(onChange);
+}
+function getTrainingWeeklyTargetSnapshot() {
+  const stored = Number(window.localStorage.getItem(TRAINING_WEEKLY_TARGET_KEY));
+  return stored > 0 ? stored : 3;
+}
+function getTrainingWeeklyTargetServerSnapshot() {
+  return 3;
+}
+function setTrainingWeeklyTargetValue(value: number) {
+  const next = Math.min(14, Math.max(1, Math.round(value)));
+  window.localStorage.setItem(TRAINING_WEEKLY_TARGET_KEY, String(next));
+  trainingWeeklyTargetListeners.forEach((listener) => listener());
+}
 function weekFor(date: string) {
   const center = new Date(date + "T12:00:00");
   const mondayOffset = (center.getDay() + 6) % 7;
@@ -151,15 +198,12 @@ function weekFor(date: string) {
     return { iso: current.toISOString().slice(0, 10), short: ["L", "M", "M", "J", "V", "S", "D"][index], number: current.getDate() };
   });
 }
-function goalDeadline(today: string, period: GoalPeriod, amount: number, unit: "months" | "years") {
+/** Fecha objetivo para los plazos relativos. "custom" no pasa por acá: ahí el usuario elige el día exacto con el DatePicker. */
+function goalDeadline(today: string, period: Exclude<GoalPeriod, "custom">) {
   const date = new Date(today + "T12:00:00");
   if (period === "weekly") date.setDate(date.getDate() + ((7 - date.getDay()) % 7));
   if (period === "monthly") date.setMonth(date.getMonth() + 1, 0);
   if (period === "annual") date.setMonth(11, 31);
-  if (period === "custom") {
-    if (unit === "months") date.setMonth(date.getMonth() + amount);
-    else date.setFullYear(date.getFullYear() + amount);
-  }
   return date.toISOString().slice(0, 10);
 }
 function formatDate(date: string) {
@@ -191,21 +235,9 @@ function dateMinus(date: string, days: number) {
   value.setDate(value.getDate() - days);
   return value.toISOString().slice(0, 10);
 }
-function trendDayLabel(date: string, daysAgo: number) {
-  if (daysAgo === 0) return "Hoy";
-  if (daysAgo === 1) return "Ayer";
-  const weekday = new Intl.DateTimeFormat("es-AR", { weekday: "long" }).format(new Date(date + "T12:00:00"));
-  return weekday.charAt(0).toUpperCase() + weekday.slice(1);
-}
-function parseClock(value: string, fallbackHour: number, fallbackMinute = 0) {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  const hour24 = match ? Number(match[1]) : fallbackHour;
-  const minute = match ? Number(match[2]) : fallbackMinute;
-  return { hour: hour24 % 12 || 12, minute, period: hour24 >= 12 ? "PM" as const : "AM" as const };
-}
-function clock24(hour: number, minute: number, period: "AM" | "PM") {
-  const hour24 = period === "AM" ? hour % 12 : hour % 12 + 12;
-  return String(hour24).padStart(2, "0") + ":" + String(minute).padStart(2, "0");
+/** Valida un "HH:MM" en 24 h (lo que devuelve un input type="time"); si no matchea, el fallback. */
+function normalizeClock(value: string, fallback: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : fallback;
 }
 function sleepDuration(bedtime: string, wakeTime: string) {
   const [bedHour, bedMinute] = bedtime.split(":").map(Number);
@@ -213,6 +245,30 @@ function sleepDuration(bedtime: string, wakeTime: string) {
   let minutes = wakeHour * 60 + wakeMinute - (bedHour * 60 + bedMinute);
   if (minutes <= 0) minutes += 24 * 60;
   return Math.min(minutes, 24 * 60);
+}
+function durationOptions(minutesList: number[]): DropdownOption[] {
+  return minutesList.map((minutes) => ({ value: String(minutes), label: formatMinutes(minutes) }));
+}
+function projectOptions(projects: Array<{ id: number; name: string }>, noneLabel = "Sin proyecto"): DropdownOption[] {
+  return [{ value: "", label: noneLabel }, ...projects.map((project) => ({ value: String(project.id), label: project.name }))];
+}
+const DIET_ACTIVITY_MULTIPLIERS: Record<DietForm["activityLevel"], number> = { sedentary: 1.2, light: 1.375, moderate: 1.55, high: 1.725 };
+/**
+ * Mismo cálculo (Mifflin-St Jeor + actividad + ritmo del objetivo) que ya usa
+ * el plan con IA como punto de partida — acá es directamente el resultado,
+ * sin pasar por la IA. Devuelve null si todavía faltan datos.
+ */
+function estimateTargetCalories(form: Pick<DietForm, "age" | "heightCm" | "currentWeightKg" | "targetWeightKg" | "sex" | "activityLevel" | "goalPace">) {
+  const { age, heightCm, currentWeightKg, targetWeightKg, sex, activityLevel, goalPace } = form;
+  if (!age || !heightCm || !currentWeightKg || !targetWeightKg) return null;
+  const sexOffset = sex === "male" ? 5 : sex === "female" ? -161 : -78;
+  const basalEstimate = 10 * currentWeightKg + 6.25 * heightCm - 5 * age + sexOffset;
+  const maintenanceCalories = Math.round(basalEstimate * DIET_ACTIVITY_MULTIPLIERS[activityLevel]);
+  const difference = targetWeightKg - currentWeightKg;
+  const adjustment = goalPace === "moderate" ? 450 : 300;
+  const minimumCalories = sex === "male" ? 1500 : sex === "female" ? 1200 : 1350;
+  const targetCalories = Math.round(Math.max(minimumCalories, Math.min(6000, maintenanceCalories + (difference < -0.5 ? -adjustment : difference > 0.5 ? Math.min(300, adjustment) : 0))) / 10) * 10;
+  return { maintenanceCalories, targetCalories };
 }
 function parseDietPlan(value: string | undefined) {
   try { return value ? JSON.parse(value) as DietPlanContent : null; } catch { return null; }
@@ -241,6 +297,44 @@ async function preparePhoto(file: File) {
  * borroso con candado. El contenido queda inerte, así que no se puede tocar ni
  * llegar con el teclado; el candado lleva a la comparación de planes.
  */
+/** "5:30 min/km": el ritmo no se carga a mano, sale de tiempo y distancia. */
+function paceLabel(durationMinutes: number, distanceKm: number) {
+  if (!durationMinutes || !distanceKm) return null;
+  const totalSeconds = Math.round((durationMinutes * 60) / distanceKm);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")} min/km`;
+}
+
+/**
+ * Detalle de sesión para disciplinas de distancia (running, ciclismo,
+ * natación): distancia + tiempo, con el ritmo calculado en vivo. Es
+ * controlado (no FormData) porque necesita recalcular el ritmo mientras se
+ * escribe; `key={disciplineId-date}` en el padre lo remonta al cambiar de
+ * disciplina o de día, así vuelve a partir de lo que ya había ese día.
+ */
+function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving, onSave }: {
+  disciplineId: number;
+  date: string;
+  log: TrainingLog | undefined;
+  notePlaceholder: string;
+  saving: boolean;
+  onSave: (payload: Record<string, unknown>) => void;
+}) {
+  const [durationMinutes, setDurationMinutes] = useState(log?.durationMinutes ?? 0);
+  const [distanceKm, setDistanceKm] = useState(log ? log.distanceMeters / 1000 : 0);
+  const pace = paceLabel(durationMinutes, distanceKm);
+  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); onSave({ action: "save_training", disciplineId, date, durationMinutes, distanceKm, notes: form.get("notes") }); }}>
+    <div className="two-fields">
+      <label>Distancia (km)<input type="number" min="0" step=".01" value={distanceKm || ""} onChange={(event) => setDistanceKm(Number(event.target.value) || 0)} /></label>
+      <label>Tiempo (min)<input type="number" min="0" value={durationMinutes || ""} onChange={(event) => setDurationMinutes(Number(event.target.value) || 0)} /></label>
+    </div>
+    <div className="pace-preview"><span>◷</span><p><small>RITMO</small><b>{pace ?? "Cargá distancia y tiempo"}</b></p></div>
+    <label>Notas<textarea name="notes" defaultValue={log?.notes || ""} placeholder={notePlaceholder} /></label>
+    <button className="primary-action" disabled={saving}>Guardar sesión</button>
+  </form>;
+}
+
 function LockedFeature({ title, note, onOpen, children }: { title: string; note: string; onOpen: () => void; children: React.ReactNode }) {
   return <div className="pro-locked">
     <div className="pro-locked-content" inert>{children}</div>
@@ -314,6 +408,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [selectedDisciplineId, setSelectedDisciplineId] = useState<number | null>(null);
   const [trainingDate, setTrainingDate] = useState(today);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
+  // Meta de entrenamientos por semana, para la racha de constancia. Vive en
+  // este navegador (no en el servidor) porque es una preferencia liviana de
+  // lectura de la racha, no un dato que otra pantalla necesite.
+  const trainingWeeklyTarget = useSyncExternalStore(subscribeTrainingWeeklyTarget, getTrainingWeeklyTargetSnapshot, getTrainingWeeklyTargetServerSnapshot);
+  const setTrainingWeeklyTarget = setTrainingWeeklyTargetValue;
   const [calendarCursor, setCalendarCursor] = useState(today.slice(0, 7));
   const [physicalTab, setPhysicalTab] = useState<PhysicalTab>("training");
   const [focusTab, setFocusTab] = useState<FocusTab>("study");
@@ -327,6 +426,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   );
   const [social, setSocial] = useState<SocialData>(emptySocial);
   const [friendsTab, setFriendsTab] = useState<"circle" | "groups">("circle");
+  const [nudgeOpenFor, setNudgeOpenFor] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteLink, setInviteLink] = useState("");
   const [inviteCopied, setInviteCopied] = useState(false);
@@ -372,28 +472,28 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [discoverResults, setDiscoverResults] = useState<BookSuggestion[]>([]);
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [discoverSearched, setDiscoverSearched] = useState(false);
-  const [mealForm, setMealForm] = useState(false);
   const [aiDescription, setAiDescription] = useState("");
   const [mealPhoto, setMealPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
   const [dietForm, setDietForm] = useState<DietForm>({ age: 25, sex: "unspecified", heightCm: 175, currentWeightKg: 75, targetWeightKg: 70, activityLevel: "light", goalPace: "gentle", preferences: "", details: "" });
+  // Calculadora rápida (sin IA): null = seguir la sugerencia calculada en vivo; un número = lo que el usuario aceptó o modificó a mano.
+  const [dietQuickCalories, setDietQuickCalories] = useState<number | null>(null);
+  function setDietQuickField<K extends keyof DietForm>(key: K, value: DietForm[K]) {
+    setDietForm((current) => ({ ...current, [key]: value }));
+    setDietQuickCalories(null);
+  }
   const [dietGenerating, setDietGenerating] = useState(false);
   const [generatedDietPlan, setGeneratedDietPlan] = useState<DietPlanContent | null>(null);
   const [dietRecording, setDietRecording] = useState(false);
   const [dietVoiceLoading, setDietVoiceLoading] = useState(false);
-  const [sleepBedHour, setSleepBedHour] = useState(11);
-  const [sleepBedMinute, setSleepBedMinute] = useState(0);
-  const [sleepBedPeriod, setSleepBedPeriod] = useState<"AM" | "PM">("PM");
-  const [sleepWakeHour, setSleepWakeHour] = useState(7);
-  const [sleepWakeMinute, setSleepWakeMinute] = useState(0);
-  const [sleepWakePeriod, setSleepWakePeriod] = useState<"AM" | "PM">("AM");
-  const [focusAmount, setFocusAmount] = useState(60);
-  const [focusUnit, setFocusUnit] = useState<"minutes" | "hours">("minutes");
+  const [sleepBedtime, setSleepBedtime] = useState("23:00");
+  const [sleepWaketime, setSleepWaketime] = useState("07:00");
+  const [focusHours, setFocusHours] = useState(0);
+  const [focusMinutesPart, setFocusMinutesPart] = useState(30);
   const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>("weekly");
-  const [customLength, setCustomLength] = useState(4);
-  const [customUnit, setCustomUnit] = useState<"months" | "years">("months");
+  const [customDate, setCustomDate] = useState(() => datePlus(argentinaDate(), 30));
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [voiceLoading, setVoiceLoading] = useState(false);
@@ -431,13 +531,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           preferences: next.dietPlan.preferences,
           details: next.dietPlan.details,
         });
+        setDietQuickCalories(next.dietPlan.targetCalories || null);
         dietHydratedRef.current = true;
       }
       if (next.dailyCheckin && !sleepHydratedRef.current) {
-        const bedtime = parseClock(next.dailyCheckin.bedtime, 23);
-        const wakeTime = parseClock(next.dailyCheckin.wakeTime, 7);
-        setSleepBedHour(bedtime.hour); setSleepBedMinute(bedtime.minute); setSleepBedPeriod(bedtime.period);
-        setSleepWakeHour(wakeTime.hour); setSleepWakeMinute(wakeTime.minute); setSleepWakePeriod(wakeTime.period);
+        setSleepBedtime(normalizeClock(next.dailyCheckin.bedtime, "23:00"));
+        setSleepWaketime(normalizeClock(next.dailyCheckin.wakeTime, "07:00"));
         sleepHydratedRef.current = true;
       }
       setError("");
@@ -549,7 +648,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Series por fecha. Alimentan las tendencias de Estadísticas y también el
   // Daily Score, para que el puntaje de hoy y el del histórico salgan del
   // mismo lugar y nunca se contradigan entre pantallas.
-  const trainingByDate = sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1);
+  const trainingByDate = useMemo(() => sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1), [data.trainingLogs]);
   const focusByDate = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
   const readingByDate = sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages);
   const caloriesByDay = sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories);
@@ -608,6 +707,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const selectedDiscipline = data.disciplines.find((item) => item.id === selectedDisciplineId) ?? data.disciplines[0] ?? null;
   const selectedTrainingLog = selectedDiscipline ? data.trainingLogs.find((item) => item.disciplineId === selectedDiscipline.id && item.trainingDate === trainingDate) : undefined;
   const selectedExercises = selectedTrainingLog ? data.exerciseLogs.filter((item) => item.trainingLogId === selectedTrainingLog.id) : [];
+  // Cada disciplina tiene un único detalle de sesión posible: nunca conviven
+  // el de pesas, el de distancia y el genérico para la misma disciplina.
+  const isDistanceDiscipline = selectedDiscipline?.kind === "running" || selectedDiscipline?.kind === "cycling" || selectedDiscipline?.kind === "swimming";
+  const trainingDetailTitle = !selectedDiscipline ? "" : selectedDiscipline.kind === "strength" ? "SESIÓN DE GIMNASIO"
+    : selectedDiscipline.kind === "running" ? "SESIÓN DE RUNNING"
+    : selectedDiscipline.kind === "cycling" ? "SESIÓN DE CICLISMO"
+    : selectedDiscipline.kind === "swimming" ? "SESIÓN DE NATACIÓN"
+    : "DETALLE DE SESIÓN";
   const booksInTab = data.books.filter((book) => book.status === bookTab);
   const bookShelfPageCount = Math.max(1, Math.ceil(booksInTab.length / 3));
   const visibleBookShelfPage = Math.min(bookShelfPage, bookShelfPageCount - 1);
@@ -617,9 +724,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const savedDietPlan = useMemo(() => parseDietPlan(data.dietPlan?.planJson), [data.dietPlan?.planJson]);
   const displayedDietPlan = generatedDietPlan ?? savedDietPlan;
   const dietTargetCalories = generatedDietPlan?.targetCalories ?? data.dietPlan?.targetCalories ?? 0;
-  const bedtimeValue = clock24(sleepBedHour, sleepBedMinute, sleepBedPeriod);
-  const wakeTimeValue = clock24(sleepWakeHour, sleepWakeMinute, sleepWakePeriod);
-  const calculatedSleepMinutes = sleepDuration(bedtimeValue, wakeTimeValue);
+  const calculatedSleepMinutes = sleepDuration(sleepBedtime, sleepWaketime);
 
   // ---------------------------------------------------------------------------
   // Plan del día: la agenda con horarios, los huecos libres y los avisos que
@@ -645,19 +750,20 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     [todayBlocks, todayWindow.start, todayWindow.end],
   );
 
-  // Rachas: días consecutivos con actividad en cada área.
-  const trainingDates = useMemo(() => new Set(data.trainingLogs.map((item) => item.trainingDate)), [data.trainingLogs]);
+  // Rachas: días consecutivos con actividad en cada área. Entrenamiento es la
+  // excepción: nadie entrena todos los días, así que su racha es semanal
+  // (semanas seguidas cumpliendo la meta de entrenamientos por semana).
   const readingDates = useMemo(() => new Set(data.readingHistory.filter((item) => item.pages > 0).map((item) => item.logDate)), [data.readingHistory]);
   const focusDates = useMemo(() => new Set(uniqueFocusSessions.map((item) => item.sessionDate)), [uniqueFocusSessions]);
   const goodSleepDates = useMemo(() => new Set(data.dailyCheckins.filter((item) => item.sleepMinutes >= 420).map((item) => item.entryDate)), [data.dailyCheckins]);
   const loggingDates = useMemo(() => new Set([...data.mealHistory.map((item) => item.mealDate), ...data.dailyCheckins.map((item) => item.entryDate)]), [data.mealHistory, data.dailyCheckins]);
   const streaks = useMemo(() => ({
-    training: streakFor(trainingDates, today),
+    training: weeklyStreakFor(trainingByDate, trainingWeeklyTarget, today),
     reading: streakFor(readingDates, today),
     focus: streakFor(focusDates, today),
     sleep: streakFor(goodSleepDates, today),
     logging: streakFor(loggingDates, today),
-  }), [trainingDates, readingDates, focusDates, goodSleepDates, loggingDates, today]);
+  }), [trainingByDate, trainingWeeklyTarget, readingDates, focusDates, goodSleepDates, loggingDates, today]);
 
   // El círculo se carga una vez que la cuenta ya pasó el onboarding: antes no
   // hay nada que mostrar y el pedido sólo agregaría ruido.
@@ -1034,6 +1140,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     if (ok) setGeneratedDietPlan(null);
   }
 
+  async function saveDietTarget(targetCalories: number) {
+    await save({ action: "set_diet_target", age: dietForm.age, sex: dietForm.sex, heightCm: dietForm.heightCm, currentWeightKg: dietForm.currentWeightKg, targetWeightKg: dietForm.targetWeightKg, activityLevel: dietForm.activityLevel, goalPace: dietForm.goalPace, targetCalories });
+  }
+
   function addDietDetail(detail: string) {
     setDietForm((current) => ({ ...current, details: current.details.includes(detail) ? current.details : [current.details, detail].filter(Boolean).join(current.details ? ". " : "") }));
   }
@@ -1193,12 +1303,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     gymWeight: {
       icon: "↗", tone: "violet", label: "ENTRENAMIENTOS", area: "training",
       value: String(data.trainingLogs.filter((item) => item.trainingDate >= week[0].iso).length), unit: "esta semana",
-      caption: streaks.training.current ? pluralize(streaks.training.current, "día seguido", "días seguidos") : `${data.disciplines.length} disciplinas`,
+      caption: streaks.training.current ? pluralize(streaks.training.current, "semana seguida", "semanas seguidas") : `${data.disciplines.length} disciplinas`,
     },
     focusWeight: {
       icon: "⌁", tone: "coral", label: "FOCO HOY", area: "focus",
       value: (focusToday / 60).toFixed(focusToday % 60 ? 1 : 0), unit: "h",
-      caption: `${focusToday} minutos`,
+      caption: formatMinutes(focusToday),
     },
     sleepWeight: {
       icon: "☾", tone: "mint", label: "SUEÑO", area: "sleep",
@@ -1250,10 +1360,16 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const trainingPanel = <section className="module-stack">
     <article className="panel section-panel">
-      <div className="panel-heading"><div><p>TUS DISCIPLINAS</p><h2>Un calendario para cada actividad</h2></div><span className="week-pill">{data.trainingLogs.filter((log) => log.trainingDate >= week[0].iso).length} sesiones esta semana</span></div>
+      <div className="panel-heading">
+        <div><p>TUS DISCIPLINAS</p><h2>Un calendario para cada actividad</h2></div>
+        <div className="training-week-meta">
+          <label className="training-target-label" htmlFor="training-weekly-target">Meta semanal<Dropdown id="training-weekly-target" className="weekly-target-dropdown" ariaLabel="Meta de entrenamientos por semana" value={String(trainingWeeklyTarget)} onChange={(value) => setTrainingWeeklyTarget(Number(value))} options={WEEKLY_TARGET_OPTIONS} /></label>
+          <span className="week-pill">{data.trainingLogs.filter((log) => log.trainingDate >= week[0].iso).length} sesiones esta semana</span>
+        </div>
+      </div>
       <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_discipline", name: form.get("name"), kind: form.get("kind") }); }}>
         <input name="name" required placeholder="Nueva disciplina: pádel, fútbol…" />
-        <select name="kind" defaultValue="other"><option value="strength">Fuerza / gimnasio</option><option value="running">Running</option><option value="cycling">Ciclismo</option><option value="swimming">Natación</option><option value="sport">Deporte</option><option value="other">Otra</option></select>
+        <Dropdown name="kind" ariaLabel="Tipo de disciplina" defaultValue="other" options={disciplineKindOptions} />
         <button disabled={saving}>＋ Agregar</button>
       </form>
       <div className="discipline-list">{data.disciplines.map((discipline) => {
@@ -1267,41 +1383,56 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         </div>;
       })}</div>
     </article>
-    {selectedDiscipline && <div className={"training-detail-grid " + (selectedDiscipline.kind === "strength" ? "strength-session" : "single-session")}>
+    {selectedDiscipline && <div className="training-detail-grid single-session">
       <article className="panel">
-        <div className="panel-heading"><div><p>{selectedDiscipline.kind === "strength" ? "SESIÓN DE GIMNASIO" : selectedDiscipline.kind === "running" ? "SESIÓN DE RUNNING" : "DETALLE DE SESIÓN"}</p><h2>{selectedDiscipline.name}</h2></div><input className="date-control" type="date" value={trainingDate} onChange={(event) => setTrainingDate(event.target.value)} /></div>
-        <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: form.get("distanceKm"), notes: form.get("notes") }); }}>
-          <div className={selectedDiscipline.kind === "running" || selectedDiscipline.kind === "cycling" || selectedDiscipline.kind === "swimming" ? "two-fields" : ""}>
-            <label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label>
-            {(selectedDiscipline.kind === "running" || selectedDiscipline.kind === "cycling" || selectedDiscipline.kind === "swimming") && <label>Distancia (km)<input name="distanceKm" type="number" min="0" step=".01" defaultValue={selectedTrainingLog?.distanceMeters ? selectedTrainingLog.distanceMeters / 1000 : ""} /></label>}
-          </div>
-          <label>Notas<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder={selectedDiscipline.kind === "strength" ? "Rutina, sensaciones, técnica…" : selectedDiscipline.kind === "running" ? "Ritmo, sensaciones, recorrido…" : "Sensaciones y detalle de la sesión…"} /></label>
+        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><input className="date-control" type="date" value={trainingDate} onChange={(event) => setTrainingDate(event.target.value)} /></div>
+        {selectedDiscipline.kind === "strength" ? <>
+          <form key={`${selectedDiscipline.id}-${trainingDate}-notes`} className="data-form strength-notes-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: selectedTrainingLog?.durationMinutes || 0, distanceKm: 0, notes: form.get("notes") }); }}>
+            <label>Notas de la sesión<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Rutina, sensaciones, técnica…" /></label>
+            <button className="primary-action" disabled={saving}>Guardar notas</button>
+          </form>
+          <div className="panel-divider" />
+          <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
+          <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: form.get("weightKg"), sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
+            <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
+            <div className="three-fields"><label>Kg<input name="weightKg" type="number" min="0" step=".1" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
+            <label className="check-label"><input name="isRecord" type="checkbox" /> Es un récord personal</label>
+            <button className="primary-action" disabled={saving}>Agregar ejercicio</button>
+          </form>
+          <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
+        </> : isDistanceDiscipline ? <DistanceSessionForm
+          key={`${selectedDiscipline.id}-${trainingDate}`}
+          disciplineId={selectedDiscipline.id}
+          date={trainingDate}
+          log={selectedTrainingLog}
+          notePlaceholder="Ritmo, sensaciones, recorrido…"
+          saving={saving}
+          onSave={(payload) => void save(payload)}
+        /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0, notes: form.get("notes") }); }}>
+          <label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label>
+          <label>Descripción<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Qué hiciste, sensaciones, detalle de la sesión…" /></label>
           <button className="primary-action" disabled={saving}>Guardar sesión</button>
-        </form>
+        </form>}
       </article>
-      {selectedDiscipline.kind === "strength" && <article className="panel">
-        <div className="panel-heading"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
-        <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: form.get("weightKg"), sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
-          <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
-          <div className="three-fields"><label>Kg<input name="weightKg" type="number" min="0" step=".1" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
-          <label className="check-label"><input name="isRecord" type="checkbox" /> Es un récord personal</label>
-          <button className="primary-action" disabled={saving}>Agregar ejercicio</button>
-        </form>
-        <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
-      </article>}
     </div>}
   </section>;
 
   const sleepPanel = <section className="module-stack sleep-page">
     <div className="split-grid">
       <article className="panel"><div className="panel-heading"><div><p>DESCANSO DE HOY</p><h2>Registrar sueño</h2></div><span className="sleep-icon">☾</span></div>
-        <form className="data-form sleep-form" onSubmit={(event) => void submitForm(event, { action: "save_sleep", date: today, sleepMinutes: calculatedSleepMinutes, bedtime: bedtimeValue, wakeTime: wakeTimeValue })}>
+        <form className="data-form sleep-form" onSubmit={(event) => void submitForm(event, { action: "save_sleep", date: today, sleepMinutes: calculatedSleepMinutes, bedtime: sleepBedtime, wakeTime: sleepWaketime })}>
           <div className="sleep-duration-badge"><span>TIEMPO CALCULADO</span><b>{Math.floor(calculatedSleepMinutes / 60)} h {calculatedSleepMinutes % 60 ? calculatedSleepMinutes % 60 + " min" : ""}</b><small>Entre la hora de acostarte y la de despertarte</small></div>
           <div className="sleep-time-grid">
-            <div className="time-picker-card"><span className="time-symbol">☾</span><div><label>Me acosté</label><div className="time-selects"><select aria-label="Hora de acostarse" value={sleepBedHour} onChange={(event) => setSleepBedHour(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}</option>)}</select><i>:</i><select aria-label="Minutos de acostarse" value={sleepBedMinute} onChange={(event) => setSleepBedMinute(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index * 5).map((minute) => <option key={minute} value={minute}>{String(minute).padStart(2, "0")}</option>)}</select><select aria-label="Período de acostarse" value={sleepBedPeriod} onChange={(event) => setSleepBedPeriod(event.target.value as "AM" | "PM")}><option>AM</option><option>PM</option></select></div></div></div>
-            <div className="time-picker-card wake"><span className="time-symbol">☀</span><div><label>Me desperté</label><div className="time-selects"><select aria-label="Hora de despertarse" value={sleepWakeHour} onChange={(event) => setSleepWakeHour(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}</option>)}</select><i>:</i><select aria-label="Minutos de despertarse" value={sleepWakeMinute} onChange={(event) => setSleepWakeMinute(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index * 5).map((minute) => <option key={minute} value={minute}>{String(minute).padStart(2, "0")}</option>)}</select><select aria-label="Período de despertarse" value={sleepWakePeriod} onChange={(event) => setSleepWakePeriod(event.target.value as "AM" | "PM")}><option>AM</option><option>PM</option></select></div></div></div>
+            <div className="time-picker-card">
+              <span className="time-symbol">☾</span>
+              <TimeFieldPicker idPrefix="sleep-bedtime" label="Me acosté" value={sleepBedtime} onChange={setSleepBedtime} hourOptions={BEDTIME_HOUR_OPTIONS} />
+            </div>
+            <div className="time-picker-card wake">
+              <span className="time-symbol">☀</span>
+              <TimeFieldPicker idPrefix="sleep-waketime" label="Me desperté" value={sleepWaketime} onChange={setSleepWaketime} hourOptions={WAKE_HOUR_OPTIONS} />
+            </div>
           </div>
-          <p className="sleep-form-note">Podés ajustar los minutos de a cinco. El reloj inteligente permitirá distinguir tiempo en cama de tiempo realmente dormido.</p>
+          <p className="sleep-form-note">Elegí la hora de la lista: sin escribir y sin AM/PM.</p>
           <button className="primary-action" disabled={saving}>Guardar descanso</button>
         </form>
       </article>
@@ -1326,16 +1457,16 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div>
         <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button>＋ Agregar</button></form>
         <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? (todayMinutes / 60).toFixed(todayMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? (weekMinutes / 60).toFixed(weekMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
-        {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = focusUnit === "hours" ? Math.round(focusAmount * 60) : Math.round(focusAmount); void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
-          <label>{focusTab === "study" ? "Materia" : "Proyecto"}<select name="projectId">{focusProjectsInTab.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-          <label>Trabajo profundo<div className="focus-duration-control"><input type="number" min={focusUnit === "hours" ? .25 : 1} max={focusUnit === "hours" ? 24 : 1440} step={focusUnit === "hours" ? .25 : 1} value={focusAmount} onChange={(event) => setFocusAmount(Number(event.target.value) || 0)} required /><select value={focusUnit} onChange={(event) => setFocusUnit(event.target.value as "minutes" | "hours")}><option value="minutes">minutos</option><option value="hours">horas</option></select></div><small className="field-help">Se guardará como {focusUnit === "hours" ? Math.round(focusAmount * 60) : Math.round(focusAmount)} minutos para calcular las estadísticas.</small></label>
+        {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = focusHours * 60 + focusMinutesPart; if (minutes <= 0) return; void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
+          <label>{focusTab === "study" ? "Materia" : "Proyecto"}<Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia" : "Proyecto"} options={focusProjectsInTab.map((project) => ({ value: String(project.id), label: project.name }))} /></label>
+          <label>Trabajo profundo<div className="focus-duration-control"><Dropdown ariaLabel="Horas de trabajo profundo" value={String(focusHours)} onChange={(value) => setFocusHours(Number(value))} options={FOCUS_HOUR_OPTIONS} /><Dropdown ariaLabel="Minutos de trabajo profundo" value={String(focusMinutesPart)} onChange={(value) => setFocusMinutesPart(Number(value))} options={FOCUS_MINUTE_OPTIONS} /></div></label>
           <label>Qué avanzaste<input name="note" placeholder="Tema, entrega o avance…" /></label>
           <button className="primary-action">Guardar bloque de foco</button>
         </form>}
       </article>
-    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE HOY" : "TRABAJO DE HOY"}</p><b>{(focusTodayInTab / 60).toFixed(focusTodayInTab % 60 ? 1 : 0)} h</b><small>{focusTodayInTab} minutos de trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{(focusWeekInTab / 60).toFixed(1)} h</b><small>calculadas desde minutos reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
+    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE HOY" : "TRABAJO DE HOY"}</p><b>{formatMinutes(focusTodayInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatMinutes(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
       <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{tasksInTab.filter((item) => item.completedAt).length}/{tasksInTab.length} hechas</span></div>
-        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><select name="projectId"><option value="">Sin proyecto</option>{focusProjectsInTab.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><select name="durationMinutes" defaultValue="60" aria-label="Duración">{[30, 45, 60, 90, 120].map((minutes) => <option key={minutes} value={minutes}>{formatMinutes(minutes)}</option>)}</select><button>＋</button></form>
+        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia de la tarea" : "Proyecto de la tarea"} options={projectOptions(focusProjectsInTab, focusTab === "study" ? "Sin materia" : "Sin proyecto")} /><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><Dropdown name="durationMinutes" ariaLabel="Duración" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120])} /><button>＋</button></form>
         <div className="task-list compact-task-list">{tasksInTab.map((task) => { const done = taskDone(task.id, Boolean(task.completedAt)); return <div className={done ? "completed" : ""} key={task.id}><button className="task-check" aria-pressed={done} onClick={() => void toggleTask(task.id, !done)}>{done ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? formatDate(task.dueDate) : "Sin fecha"}{task.startTime ? ` · ${task.startTime}${task.durationMinutes ? " (" + formatMinutes(task.durationMinutes) + ")" : ""}` : task.dueDate ? " · sin horario" : ""}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>; })}{!tasksInTab.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
       </article>
   </section>;
@@ -1597,8 +1728,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <p>Nuevo bloque · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
       <div className="slot-fields">
         <input name="title" required autoFocus placeholder="Ej. Estudiar capítulo 2" />
-        <select name="projectId"><option value="">Sin proyecto</option>{data.focusProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-        <select name="durationMinutes" defaultValue="60">{[30, 45, 60, 90, 120, 180].map((minutes) => <option key={minutes} value={minutes}>{formatMinutes(minutes)}</option>)}</select>
+        <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />
+        <Dropdown name="durationMinutes" ariaLabel="Duración del bloque" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120, 180])} />
       </div>
       <div className="slot-actions">
         <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
@@ -1623,7 +1754,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {agendaView === "week" ? weekAgendaPanel : monthCalendarPanel}
     <div className="calendar-layout">
       <article className="panel"><div className="panel-heading"><div><p>NUEVO RECORDATORIO</p><h2>Evento importante</h2></div></div><form className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_event", title: form.get("title"), eventDate: form.get("eventDate"), eventTime: form.get("eventTime"), durationMinutes: form.get("durationMinutes"), category: form.get("category"), notes: form.get("notes") }); }}>
-        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="three-fields"><label>Fecha<input name="eventDate" type="date" required /></label><label>Hora<input name="eventTime" type="time" /></label><label>Dura<select name="durationMinutes" defaultValue="60">{[30, 60, 90, 120, 180, 240].map((minutes) => <option key={minutes} value={minutes}>{formatMinutes(minutes)}</option>)}</select></label></div><label>Categoría<select name="category"><option value="personal">Personal</option><option value="study">Estudio</option><option value="work">Trabajo</option><option value="training">Entrenamiento</option><option value="health">Salud</option><option value="other">Otro</option></select></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action">Guardar evento</button>
+        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="three-fields"><label>Fecha<DatePicker name="eventDate" ariaLabel="Fecha del evento" defaultValue={today} /></label><TimeFieldPicker idPrefix="event-time" label="Hora" name="eventTime" defaultValue="09:00" hourOptions={FULL_DAY_HOUR_OPTIONS} /><label>Dura<Dropdown name="durationMinutes" ariaLabel="Duración del evento" defaultValue="60" options={durationOptions([30, 60, 90, 120, 180, 240])} /></label></div><label>Categoría<Dropdown name="category" ariaLabel="Categoría del evento" options={EVENT_CATEGORY_OPTIONS} /></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action">Guardar evento</button>
       </form></article>
       <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{countdownLabelCapitalized(dayDistance(today, item.date))}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
     </div>
@@ -1635,35 +1766,15 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.sleepMinutes > 0);
   const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart);
   const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart);
-  const buckets = statsPeriod === "weekly"
-    ? Array.from({ length: 7 }, (_, index) => {
-      const daysAgo = 6 - index;
-      const date = dateMinus(today, daysAgo);
-      return { start: date, end: date, label: trendDayLabel(date, daysAgo) };
-    })
-    : statsPeriod === "monthly"
-      ? Array.from({ length: 4 }, (_, index) => ({ start: dateMinus(today, 27 - index * 7), end: dateMinus(today, 21 - index * 7), label: "Sem " + (index + 1) }))
-      : Array.from({ length: 12 }, (_, index) => {
-        const value = new Date(today + "T12:00:00");
-        value.setMonth(value.getMonth() - (11 - index));
-        const prefix = value.toISOString().slice(0, 7);
-        return { start: prefix + "-01", end: prefix + "-31", label: new Intl.DateTimeFormat("es-AR", { month: "short" }).format(value) };
-      });
-  const trendValues = buckets.map((bucket) => ({
-    label: bucket.label,
-    training: periodTraining.filter((item) => item.trainingDate >= bucket.start && item.trainingDate <= bucket.end).length,
-    focus: periodFocus.filter((item) => item.sessionDate >= bucket.start && item.sessionDate <= bucket.end).reduce((sum, item) => sum + item.minutes, 0) / 60,
-  }));
-  const maxTrend = Math.max(1, ...trendValues.flatMap((item) => [item.training, item.focus]));
   // Tendencias diarias del período elegido, con comparación contra el período
   // anterior de la misma longitud.
   const trendSpan = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 180;
-  const trends: Array<{ key: string; icon: string; label: string; trend: Trend; format: (value: number) => string; caption: string }> = [
+  const trends: Array<{ key: string; icon: string; label: string; trend: Trend; format: (value: number) => string; caption: string; useAverage?: boolean }> = [
     { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, today, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
     { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, today, (date) => focusByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "tiempo de trabajo concentrado" },
-    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, today, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "horas dormidas registradas" },
+    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, today, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "promedio dormido por día", useAverage: true },
     { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, today, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
-    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, today, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "energía registrada" },
+    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, today, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "promedio diario", useAverage: true },
   ];
   // El Daily Score también es una tendencia: mismo período, mismo criterio de
   // comparación que el resto de las métricas de esta sección.
@@ -1671,13 +1782,30 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const scoreAverage = Math.round(scoreTrend.average);
   const scorePreviousAverage = Math.round(scoreTrend.previousTotal / trendSpan);
   const scoreDelta = scorePreviousAverage > 0 ? scoreAverage - scorePreviousAverage : null;
+  // Geometría del gráfico de líneas del Daily Score: un viewBox fijo de
+  // 100/altura para que el promedio y cada punto se ubiquen por regla de tres
+  // simple, sin depender del ancho real renderizado.
+  const scoreGradientId = useId();
+  const scoreChartWidth = 600;
+  const scoreChartHeight = 130;
+  const scoreYFor = (value: number) => scoreChartHeight - (Math.max(0, Math.min(100, value)) / 100) * scoreChartHeight;
+  const scoreChartPoints = scoreTrend.points.map((point, index) => ({
+    ...point,
+    x: scoreTrend.points.length > 1 ? (index / (scoreTrend.points.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
+    y: scoreYFor(point.value),
+  }));
+  const scoreLinePath = scoreChartPoints.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const scoreAreaPath = scoreChartPoints.length
+    ? `${scoreLinePath} L${scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1)},${scoreChartHeight} L${scoreChartPoints[0].x.toFixed(1)},${scoreChartHeight} Z`
+    : "";
+  const scoreAverageY = scoreYFor(scoreAverage);
 
-  const streakCards: Array<{ key: string; icon: string; label: string; streak: typeof streaks.training; unit: string }> = [
-    { key: "training", icon: "↗", label: "Entrenamiento", streak: streaks.training, unit: "día entrenando" },
-    { key: "focus", icon: "⌁", label: "Foco", streak: streaks.focus, unit: "día con foco" },
-    { key: "reading", icon: "▱", label: "Lectura", streak: streaks.reading, unit: "día leyendo" },
-    { key: "sleep", icon: "☾", label: "Sueño de 7 h+", streak: streaks.sleep, unit: "noche completa" },
-    { key: "logging", icon: "✎", label: "Registro diario", streak: streaks.logging, unit: "día registrando" },
+  const streakCards: Array<{ key: string; icon: string; label: string; streak: typeof streaks.training; unitSingular: string; unitPlural: string; pendingLabel: string; warningLabel: string }> = [
+    { key: "training", icon: "↗", label: "Entrenamiento", streak: streaks.training, unitSingular: "semana", unitPlural: "semanas", pendingLabel: "Esta semana todavía no", warningLabel: `Sumá ${trainingWeeklyTarget} entrenamientos esta semana para no cortarla` },
+    { key: "focus", icon: "⌁", label: "Foco", streak: streaks.focus, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá un día con foco hoy para no cortarla" },
+    { key: "reading", icon: "▱", label: "Lectura", streak: streaks.reading, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá un día leyendo hoy para no cortarla" },
+    { key: "sleep", icon: "☾", label: "Sueño de 7 h+", streak: streaks.sleep, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá una noche completa hoy para no cortarla" },
+    { key: "logging", icon: "✎", label: "Registro diario", streak: streaks.logging, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá un día hoy para no cortarla" },
   ];
 
   const statsPanel = <section className="module-stack">
@@ -1695,15 +1823,33 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           <p><b>Hoy</b><small>{scoreLabel(score)}</small></p>
         </div>
         <div className="score-history-chart">
-          <div className="score-bars" role="img" aria-label={`Daily Score de los últimos ${trendSpan} días. Promedio ${scoreAverage} de 100.`}>
-            <i className="score-average-line" style={{ bottom: String(scoreAverage) + "%" }} aria-hidden="true" />
-            {scoreTrend.points.map((point) => <span
+          <svg
+            className="score-line-chart"
+            viewBox={`0 0 ${scoreChartWidth} ${scoreChartHeight}`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={`Daily Score de los últimos ${trendSpan} días. Promedio ${scoreAverage} de 100.`}
+          >
+            <defs>
+              <linearGradient id={scoreGradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--green)" stopOpacity="0.28" />
+                <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <line className="score-average-line" x1="0" y1={scoreAverageY} x2={scoreChartWidth} y2={scoreAverageY} vectorEffect="non-scaling-stroke" />
+            {scoreAreaPath && <path className="score-line-area" d={scoreAreaPath} fill={`url(#${scoreGradientId})`} />}
+            <path className="score-line-path" d={scoreLinePath} fill="none" vectorEffect="non-scaling-stroke" />
+            {scoreChartPoints.map((point) => <circle
               key={point.date}
-              className={point.date === today ? "today" : ""}
-              style={{ height: String(Math.max(point.value, 1)) + "%" }}
-              title={`${formatDate(point.date)} · ${point.value}/100`}
-            />)}
-          </div>
+              className={"score-line-dot " + (point.date === today ? "today" : "")}
+              cx={point.x}
+              cy={point.y}
+              r={point.date === today ? 5 : 3.4}
+              vectorEffect="non-scaling-stroke"
+            >
+              <title>{`${formatDate(point.date)} · ${point.value}/100`}</title>
+            </circle>)}
+          </svg>
           <div className="score-bars-foot">
             <small>{formatDate(scoreTrend.points[0]?.date ?? today)}</small>
             <small>Promedio {scoreAverage}/100{scoreDelta === null ? "" : ` · ${scoreDelta > 0 ? "+" : ""}${scoreDelta} vs. período anterior`}</small>
@@ -1718,10 +1864,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <div className="panel-heading"><div><p>CONSTANCIA</p><h2>Tus rachas</h2></div><span className="week-pill">{streakCards.filter((card) => card.streak.current > 0).length} activas</span></div>
       <div className="streak-grid">{streakCards.map((card) => <article key={card.key} className={"streak-card " + (card.streak.current > 0 ? "alive" : "cold")}>
         <span className="streak-icon">{card.icon}</span>
-        <b className="streak-count">{card.streak.current}<small>{card.streak.current === 1 ? " día" : " días"}</small></b>
+        <b className="streak-count">{card.streak.current}<small>{" " + (card.streak.current === 1 ? card.unitSingular : card.unitPlural)}</small></b>
         <p>{card.label}</p>
-        <small>{card.streak.pendingToday ? "Hoy todavía no" : card.streak.best > card.streak.current ? `Récord: ${card.streak.best}` : card.streak.current > 0 ? "Tu mejor marca" : "Sin racha activa"}</small>
-        {card.streak.pendingToday && <i className="streak-warning" title={`Registrá ${card.unit} hoy para no cortarla`} />}
+        <small>{card.streak.pendingToday ? card.pendingLabel : card.streak.best > card.streak.current ? `Récord: ${card.streak.best}` : card.streak.current > 0 ? "Tu mejor marca" : "Sin racha activa"}</small>
+        {card.streak.pendingToday && <i className="streak-warning" title={card.warningLabel} />}
       </article>)}</div>
     </article>
 
@@ -1737,7 +1883,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <path d={sparklinePath(row.trend.points, 120, 28)} fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" />
           </svg>
           <div className="trend-values">
-            <b>{row.format(row.trend.total)}</b>
+            <b>{row.format(row.useAverage ? row.trend.average : row.trend.total)}</b>
             <small className={"trend-delta " + direction}>{delta === null ? "sin base previa" : `${delta > 0 ? "+" : ""}${delta} %`}</small>
           </div>
         </div>;
@@ -1751,7 +1897,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <article><span>▱</span><p>PÁGINAS LEÍDAS<b>{periodReading.reduce((sum, item) => sum + item.pages, 0)}</b><small>{periodReading.reduce((sum, item) => sum + item.minutes, 0)} min de lectura</small></p></article>
       <article><span>◇</span><p>CALORÍAS REGISTRADAS<b>{periodMeals.reduce((sum, item) => sum + item.calories, 0).toLocaleString("es-AR")}</b><small>estimación del período</small></p></article>
     </div>
-    <article className="panel trend-panel"><div className="panel-heading"><div><p>COMPARACIÓN</p><h2>Constancia y foco</h2></div><div className="chart-legend"><span><i className="training" />Entrenamientos</span><span><i className="focus" />Horas de foco</span></div></div><div className="trend-chart">{trendValues.map((item) => <div key={item.label}><div className="bar-pair"><i className="training" style={{ height: String(item.training / maxTrend * 100) + "%" }} title={item.training + " entrenamientos"} /><i className="focus" style={{ height: String(item.focus / maxTrend * 100) + "%" }} title={item.focus.toFixed(1) + " h de foco"} /></div><small>{item.label}</small></div>)}</div></article>
   </section>;
   const dietCalendarStart = new Date(dietCalendarCursor + "-01T12:00:00");
   const dietCalendarMonthName = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(dietCalendarStart);
@@ -1773,7 +1918,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     return difference <= .1 ? "on-target" : difference <= .2 ? "near-target" : "off-target";
   };
 
-  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE HOY</p><h2>Comidas</h2></div><button className="add-button light" onClick={() => setMealForm(!mealForm)}>＋ Carga manual</button></div>
+  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE HOY</p><h2>Comidas</h2></div></div>
     {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><Image src={photoPreview} alt="Comida a analizar" width={38} height={38} unoptimized /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
       {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" onClick={() => void saveEstimate()}>Confirmar y guardar</button></div>}
     </div> : <LockedFeature
@@ -1781,12 +1926,37 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       note="Escribí qué comiste o sacale una foto al plato: la app estima calorías y macros."
       onOpen={openPro}
     ><div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea readOnly value="" placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><span className="photo-button">📷 Sacar o subir foto</span><span className="analyze-button">Analizar comida</span></div></div></LockedFeature>}
-    {mealForm && <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: today, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}><input name="name" required placeholder="Comida" /><input name="detail" required placeholder="Detalle" /><input name="calories" type="number" min="0" placeholder="kcal" /><button>Guardar</button></form>}
+    <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: today, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}>
+      <label>Comida<input name="name" required placeholder="Ej. Milanesa con puré" /></label>
+      <label>Detalle<input name="detail" required placeholder="Porción mediana, con ensalada…" /></label>
+      <label>Calorías<input name="calories" type="number" min="0" placeholder="kcal" /></label>
+      <button>＋ Agregar</button>
+    </form>
     <div className="meal-list">{data.meals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!data.meals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{calories.toLocaleString("es-AR")} kcal</b></div>
   </article>;
 
+  const dietEstimate = estimateTargetCalories(dietForm);
+  const dietQuickCaloriesValue = dietQuickCalories ?? dietEstimate?.targetCalories ?? 0;
+  const dietQuickPanel = <article className="panel diet-quick-panel">
+    <div className="panel-heading"><div><p>CALCULADORA RÁPIDA</p><h2>Calorías objetivo, sin IA</h2></div></div>
+    <p className="diet-intro">Completá tus datos y te proponemos una cifra diaria de referencia. Podés aceptarla o modificarla antes de guardarla.</p>
+    <div className="diet-fields">
+      <label>Peso actual (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.currentWeightKg} onChange={(event) => setDietQuickField("currentWeightKg", Number(event.target.value))} /></label>
+      <label>Peso objetivo (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.targetWeightKg} onChange={(event) => setDietQuickField("targetWeightKg", Number(event.target.value))} /></label>
+      <label>Altura (cm)<input type="number" min="120" max="230" value={dietForm.heightCm} onChange={(event) => setDietQuickField("heightCm", Number(event.target.value))} /></label>
+      <label>Edad<input type="number" min="18" max="100" value={dietForm.age} onChange={(event) => setDietQuickField("age", Number(event.target.value))} /></label>
+      <label>Género<Dropdown ariaLabel="Género para la estimación" value={dietForm.sex} onChange={(value) => setDietQuickField("sex", value as DietForm["sex"])} options={[{ value: "unspecified", label: "Prefiero no indicar" }, { value: "male", label: "Masculino" }, { value: "female", label: "Femenino" }]} /></label>
+      <label>Actividad<Dropdown ariaLabel="Actividad habitual" value={dietForm.activityLevel} onChange={(value) => setDietQuickField("activityLevel", value as DietForm["activityLevel"])} options={[{ value: "sedentary", label: "Baja / sedentaria" }, { value: "light", label: "Ligera · 1–3 días" }, { value: "moderate", label: "Moderada · 3–5 días" }, { value: "high", label: "Alta · 6–7 días" }]} /></label>
+      <label>Intensidad<Dropdown ariaLabel="Intensidad del objetivo" value={dietForm.goalPace} onChange={(value) => setDietQuickField("goalPace", value as DietForm["goalPace"])} options={[{ value: "gentle", label: "Gradual" }, { value: "moderate", label: "Moderado" }]} /></label>
+    </div>
+    <div className="diet-quick-result">
+      <label><span>CALORÍAS OBJETIVO</span><input type="number" min="1000" max="6000" step="10" value={dietQuickCaloriesValue || ""} onChange={(event) => setDietQuickCalories(Number(event.target.value) || 0)} /><small>{dietEstimate ? `Sugerencia: ${dietEstimate.targetCalories.toLocaleString("es-AR")} kcal · mantenimiento ${dietEstimate.maintenanceCalories.toLocaleString("es-AR")} kcal` : "Completá tus datos para calcular una sugerencia."}</small></label>
+      <button className="primary-action" type="button" disabled={saving || !dietQuickCaloriesValue} onClick={() => void saveDietTarget(dietQuickCaloriesValue)}>Guardar objetivo</button>
+    </div>
+  </article>;
+
   const dietPlannerPanel = <article className="panel diet-planner-panel">
-    <div className="panel-heading"><div><p>PLAN PERSONAL CON IA</p><h2>Armá una alimentación sencilla para tu objetivo</h2></div>{data.dietPlan && <span className="week-pill">Plan guardado</span>}</div>
+    <div className="panel-heading"><div><p>PLAN PERSONAL CON IA</p><h2>Armá una alimentación sencilla para tu objetivo</h2></div>{savedDietPlan && <span className="week-pill">Plan guardado</span>}</div>
     <p className="diet-intro">Completá tus datos y contanos qué necesitás. La aplicación calcula una referencia energética y la IA propone opciones intercambiables; no reemplaza la evaluación de un nutricionista.</p>
     <div className="diet-builder-grid">
       <div className="diet-fields">
@@ -1794,9 +1964,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <label>Altura (cm)<input type="number" min="120" max="230" value={dietForm.heightCm} onChange={(event) => setDietForm({ ...dietForm, heightCm: Number(event.target.value) })} /></label>
         <label>Peso actual (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.currentWeightKg} onChange={(event) => setDietForm({ ...dietForm, currentWeightKg: Number(event.target.value) })} /></label>
         <label>Peso objetivo (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.targetWeightKg} onChange={(event) => setDietForm({ ...dietForm, targetWeightKg: Number(event.target.value) })} /></label>
-        <label>Sexo para la estimación<select value={dietForm.sex} onChange={(event) => setDietForm({ ...dietForm, sex: event.target.value as DietForm["sex"] })}><option value="unspecified">Prefiero no indicar</option><option value="male">Masculino</option><option value="female">Femenino</option></select></label>
-        <label>Actividad habitual<select value={dietForm.activityLevel} onChange={(event) => setDietForm({ ...dietForm, activityLevel: event.target.value as DietForm["activityLevel"] })}><option value="sedentary">Baja / sedentaria</option><option value="light">Ligera · 1–3 días</option><option value="moderate">Moderada · 3–5 días</option><option value="high">Alta · 6–7 días</option></select></label>
-        <label>Ritmo del objetivo<select value={dietForm.goalPace} onChange={(event) => setDietForm({ ...dietForm, goalPace: event.target.value as DietForm["goalPace"] })}><option value="gentle">Gradual</option><option value="moderate">Moderado</option></select></label>
+        <label>Sexo para la estimación<Dropdown ariaLabel="Sexo para la estimación" value={dietForm.sex} onChange={(value) => setDietForm({ ...dietForm, sex: value as DietForm["sex"] })} options={[{ value: "unspecified", label: "Prefiero no indicar" }, { value: "male", label: "Masculino" }, { value: "female", label: "Femenino" }]} /></label>
+        <label>Actividad habitual<Dropdown ariaLabel="Actividad habitual" value={dietForm.activityLevel} onChange={(value) => setDietForm({ ...dietForm, activityLevel: value as DietForm["activityLevel"] })} options={[{ value: "sedentary", label: "Baja / sedentaria" }, { value: "light", label: "Ligera · 1–3 días" }, { value: "moderate", label: "Moderada · 3–5 días" }, { value: "high", label: "Alta · 6–7 días" }]} /></label>
+        <label>Ritmo del objetivo<Dropdown ariaLabel="Ritmo del objetivo" value={dietForm.goalPace} onChange={(value) => setDietForm({ ...dietForm, goalPace: value as DietForm["goalPace"] })} options={[{ value: "gentle", label: "Gradual" }, { value: "moderate", label: "Moderado" }]} /></label>
         <label>Estilo preferido<input value={dietForm.preferences} onChange={(event) => setDietForm({ ...dietForm, preferences: event.target.value })} placeholder="Ej. económico, vegetariano, 4 comidas" /></label>
       </div>
       <div className="diet-conversation"><div className="diet-conversation-head"><span>✦</span><div><b>Contale los detalles a la aplicación</b><small>Intolerancias, alergias, horarios, gustos, presupuesto o alimentos que evitás.</small></div></div><div className="diet-detail-chips">{["Intolerancia a la lactosa", "Sin gluten", "Vegetariano", "Poco tiempo para cocinar"].map((detail) => <button key={detail} type="button" onClick={() => addDietDetail(detail)}>{detail}</button>)}</div><textarea value={dietForm.details} onChange={(event) => setDietForm({ ...dietForm, details: event.target.value })} placeholder="Ej. Soy intolerante a la lactosa, almuerzo fuera de casa y necesito comidas simples…" /><button className={"diet-voice-button " + (dietRecording ? "recording" : "")} type="button" disabled={dietVoiceLoading} onClick={() => dietRecording ? stopDietRecording() : void startDietRecording()}><span>{dietRecording ? "■" : "●"}</span>{dietVoiceLoading ? "Interpretando audio…" : dietRecording ? "Terminar grabación" : "Contarlo por audio"}</button><small className="privacy-note">El audio se transcribe y no se conserva.</small></div>
@@ -1808,11 +1978,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const calorieCalendarPanel = <article className="panel calorie-calendar-panel"><div className="calorie-calendar-top"><div><p>SEGUIMIENTO DE LA DIETA</p><h2>Calorías por día</h2><small>{dietTargetCalories ? <>Tu referencia actual es <b>{dietTargetCalories.toLocaleString("es-AR")} kcal diarias.</b></> : "Creá y guardá un plan para comparar cada día con tu objetivo."}</small></div><div className="calorie-calendar-nav"><button onClick={() => shiftDietCalendar(-1)}>‹</button><b>{dietCalendarMonthName}</b><button onClick={() => shiftDietCalendar(1)}>›</button></div></div><div className="calorie-calendar"><div className="calorie-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <b key={day + index}>{day}</b>)}</div><div className="calorie-calendar-cells">{Array.from({ length: dietCalendarOffset }, (_, index) => <span className="blank" key={"diet-blank-" + index} />)}{Array.from({ length: dietCalendarDays }, (_, index) => { const day = index + 1; const iso = dietCalendarCursor + "-" + String(day).padStart(2, "0"); const total = caloriesByDate[iso] ?? 0; return <div className={calorieStatus(total) + (iso === today ? " today" : "")} key={iso} title={total ? total + " kcal registradas" : "Sin comidas registradas"}><span>{day}</span><b>{total ? total.toLocaleString("es-AR") : "—"}</b><small>kcal</small></div>; })}</div></div><div className="calorie-legend"><span><i className="on-target" />En objetivo ±10%</span><span><i className="near-target" />Cerca ±20%</span><span><i className="off-target" />Fuera del rango</span><span><i className="empty" />Sin registro</span></div></article>;
 
   const booksPanel = <section className="books-layout"><article className="panel section-panel books-panel"><div className="panel-heading"><div><p>TU BIBLIOTECA</p><h2>Libros</h2></div><button className="add-button light" onClick={() => bookForm ? setBookForm(false) : openAddBook(bookTab)}>{bookForm ? "Cerrar" : "＋ Nuevo libro"}</button></div>
-    {bookForm && <form className="book-form smart-book-form" onSubmit={(event) => void submitNewBook(event)}><div className="book-title-search"><input name="title" autoComplete="off" required value={bookDraft.title} onFocus={() => { if (bookSuggestions.length) setBookSuggestionOpen(true); }} onChange={(event) => { const title = event.target.value; setBookDraft({ ...bookDraft, title, coverUrl: "", externalKey: "" }); setBookSuggestionOpen(true); if (title.trim().length < 2) { setBookSuggestions([]); setBookSuggestLoading(false); } }} placeholder="Empezá a escribir el título…" />{(bookDraft.title.trim().length >= 2 && bookSuggestionOpen && (bookSuggestLoading || bookSuggestions.length > 0)) && <div className="book-autocomplete">{bookSuggestLoading && <div className="book-searching"><span className="voice-spinner" />Buscando en el catálogo…</div>}{!bookSuggestLoading && bookSuggestions.map((book) => <button type="button" key={book.key} onClick={() => chooseBookSuggestion(book)}><CatalogBookCover book={book} compact /><p><b>{book.title}</b><small>{book.author}{book.year ? ` · ${book.year}` : ""}</small></p>{book.pages > 0 && <em>{book.pages} pág.</em>}</button>)}</div>}</div><input name="author" value={bookDraft.author} onChange={(event) => setBookDraft({ ...bookDraft, author: event.target.value })} placeholder="Autor" /><input name="totalPages" value={bookDraft.totalPages || ""} onChange={(event) => setBookDraft({ ...bookDraft, totalPages: Number(event.target.value) || 0 })} type="number" min="0" placeholder="Páginas" /><select name="status" value={bookDraft.status} onChange={(event) => setBookDraft({ ...bookDraft, status: event.target.value as BookStatus })}><option value="reading">Leyendo</option><option value="read">Leído</option><option value="wishlist">Quiero leer</option></select><button disabled={saving || bookMatching}>{bookMatching ? "Identificando…" : "Guardar"}</button></form>}
+    {bookForm && <form className="book-form smart-book-form" onSubmit={(event) => void submitNewBook(event)}><div className="book-title-search"><input name="title" autoComplete="off" required value={bookDraft.title} onFocus={() => { if (bookSuggestions.length) setBookSuggestionOpen(true); }} onChange={(event) => { const title = event.target.value; setBookDraft({ ...bookDraft, title, coverUrl: "", externalKey: "" }); setBookSuggestionOpen(true); if (title.trim().length < 2) { setBookSuggestions([]); setBookSuggestLoading(false); } }} placeholder="Empezá a escribir el título…" />{(bookDraft.title.trim().length >= 2 && bookSuggestionOpen && (bookSuggestLoading || bookSuggestions.length > 0)) && <div className="book-autocomplete">{bookSuggestLoading && <div className="book-searching"><span className="voice-spinner" />Buscando en el catálogo…</div>}{!bookSuggestLoading && bookSuggestions.map((book) => <button type="button" key={book.key} onClick={() => chooseBookSuggestion(book)}><CatalogBookCover book={book} compact /><p><b>{book.title}</b><small>{book.author}{book.year ? ` · ${book.year}` : ""}</small></p>{book.pages > 0 && <em>{book.pages} pág.</em>}</button>)}</div>}</div><input name="author" value={bookDraft.author} onChange={(event) => setBookDraft({ ...bookDraft, author: event.target.value })} placeholder="Autor" /><input name="totalPages" value={bookDraft.totalPages || ""} onChange={(event) => setBookDraft({ ...bookDraft, totalPages: Number(event.target.value) || 0 })} type="number" min="0" placeholder="Páginas" /><Dropdown ariaLabel="Estado del libro" value={bookDraft.status} onChange={(value) => setBookDraft({ ...bookDraft, status: value as BookStatus })} options={[{ value: "reading", label: "Leyendo" }, { value: "read", label: "Leído" }, { value: "wishlist", label: "Quiero leer" }]} /><button disabled={saving || bookMatching}>{bookMatching ? "Identificando…" : "Guardar"}</button></form>}
     <div className="book-tabs">{(["reading", "read", "wishlist"] as BookStatus[]).map((tab) => <button className={bookTab === tab ? "active" : ""} key={tab} onClick={() => { setBookTab(tab); setBookShelfPage(0); setSelectedBookId(null); }}>{tab === "reading" ? "Leyendo" : tab === "read" ? "Leídos" : "Quiero leer"} <i>{data.books.filter((book) => book.status === tab).length}</i></button>)}</div>
     {booksInTab.length ? <><div className="book-shelf-list">{visibleBooks.map((book) => { const isSelected = selectedBook?.id === book.id; return <article className={"current-book shelf-book " + (isSelected ? "selected" : "")} key={book.id}><SavedBookCover book={book} /><div className="book-info"><button type="button" className="book-card-select" aria-pressed={isSelected} onClick={() => setSelectedBookId(book.id)}><span>{bookTab === "reading" ? "LEYENDO AHORA" : bookTab === "read" ? "TERMINADO" : "PRÓXIMA LECTURA"}</span><h3>{book.title}</h3><p>{book.author}</p></button><div className="progress-line"><i style={{ width: String(book.totalPages ? Math.min(100, book.currentPage / book.totalPages * 100) : 0) + "%" }} /></div><small>{book.currentPage} de {book.totalPages || "?"} páginas</small><button type="button" className="delete-book-trigger" onClick={() => setBookToDelete(book)}>Eliminar libro</button></div>{bookTab === "reading" && isSelected ? <div className="page-counter"><label>Páginas hoy</label><div><input type="number" min="0" value={pagesInput} onChange={(event) => setPagesInput(Number(event.target.value) || 0)} /><button className="save-pages" onClick={() => void save({ action: "set_pages", bookId: book.id, date: today, pages: pagesInput })}>Guardar</button></div></div> : <button type="button" className="book-select-action" onClick={() => setSelectedBookId(book.id)}>{isSelected ? "✓ Seleccionado" : "Ver notas y detalles"}</button>}</article>; })}</div>{bookShelfPageCount > 1 && <div className="book-shelf-pagination"><button type="button" disabled={visibleBookShelfPage === 0} onClick={() => showBookShelfPage(visibleBookShelfPage - 1)}>← Anteriores</button><span>{visibleBookShelfPage + 1} de {bookShelfPageCount}</span><button type="button" disabled={visibleBookShelfPage === bookShelfPageCount - 1} onClick={() => showBookShelfPage(visibleBookShelfPage + 1)}>Siguientes →</button></div>}</> : <button type="button" className="empty-shelf" onClick={() => openAddBook(bookTab)}><span>＋</span><b>No hay libros en esta lista</b><p>Tocá acá para agregar el primero.</p></button>}
   </article><article className="panel notes-panel section-panel"><div className="panel-heading"><div><p>IDEAS QUE QUEDAN</p><h2>Notas del libro</h2></div></div>{selectedBook ? <><form onSubmit={(event) => { event.preventDefault(); void save({ action: "add_note", bookId: selectedBook.id, content: note }).then((ok) => { if (ok) setNote(""); }); }}><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={"Idea u observación de " + selectedBook.title + "…"} /><button>Guardar nota</button></form><div className="notes-list">{data.notes.filter((item) => item.bookId === selectedBook.id).map((item) => <div key={item.id}><span>“</span><p>{item.content}</p></div>)}</div></> : <div className="inline-empty"><span>✎</span><p><b>Elegí un libro</b><small>Sus notas aparecerán acá.</small></p></div>}</article>
-  <article className="panel section-panel book-discover-panel"><div className="book-discover-head"><span>✦</span><div><p>DESCUBRIR NUEVAS LECTURAS</p><h2>¿Sobre qué querés leer?</h2><small>Buscá por un tema, una idea o un interés y elegí el idioma de la edición.</small></div></div><form className="book-discover-form" onSubmit={(event) => void discoverBooks(event)}><input value={discoverQuery} onChange={(event) => setDiscoverQuery(event.target.value)} placeholder="Ej. finanzas personales, inteligencia artificial, historia…" /><select aria-label="Idioma del libro" value={discoverLanguage} onChange={(event) => setDiscoverLanguage(event.target.value)}>{bookLanguageOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button disabled={discoverLoading || discoverQuery.trim().length < 2}>{discoverLoading ? "Buscando…" : "Buscar libros"}</button></form><div className="book-topic-chips">{["Finanzas personales", "Productividad", "Historia", "Tecnología", "Psicología", "Biografías"].map((topic) => <button type="button" key={topic} onClick={() => setDiscoverQuery(topic)}>{topic}</button>)}</div>{discoverLoading && <div className="discover-loading"><span className="voice-spinner" /><b>Buscando buenas opciones…</b></div>}{!discoverLoading && discoverResults.length > 0 && <div className="book-results-grid">{discoverResults.map((book) => { const isSaved = data.books.some((savedBook) => savedBook.title.toLowerCase() === book.title.toLowerCase() && (!savedBook.author || savedBook.author.toLowerCase() === book.author.toLowerCase())); return <article key={book.key}><CatalogBookCover book={book} /><div className="book-result-copy"><span>{book.year || "Edición disponible"}</span><h3>{book.title}</h3><p>{book.author}</p><small>{book.pages ? `${book.pages} páginas aproximadas` : "Páginas no informadas"}</small></div><div className="book-result-actions"><button type="button" disabled={saving || isSaved} onClick={() => void saveDiscoveredBook(book)}>{isSaved ? "✓ En tu biblioteca" : "＋ Quiero leer"}</button><a href={book.openLibraryUrl} target="_blank" rel="noreferrer">Ver ficha ↗</a></div></article>; })}</div>}{!discoverLoading && discoverSearched && !discoverResults.length && <div className="inline-empty discover-empty"><span>⌕</span><p><b>No encontramos opciones con esos filtros</b><small>Probá con un tema más amplio u otro idioma.</small></p></div>}<p className="catalog-credit">Información bibliográfica y portadas provistas por <a href="https://openlibrary.org/" target="_blank" rel="noreferrer">Open Library</a>.</p></article></section>;
+  <article className="panel section-panel book-discover-panel"><div className="book-discover-head"><span>✦</span><div><p>DESCUBRIR NUEVAS LECTURAS</p><h2>¿Sobre qué querés leer?</h2><small>Buscá por un tema, una idea o un interés y elegí el idioma de la edición.</small></div></div><form className="book-discover-form" onSubmit={(event) => void discoverBooks(event)}><input value={discoverQuery} onChange={(event) => setDiscoverQuery(event.target.value)} placeholder="Ej. finanzas personales, inteligencia artificial, historia…" /><Dropdown ariaLabel="Idioma del libro" value={discoverLanguage} onChange={setDiscoverLanguage} options={bookLanguageOptions.map(([value, label]) => ({ value, label }))} /><button disabled={discoverLoading || discoverQuery.trim().length < 2}>{discoverLoading ? "Buscando…" : "Buscar libros"}</button></form><div className="book-topic-chips">{["Finanzas personales", "Productividad", "Historia", "Tecnología", "Psicología", "Biografías"].map((topic) => <button type="button" key={topic} onClick={() => setDiscoverQuery(topic)}>{topic}</button>)}</div>{discoverLoading && <div className="discover-loading"><span className="voice-spinner" /><b>Buscando buenas opciones…</b></div>}{!discoverLoading && discoverResults.length > 0 && <div className="book-results-grid">{discoverResults.map((book) => { const isSaved = data.books.some((savedBook) => savedBook.title.toLowerCase() === book.title.toLowerCase() && (!savedBook.author || savedBook.author.toLowerCase() === book.author.toLowerCase())); return <article key={book.key}><CatalogBookCover book={book} /><div className="book-result-copy"><span>{book.year || "Edición disponible"}</span><h3>{book.title}</h3><p>{book.author}</p><small>{book.pages ? `${book.pages} páginas aproximadas` : "Páginas no informadas"}</small></div><div className="book-result-actions"><button type="button" disabled={saving || isSaved} onClick={() => void saveDiscoveredBook(book)}>{isSaved ? "✓ En tu biblioteca" : "＋ Quiero leer"}</button><a href={book.openLibraryUrl} target="_blank" rel="noreferrer">Ver ficha ↗</a></div></article>; })}</div>}{!discoverLoading && discoverSearched && !discoverResults.length && <div className="inline-empty discover-empty"><span>⌕</span><p><b>No encontramos opciones con esos filtros</b><small>Probá con un tema más amplio u otro idioma.</small></p></div>}<p className="catalog-credit">Información bibliográfica y portadas provistas por <a href="https://openlibrary.org/" target="_blank" rel="noreferrer">Open Library</a>.</p></article></section>;
 
   const priorityEditor = <article className="panel priority-panel"><div className="panel-heading"><div><p>PRIORIDAD DEL MES</p><h2>¿Qué te importa más cumplir?</h2></div></div><p className="panel-intro">Estas prioridades definen el peso de cada área en el Daily Score.</p><div className="priority-list">{([
     ["gymWeight", "Entrenamiento", "↗", "Constancia en todas tus disciplinas"],
@@ -1822,7 +1992,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     ["readingWeight", "Lectura", "▱", "Leer y avanzar en tus libros"],
     ["goalsWeight", "Objetivos y organización", "◎", "Completar metas y próximos pasos"],
   ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Estadísticas reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}>Guardar prioridades</button></article>;
-  const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalDeadline(today, goalPeriod, customLength, customUnit) }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<select name="category">{goalAreaOptions.map((area) => <option key={area.value} value={area.value}>{area.label}</option>)}</select></label><label>Plazo<select value={goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="annual">Este año</option><option value="custom">Personalizado</option></select></label>{goalPeriod === "custom" && <div className="custom-duration"><label>Dentro de<input type="number" min="1" value={customLength} onChange={(event) => setCustomLength(Number(event.target.value) || 1)} /></label><label>Unidad<select value={customUnit} onChange={(event) => setCustomUnit(event.target.value as "months" | "years")}><option value="months">meses</option><option value="years">años</option></select></label></div>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalDeadline(today, goalPeriod, customLength, customUnit))}</b></p></div><button className="primary-action">Crear objetivo</button></form></article>
+  const goalTargetDate = goalPeriod === "custom" ? customDate : goalDeadline(today, goalPeriod);
+  const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalTargetDate }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<Dropdown name="category" ariaLabel="Área del objetivo" options={goalAreaOptions.map((area) => ({ value: area.value, label: area.label }))} /></label><label>Plazo<Dropdown ariaLabel="Plazo del objetivo" value={goalPeriod} onChange={(value) => setGoalPeriod(value as GoalPeriod)} options={[{ value: "weekly", label: "Esta semana" }, { value: "monthly", label: "Este mes" }, { value: "annual", label: "Este año" }, { value: "custom", label: "Fecha exacta" }]} /></label>{goalPeriod === "custom" && <label>Fecha exacta<DatePicker ariaLabel="Fecha exacta del objetivo" value={customDate} onChange={setCustomDate} min={today} /></label>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalTargetDate)}</b></p></div><button className="primary-action">Crear objetivo</button></form></article>
     <article className="panel goal-list-panel"><div className="panel-heading"><div><p>TU CAMINO</p><h2>Objetivos guardados</h2></div><span className="week-pill">{activeGoals.length} activos</span></div><div className="goal-list">{data.goals.map((goal) => <div className={"goal-row " + (goal.completedAt ? "completed" : "")} key={goal.id}><button className="goal-check" onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: !goal.completedAt })}>{goal.completedAt ? "✓" : ""}</button><div><div className="goal-meta"><span className={"category-chip " + goal.category}>{categoryLabels[goal.category]}</span><span>{periodLabels[goal.period]}</span></div><b>{goal.title}</b><small>{goal.completedAt ? "Objetivo cumplido" : formatDate(goal.targetDate) + " · " + countdownLabel(Math.max(0, dayDistance(today, goal.targetDate)))}</small></div><button className="goal-delete" onClick={() => void save({ action: "delete_goal", id: goal.id })}>×</button></div>)}{!data.goals.length && <div className="inline-empty tall"><span>◎</span><p><b>Todavía no hay objetivos</b><small>Empezá con uno concreto.</small></p></div>}</div></article></div></section>;
 
   // ---------------------------------------------------------------------------
@@ -2037,9 +2208,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <input value={draft.title} onChange={(event) => update({ ...draft, title: event.target.value })} placeholder="Entrenar 12 veces este mes" maxLength={120} />
     </label>
     <label className="wide"><span>Cómo se cuenta</span>
-      <select value={draft.source} onChange={(event) => update({ ...draft, source: event.target.value as GoalSource })}>
-        {GOAL_SOURCES.map((source) => <option key={source.value} value={source.value}>{source.label}</option>)}
-      </select>
+      <Dropdown ariaLabel="Cómo se cuenta el objetivo" value={draft.source} onChange={(value) => update({ ...draft, source: value as GoalSource })} options={GOAL_SOURCES.map((source) => ({ value: source.value, label: source.label }))} />
     </label>
     <small className="goal-source-hint">{goalSource(draft.source).hint}</small>
     <label><span>Meta</span>
@@ -2047,15 +2216,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </label>
     <label><span>Unidad</span>
       {draft.source === "manual"
-        ? <select value={draft.metric} onChange={(event) => update({ ...draft, metric: event.target.value as GoalMetric })}>
-            {GOAL_METRICS.map((metric) => <option key={metric.value} value={metric.value}>{metric.label}</option>)}
-          </select>
+        ? <Dropdown ariaLabel="Unidad del objetivo" value={draft.metric} onChange={(value) => update({ ...draft, metric: value as GoalMetric })} options={GOAL_METRICS.map((metric) => ({ value: metric.value, label: metric.label }))} />
         : <input value={goalSource(draft.source).unit} readOnly tabIndex={-1} />}
     </label>
     <label><span>Plazo</span>
-      <select value={draft.period} onChange={(event) => update({ ...draft, period: event.target.value as GroupGoal["period"] })}>
-        <option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="custom">Fecha propia</option>
-      </select>
+      <Dropdown ariaLabel="Plazo del objetivo" value={draft.period} onChange={(value) => update({ ...draft, period: value as GroupGoal["period"] })} options={[{ value: "weekly", label: "Esta semana" }, { value: "monthly", label: "Este mes" }, { value: "custom", label: "Fecha propia" }]} />
     </label>
     {draft.period === "custom" && <label><span>Hasta</span>
       <input type="date" value={draft.dueDate} onChange={(event) => update({ ...draft, dueDate: event.target.value })} />
@@ -2138,6 +2303,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share?.streak ? `${pluralize(share.streak, "día", "días")} de racha · mejor ${share.bestStreak}` : "Todavía sin racha"}</span></p>
           </div>
           <div className="friend-streak-bar"><small>RACHA DE USO</small><i style={{ width: `${Math.min(100, (share?.streak ?? 0) / Math.max(1, Math.max(myStreak.current, share?.streak ?? 0)) * 100)}%` }} /><b>{share?.streak ?? 0}</b></div>
+          <div className="friend-nudge-wrap">
+            <button type="button" className="friend-nudge" onClick={() => setNudgeOpenFor(nudgeOpenFor === friend.email ? null : friend.email)}>
+              <span>✉ Mandar un mensaje</span><i>{nudgeOpenFor === friend.email ? "▲" : "▼"}</i>
+            </button>
+            {nudgeOpenFor === friend.email && <div className="ui-dropdown-panel friend-nudge-menu" role="menu">
+              {FRIEND_NUDGE_MESSAGES.map((message) => <a key={message} role="menuitem" className="ui-dropdown-option" href={mailLink(message, friend.email)} onClick={() => setNudgeOpenFor(null)}>{message}</a>)}
+            </div>}
+          </div>
         </article>;
       })}
     </section>
@@ -2395,7 +2568,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     const toggleGoal = (goal: string) => setOnboardingGoals((current) => current.includes(goal) ? current.filter((item) => item !== goal) : current.length < 3 ? [...current, goal] : current);
     const togglePreference = (preference: string) => setOnboardingPreferences((current) => current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference]);
     return <main className="editorial-onboarding">
-      <header className="editorial-onboarding-header"><button type="button" className="lifetrack-brand onboarding-brand-back" onClick={goBackFromOnboarding} aria-label={onboardingStep === 2 ? "Volver al primer paso" : "Volver al inicio de sesión"}><span className="brand-mark">A</span><b>AVORA</b></button><span>Paso {onboardingStep} de 2</span></header>
+      <header className="editorial-onboarding-header"><button type="button" className="lifetrack-brand onboarding-brand-back" onClick={goBackFromOnboarding} aria-label={onboardingStep === 2 ? "Volver al primer paso" : "Volver al inicio de sesión"}><span className="brand-mark"><BrandMark /></span><b>AVORA</b></button><span>Paso {onboardingStep} de 2</span></header>
       <div className="editorial-stepper" aria-label={`Paso ${onboardingStep} de 2`}>
         <div className="active"><span>01</span><b>Perfil</b><i /></div><div className={onboardingStep === 2 ? "active" : ""}><span>02</span><b>Prioridades</b></div>
       </div>
@@ -2432,7 +2605,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">A</span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu">
+    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu">
           {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">
             <p>CUENTA</p>
             <a className="profile-menu-signout" href="/signout-with-chatgpt?return_to=/" role="menuitem">
@@ -2500,6 +2673,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         </div>
         {physicalTab === "training" ? trainingPanel : <section className="single-section meals-section">
           {mealsPanel}
+          {dietQuickPanel}
           {isPro ? dietPlannerPanel : <LockedFeature
             title="Plan de alimentación"
             note="Calculado con tu edad, peso y actividad, y adaptado a tus intolerancias."

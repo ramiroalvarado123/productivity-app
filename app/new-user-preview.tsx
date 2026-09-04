@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { BrandMark } from "./brand-mark";
 
 type PreviewStep = "access" | "profile" | "priorities" | "complete";
 
@@ -29,7 +30,7 @@ export default function NewUserPreview() {
   if (step === "access") {
     return <main className="lifetrack-access preview-user-flow">
       <header className="lifetrack-access-header">
-        <div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div>
+        <div className="lifetrack-brand"><span className="brand-mark"><BrandMark /></span><b>AVORA</b></div>
         <span>VISTA DE USUARIO NUEVO</span>
       </header>
       <section className="lifetrack-access-body">
@@ -56,7 +57,7 @@ export default function NewUserPreview() {
 
   if (step === "complete") {
     return <main className="editorial-onboarding preview-user-flow">
-      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div><span>RECORRIDO COMPLETO</span></header>
+      <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark"><BrandMark /></span><b>AVORA</b></div><span>RECORRIDO COMPLETO</span></header>
       <section className="preview-complete">
         <span>✓</span><p className="step-label">TODO LISTO</p><h1>Bienvenido a AVORA, {name}.</h1>
         <p>Así termina la configuración inicial de un usuario nuevo. En el uso real, desde acá se abre el Inicio con todas las áreas personalizadas.</p>
@@ -67,7 +68,7 @@ export default function NewUserPreview() {
 
   const currentStep = step === "profile" ? 1 : 2;
   return <main className="editorial-onboarding preview-user-flow">
-    <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div><span>Paso {currentStep} de 2 · Vista de usuario nuevo</span></header>
+    <header className="editorial-onboarding-header"><div className="lifetrack-brand"><span className="brand-mark"><BrandMark /></span><b>AVORA</b></div><span>Paso {currentStep} de 2 · Vista de usuario nuevo</span></header>
     <div className="editorial-stepper" aria-label={`Paso ${currentStep} de 2`}>
       <div className="active"><span>01</span><b>Perfil</b><i /></div><div className={currentStep === 2 ? "active" : ""}><span>02</span><b>Prioridades</b></div>
     </div>

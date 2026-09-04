@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { BrandMark } from "./brand-mark";
 import { SUPABASE_URL } from "./lib/supabase-auth";
 
 type Mode = "login" | "signup" | "recover";
@@ -72,7 +73,7 @@ export default function AuthPanel({ notice = "" }: { notice?: string }) {
     <main className="lifetrack-access">
       <header className="lifetrack-access-header">
         <div className="lifetrack-brand">
-          <span className="brand-mark">A</span>
+          <span className="brand-mark"><BrandMark /></span>
           <b>AVORA</b>
         </div>
         <span>{confirmationEmail ? "CONFIRMÁ TU CUENTA" : "ACCESO SEGURO"}</span>

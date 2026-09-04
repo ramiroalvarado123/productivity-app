@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { Instrument_Sans, Newsreader } from "next/font/google";
+import { Cormorant_Garamond, Instrument_Sans, Newsreader } from "next/font/google";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument-sans", display: "swap" });
 const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-newsreader", display: "swap" });
+const cormorantGaramond = Cormorant_Garamond({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-cormorant", display: "swap" });
 const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://productivity-app-git-feat-vercel-supabase-c7675b-ralvarado-3362.vercel.app");
 
 export const metadata: Metadata = {
@@ -28,7 +29,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es" className={`${instrumentSans.variable} ${newsreader.variable}`}>
+    <html lang="es" className={`${instrumentSans.variable} ${newsreader.variable} ${cormorantGaramond.variable}`}>
       <body>{children}</body>
     </html>
   );
