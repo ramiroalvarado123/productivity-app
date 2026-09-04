@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Sans, Newsreader } from "next/font/google";
 import PwaRegistration from "./pwa-registration";
+import SettingsController from "./settings-controller";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument-sans", display: "swap" });
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="es">
       <body className={`${instrumentSans.variable} ${newsreader.variable}`}>
         <PwaRegistration />
+        <SettingsController />
         {children}
       </body>
     </html>
