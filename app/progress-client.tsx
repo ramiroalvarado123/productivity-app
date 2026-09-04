@@ -6,6 +6,7 @@ import { BrandMark } from "./brand-mark";
 import { DatePicker } from "./date-picker";
 import { Dropdown, type DropdownOption } from "./dropdown";
 import { FULL_DAY_HOUR_OPTIONS, TimeFieldPicker } from "./time-dropdown";
+import { TourOverlay, type TourStep } from "./tour-overlay";
 import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
 import { quoteForDate } from "./lib/quotes";
 import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "./lib/streaks";
@@ -20,7 +21,7 @@ import {
   type GoalMetric, type GoalSource, type Group, type GroupAccent, type GroupGoal, type SocialData,
 } from "./lib/social";
 
-type User = { displayName: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string };
+type User = { displayName: string; username: string; avatarUrl: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string };
 type Meal = { id: number; name: string; detail: string; calories: number; protein: number; carbs: number; fat: number; mealDate: string };
 type BookStatus = "reading" | "read" | "wishlist";
 type Book = { id: number; title: string; author: string; status: BookStatus; totalPages: number; currentPage: number; coverUrl: string; externalKey: string };
@@ -143,6 +144,15 @@ const EVENT_CATEGORY_OPTIONS: DropdownOption[] = [
   { value: "training", label: "Entrenamiento" }, { value: "health", label: "Salud" }, { value: "other", label: "Otro" },
 ];
 const kindLabels: Record<Discipline["kind"], string> = { strength: "Fuerza / gimnasio", running: "Running", cycling: "Ciclismo", swimming: "Natación", sport: "Deporte", other: "Otra" };
+// Recorrido guiado de la primera vez: sólo elementos de Inicio, para no tener
+// que navegar entre secciones mientras el tour está abierto.
+const TOUR_STEPS: TourStep[] = [
+  { selector: "[data-tour='nav']", title: "Tus áreas, siempre a mano", body: "Entrenamiento, Alimentación, Sueño, Estudio o Trabajo, Plan, Estadísticas y Amigos. Todo vive acá." },
+  { selector: "[data-tour='score']", title: "Tu Daily Score", body: "Un puntaje diario armado con lo que registraste y el peso que le diste a cada prioridad." },
+  { selector: "[data-tour='metrics']", title: "Lo que más te importa", body: "Estas tarjetas cambian según tus prioridades: acá vas a ver tu avance del día." },
+  { selector: "[data-tour='voice']", title: "Cerrá tu día hablando", body: "Contá qué hiciste en 60 segundos en vez de cargar cada cosa a mano." },
+  { selector: "[data-tour='profile']", title: "Tu cuenta", body: "Datos personales, membresía y cerrar sesión, todo desde acá." },
+];
 /** Mensajes cortos para el botón "Mandar un mensaje" del círculo: un empujón, no una conversación. */
 const FRIEND_NUDGE_MESSAGES = [
   "¡Vamos que se puede! 💪",
@@ -383,30 +393,68 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 }
 
-export default function ProgressClient({ initialUser, initialError = "", pendingInviteCode = "", inviteResult = "" }: {
+export default function ProgressClient({ initialUser, initialError = "", pendingInviteCode = "", inviteResult = "", showTutorial = false }: {
   initialUser: User;
   initialError?: string;
   /** Código guardado al abrir un link de invitación sin sesión. */
   pendingInviteCode?: string;
   /** Resultado de un link abierto ya con sesión, para avisar sin recargar. */
   inviteResult?: "" | "ok" | "error";
+  /** Sólo viene en true en el primer redirect después de completar el onboarding (ver `?tour=1`). */
+  showTutorial?: boolean;
 }) {
   const [today] = useState(argentinaDate);
   const monthKey = today.slice(0, 7);
   const week = useMemo(() => weekFor(today), [today]);
   const [data, setData] = useState<ProgressData>(() => emptyData(initialUser, monthKey));
   const [section, setSection] = useState<Section>("summary");
+  const [tourActive, setTourActive] = useState(showTutorial);
+  // El query param sólo sirve para prender el tour en este redirect puntual:
+  // se lo saca de la URL enseguida para que un refresh no lo repita.
+  useEffect(() => {
+    if (!showTutorial) return;
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [showTutorial]);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsUsername, setSettingsUsername] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [loading, setLoading] = useState(initialUser.onboardingCompleted);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(initialError);
   const [onboardingStep, setOnboardingStep] = useState<1 | 2>(1);
   const [onboardingName, setOnboardingName] = useState(initialUser.displayName);
+  const [onboardingUsername, setOnboardingUsername] = useState("");
   const [onboardingGoals, setOnboardingGoals] = useState<string[]>([]);
   const [onboardingPreferences, setOnboardingPreferences] = useState<string[]>([]);
+  const usernameValue = onboardingUsername.trim().toLowerCase();
+  const usernameFormatValid = /^[a-z0-9_]{3,20}$/.test(usernameValue);
+  // Chequeo en vivo, con debounce, de si el nombre de usuario está libre. El
+  // índice único del lado del servidor es la garantía real; esto es sólo para
+  // avisar antes de que intenten enviar el formulario. El resultado va con el
+  // valor que lo generó: si ya cambiaste lo que escribiste, "checking" se
+  // deriva solo (más abajo) en vez de necesitar otro setState acá.
+  const [usernameCheck, setUsernameCheck] = useState<{ value: string; status: "available" | "taken" } | null>(null);
+  useEffect(() => {
+    if (!usernameFormatValid) return;
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      fetch("/api/progress", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ action: "check_username", username: usernameValue }) })
+        .then((response) => response.json())
+        .then((result: { available?: boolean }) => { if (!cancelled) setUsernameCheck({ value: usernameValue, status: result.available ? "available" : "taken" }); })
+        .catch(() => {});
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [usernameValue, usernameFormatValid]);
+  const usernameStatus: "idle" | "checking" | "available" | "taken" | "invalid" = !usernameValue ? "idle"
+    : !usernameFormatValid ? "invalid"
+    : usernameCheck?.value === usernameValue ? usernameCheck.status
+    : "checking";
   const [priorityDraft, setPriorityDraft] = useState<Priorities>({ monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 });
   const [selectedDisciplineId, setSelectedDisciplineId] = useState<number | null>(null);
   const [trainingDate, setTrainingDate] = useState(today);
+  const [trainingWeekAnchor, setTrainingWeekAnchor] = useState(today);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
   // Meta de entrenamientos por semana, para la racha de constancia. Vive en
   // este navegador (no en el servidor) porque es una preferencia liviana de
@@ -427,7 +475,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [social, setSocial] = useState<SocialData>(emptySocial);
   const [friendsTab, setFriendsTab] = useState<"circle" | "groups">("circle");
   const [nudgeOpenFor, setNudgeOpenFor] = useState<string | null>(null);
-  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteUsername, setInviteUsername] = useState("");
   const [inviteLink, setInviteLink] = useState("");
   const [inviteCopied, setInviteCopied] = useState(false);
   // Crear un grupo es un formulario aparte que termina en "Guardar grupo":
@@ -640,8 +688,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     }
   }, [loadSocial]);
 
+  // Sólo saca duplicados reales (misma fila repetida): antes agrupaba por
+  // proyecto+fecha y se comía sesiones legítimas cuando estudiabas la misma
+  // materia dos veces el mismo día.
   const uniqueFocusSessions = useMemo(
-    () => data.focusSessions.filter((item, index, rows) => rows.findIndex((candidate) => candidate.projectId === item.projectId && candidate.sessionDate === item.sessionDate) === index),
+    () => data.focusSessions.filter((item, index, rows) => rows.findIndex((candidate) => candidate.id === item.id) === index),
     [data.focusSessions],
   );
 
@@ -920,6 +971,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   function openSection(next: Section) {
     setSection(next);
+    // Los pasos del tour sólo existen en Inicio: si navegás a otra sección
+    // mientras está abierto, se corta en vez de quedar "esperando".
+    if (next !== "summary") setTourActive(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function showBookShelfPage(page: number) {
@@ -931,6 +985,39 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     event.preventDefault();
     const ok = await save(payload);
     if (ok) event.currentTarget.reset();
+  }
+  function openSettings() {
+    setSettingsName(data.profile.displayName);
+    setSettingsUsername(data.profile.username);
+    setError("");
+    setSettingsOpen(true);
+    setProfileMenuOpen(false);
+  }
+  async function saveSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = settingsName.trim();
+    if (trimmedName.length < 2) { setError("Ingresá tu nombre."); return; }
+    if (trimmedName !== data.profile.displayName && !await save({ action: "update_profile", displayName: trimmedName })) return;
+    const trimmedUsername = settingsUsername.trim().toLowerCase();
+    if (trimmedUsername !== data.profile.username && !await save({ action: "set_username", username: trimmedUsername })) return;
+    setSettingsOpen(false);
+  }
+  async function uploadAvatar(file: File | null | undefined) {
+    if (!file) return;
+    setAvatarUploading(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch("/api/avatar", { method: "POST", body: form, credentials: "same-origin" });
+      const result = await readJson<{ error?: string }>(response);
+      if (!response.ok) throw new Error(result.error || "No pudimos subir la foto.");
+      await loadData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No pudimos subir la foto.");
+    } finally {
+      setAvatarUploading(false);
+    }
   }
   function openAddBook(status: BookStatus = bookTab) {
     setBookDraft({ title: "", author: "", totalPages: 0, status, coverUrl: "", externalKey: "" });
@@ -1268,6 +1355,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const compactScoreCard = <button
     type="button"
     className="score-tile"
+    data-tour="score"
     onClick={() => openSection("score")}
     aria-label={`Daily Score ${score} de 100. Abrir el detalle.`}
   >
@@ -1285,6 +1373,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const compactVoiceButton = <button
     type="button"
     className={"voice-hero-button" + (isPro ? "" : " is-locked")}
+    data-tour="voice"
     onClick={() => isPro ? setVoiceOpen(true) : openPro()}
     aria-label={isPro ? "Grabar mi día" : "Conocer el cierre del día con AVORA Pro"}
   >
@@ -1358,13 +1447,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </div><details><summary>Ver transcripción</summary><p>{voiceResult.transcript}</p></details><div className="voice-review-actions"><button className="discard-voice" onClick={() => setVoiceResult(null)}>Descartar</button><button className="confirm-voice" disabled={saving} onClick={() => void applyVoiceCheckin()}>Confirmar y guardar</button></div></div>}
   </article>;
 
+  // Semana navegable del historial de entrenamientos: independiente de "week"
+  // (que siempre es la semana actual, usada en Inicio y otras secciones), así
+  // se puede deslizar hacia atrás sin afectar el resto de la app.
+  const trainingWeek = useMemo(() => weekFor(trainingWeekAnchor), [trainingWeekAnchor]);
+  const shiftTrainingWeek = (amount: number) => setTrainingWeekAnchor((current) => dateMinus(current, -amount * 7));
   const trainingPanel = <section className="module-stack">
     <article className="panel section-panel">
       <div className="panel-heading">
         <div><p>TUS DISCIPLINAS</p><h2>Un calendario para cada actividad</h2></div>
         <div className="training-week-meta">
           <label className="training-target-label" htmlFor="training-weekly-target">Meta semanal<Dropdown id="training-weekly-target" className="weekly-target-dropdown" ariaLabel="Meta de entrenamientos por semana" value={String(trainingWeeklyTarget)} onChange={(value) => setTrainingWeeklyTarget(Number(value))} options={WEEKLY_TARGET_OPTIONS} /></label>
-          <span className="week-pill">{data.trainingLogs.filter((log) => log.trainingDate >= week[0].iso).length} sesiones esta semana</span>
         </div>
       </div>
       <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_discipline", name: form.get("name"), kind: form.get("kind") }); }}>
@@ -1372,20 +1465,33 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <Dropdown name="kind" ariaLabel="Tipo de disciplina" defaultValue="other" options={disciplineKindOptions} />
         <button disabled={saving}>＋ Agregar</button>
       </form>
+      <div className="calendar-head training-week-nav">
+        <button type="button" onClick={() => shiftTrainingWeek(-1)} aria-label="Semana anterior">‹</button>
+        <div className="training-week-nav-title">
+          <h2>{formatDate(trainingWeek[0].iso)} – {formatDate(trainingWeek[6].iso)}</h2>
+          {trainingWeekAnchor !== today ? <button type="button" className="training-week-today" onClick={() => setTrainingWeekAnchor(today)}>Volver a hoy</button> : <span className="week-pill">{data.trainingLogs.filter((log) => log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).length} sesiones esta semana</span>}
+        </div>
+        <button type="button" onClick={() => shiftTrainingWeek(1)} aria-label="Semana siguiente">›</button>
+      </div>
       <div className="discipline-list">{data.disciplines.map((discipline) => {
-        const dates = data.trainingLogs.filter((log) => log.disciplineId === discipline.id && log.trainingDate >= week[0].iso && log.trainingDate <= week[6].iso).map((log) => log.trainingDate);
+        const dates = data.trainingLogs.filter((log) => log.disciplineId === discipline.id && log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).map((log) => log.trainingDate);
         return <div className={"discipline-card " + (selectedDiscipline?.id === discipline.id ? "selected" : "")} key={discipline.id}>
           <button className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
-          <div className="week-row">{week.map((day) => {
+          <div className="week-row">{trainingWeek.map((day) => {
             const done = dates.includes(day.iso);
-            return <button key={day.iso} className={(done ? "done " : "") + (day.iso === today ? "today" : "")} disabled={saving} onClick={() => void save({ action: "toggle_training", disciplineId: discipline.id, date: day.iso })}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
+            // Primer click en un día: solo lo abre en el detalle de abajo (ver
+            // el historial). Un segundo click sobre el mismo día ya
+            // seleccionado marca/desmarca la sesión, para no desmarcar por
+            // accidente un día que sólo querías mirar.
+            const focused = selectedDiscipline?.id === discipline.id && trainingDate === day.iso;
+            return <button key={day.iso} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (focused ? " active" : "")} disabled={saving} onClick={() => { setSelectedDisciplineId(discipline.id); setTrainingDate(day.iso); if (focused) void save({ action: "toggle_training", disciplineId: discipline.id, date: day.iso }); }}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
           })}</div>
         </div>;
       })}</div>
     </article>
     {selectedDiscipline && <div className="training-detail-grid single-session">
       <article className="panel">
-        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><input className="date-control" type="date" value={trainingDate} onChange={(event) => setTrainingDate(event.target.value)} /></div>
+        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><span className="week-pill">{trainingDate === today ? "Hoy" : formatDate(trainingDate)}</span></div>
         {selectedDiscipline.kind === "strength" ? <>
           <form key={`${selectedDiscipline.id}-${trainingDate}-notes`} className="data-form strength-notes-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: selectedTrainingLog?.durationMinutes || 0, distanceKm: 0, notes: form.get("notes") }); }}>
             <label>Notas de la sesión<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Rutina, sensaciones, técnica…" /></label>
@@ -2103,6 +2209,29 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </section>
   </div>;
 
+  const settingsDialog = settingsOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+    <section className="checkout-dialog settings-dialog" role="dialog" aria-modal="true" aria-label="Datos personales">
+      <p className="checkout-label">DATOS PERSONALES</p>
+      <h2>Tu cuenta</h2>
+      <div className="avatar-editor">
+        <div className="avatar-preview">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="Tu foto de perfil" width={64} height={64} unoptimized /> : <span>{displayName.charAt(0)}</span>}</div>
+        <label className="avatar-upload-button">
+          {avatarUploading ? "Subiendo…" : "Cambiar foto"}
+          <input type="file" accept="image/*" disabled={avatarUploading} onChange={(event) => { void uploadAvatar(event.target.files?.[0]); event.target.value = ""; }} />
+        </label>
+      </div>
+      <form className="data-form settings-form" onSubmit={saveSettings}>
+        <label>Nombre<input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} maxLength={60} required /></label>
+        <label>Nombre de usuario<div className="username-input"><span>@</span><input value={settingsUsername} onChange={(event) => setSettingsUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} maxLength={20} /></div><small className="field-note">3 a 20 letras, números o _. Con esto te invitan tus amigos.</small></label>
+        {error && <div className="error-banner">{error}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
+        <div className="checkout-actions">
+          <button type="button" className="checkout-cancel" onClick={() => setSettingsOpen(false)}>Cancelar</button>
+          <button type="submit" className="checkout-pay" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button>
+        </div>
+      </form>
+    </section>
+  </div>;
+
   // ---------------------------------------------------------------------------
   // Amigos y grupos
   // ---------------------------------------------------------------------------
@@ -2112,14 +2241,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   async function inviteFriend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setInviteCopied(false);
-    const result = await sendSocial({ action: "invite_friend", email: inviteEmail.trim() });
+    const result = await sendSocial({ action: "invite_friend", username: inviteUsername.trim().toLowerCase() });
     if (!result) return;
     const link = String(result.link ?? "");
     setInviteLink(link);
-    setFriendsNotice(inviteEmail.trim()
-      ? `Invitación lista para ${inviteEmail.trim()}. Si ya tiene cuenta le aparece adentro de AVORA; si no, mandale el link.`
+    setFriendsNotice(inviteUsername.trim()
+      ? `Invitación lista para @${inviteUsername.trim().toLowerCase()}. Le aparece adentro de AVORA.`
       : "Link listo. Compartilo con quien quieras sumar.");
-    setInviteEmail("");
+    setInviteUsername("");
   }
 
   async function copyInvite(link: string) {
@@ -2241,12 +2370,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <article className="panel invite-panel">
       <div className="panel-heading"><div><p>SUMAR GENTE</p><h2>Invitá a un amigo</h2></div></div>
       <form className="invite-form" onSubmit={inviteFriend}>
-        <label><span>Email de tu amigo <small>(opcional)</small></span>
-          <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="amigo@email.com" />
+        <label><span>Nombre de usuario de tu amigo <small>(opcional)</small></span>
+          <div className="username-input"><span>@</span><input value={inviteUsername} onChange={(event) => setInviteUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} maxLength={20} placeholder="su_usuario" /></div>
         </label>
-        <button type="submit" disabled={saving}>{inviteEmail.trim() ? "Enviar invitación" : "Generar link"} <span>→</span></button>
+        <button type="submit" disabled={saving}>{inviteUsername.trim() ? "Enviar invitación" : "Generar link"} <span>→</span></button>
       </form>
-      <small className="invite-hint">Con el email le llega la invitación dentro de AVORA. Sin email generás un link para mandar por WhatsApp o mail.</small>
+      <small className="invite-hint">Con el nombre de usuario le llega la invitación dentro de AVORA. Sin eso generás un link para mandar por WhatsApp o mail.</small>
       {shareBox}
     </article>
 
@@ -2580,7 +2709,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <div className="editorial-form-area">
           {onboardingStep === 1 ? <>
             <label className="editorial-name">¿Cómo te llamás?<input autoFocus value={onboardingName} onChange={(event) => setOnboardingName(event.target.value)} maxLength={60} placeholder="Tu nombre" /></label>
-            <button className="editorial-primary" disabled={onboardingName.trim().length < 2} onClick={() => setOnboardingStep(2)}>Continuar <span>→</span></button>
+            <label className="editorial-name editorial-username">Elegí un nombre de usuario
+              <div className="username-input"><span>@</span><input value={onboardingUsername} onChange={(event) => setOnboardingUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} maxLength={20} placeholder="tu_usuario" /></div>
+              <small className={"username-status " + usernameStatus}>
+                {usernameStatus === "checking" ? "Comprobando…"
+                  : usernameStatus === "available" ? "✓ Disponible"
+                  : usernameStatus === "taken" ? "Ya está en uso, probá con otro"
+                  : usernameStatus === "invalid" ? "3 a 20 letras, números o _"
+                  : "Con esto te van a poder invitar tus amigos"}
+              </small>
+            </label>
+            <button className="editorial-primary" disabled={onboardingName.trim().length < 2 || usernameStatus !== "available"} onClick={() => setOnboardingStep(2)}>Continuar <span>→</span></button>
             <p className="editorial-note"><span>🔒</span> Podés cambiarlo cuando quieras.</p>
             <button type="button" className="editorial-back onboarding-login-back" onClick={goBackFromOnboarding}>← Volver al inicio de sesión</button>
           </> : <>
@@ -2592,6 +2731,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
               <button type="button" className="editorial-back" onClick={() => setOnboardingStep(1)}>← Atrás</button>
               <form action="/api/onboarding" method="post" style={{ display: "contents" }}>
                 <input type="hidden" name="displayName" value={onboardingName} />
+                <input type="hidden" name="username" value={onboardingUsername} />
                 <input type="hidden" name="mainGoals" value={JSON.stringify(onboardingGoals)} />
                 <input type="hidden" name="usagePreferences" value={JSON.stringify(onboardingPreferences)} />
                 <input type="hidden" name="monthKey" value={monthKey} />
@@ -2605,9 +2745,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu">
+    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav data-tour="nav">{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu">
           {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">
             <p>CUENTA</p>
+            <button type="button" className="profile-menu-item" role="menuitem" onClick={openSettings}>
+              <span aria-hidden="true">⚙</span>
+              Datos personales
+            </button>
+            <button type="button" className="profile-menu-item" role="menuitem" onClick={() => { setProfileMenuOpen(false); openSection("pro"); }}>
+              <span aria-hidden="true">★</span>
+              Gestionar membresía
+            </button>
             <a className="profile-menu-signout" href="/signout-with-chatgpt?return_to=/" role="menuitem">
               <span aria-hidden="true">↪</span>
               Cerrar sesión
@@ -2616,12 +2764,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           <button
             type="button"
             className="profile-chip profile-chip-button"
+            data-tour="profile"
             onClick={() => setProfileMenuOpen((open) => !open)}
             aria-expanded={profileMenuOpen}
             aria-haspopup="menu"
           >
-            <span>{displayName.charAt(0)}</span>
-            <div><b>{displayName}</b><small>Datos guardados</small></div>
+            {data.profile.avatarUrl ? <Image className="profile-chip-avatar" src={data.profile.avatarUrl} alt="" width={36} height={36} unoptimized /> : <span>{displayName.charAt(0)}</span>}
+            <div><b>{displayName}</b><small>{data.profile.username ? "@" + data.profile.username : "Datos guardados"}</small></div>
             <i className="profile-menu-chevron" aria-hidden="true">{profileMenuOpen ? "▾" : "▴"}</i>
           </button>
         </div></aside>
@@ -2631,7 +2780,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         {quotePanel}
         <section className={"hero-row " + (loading ? "is-loading" : "")}>
           <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
-          <div className="hero-metrics" data-tiles={heroMetrics.length}>
+          <div className="hero-metrics-head"><small>{balanced ? "Tus seis áreas pesan igual" : `Según tu${topPriorities.length > 1 ? "s" : ""} prioridad${topPriorities.length > 1 ? "es" : ""} del mes: ${listPhrase(priorityNames)}`}</small><button type="button" onClick={() => openSection("score")}>Ajustar →</button></div>
+          <div className="hero-metrics" data-tiles={heroMetrics.length} data-tour="metrics">
             {heroMetrics.map((metric) => <button
               type="button"
               className="stat-tile"
@@ -2698,6 +2848,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </section>
     <nav className="mobile-nav">{mobileNavItems.map((item) => <button key={item.id} className={[section === item.id ? "active" : "", item.center ? "is-center" : ""].filter(Boolean).join(" ")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.mobile}</button>)}</nav>
     {checkoutDialog}
+    {settingsDialog}
+    {tourActive && section === "summary" && <TourOverlay steps={TOUR_STEPS} onDone={() => setTourActive(false)} />}
     {voiceOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setVoiceOpen(false); }}>
       <section className="voice-dialog" role="dialog" aria-modal="true" aria-label="Cierre del día">
         <button className="voice-dialog-close" type="button" onClick={() => setVoiceOpen(false)} aria-label="Cerrar">×</button>

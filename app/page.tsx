@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 type ProfileRow = Record<string, unknown> & {
   displayName: string;
+  username: string | null;
+  avatarUrl: string | null;
   onboardingCompleted: boolean;
   mainGoalsJson: string;
   usagePreferencesJson: string;
@@ -25,9 +27,10 @@ function stringArray(value: unknown) {
 }
 
 const onboardingErrors: Record<string, string> = {
-  invalid: "Revisá tu nombre y elegí entre 1 y 3 prioridades.",
+  invalid: "Revisá tu nombre, tu nombre de usuario y elegí entre 1 y 3 prioridades.",
   session: "Tu sesión venció. Volvé a iniciar sesión.",
   save: "No pudimos guardar tus prioridades. Intentá nuevamente.",
+  username_taken: "Ese nombre de usuario ya está en uso. Elegí otro.",
 };
 
 const inviteNotices: Record<string, string> = {
@@ -36,7 +39,7 @@ const inviteNotices: Record<string, string> = {
   error: "",
 };
 
-export default async function Home({ searchParams }: { searchParams?: Promise<{ demo?: string; onboarding_error?: string; invite?: string }> }) {
+export default async function Home({ searchParams }: { searchParams?: Promise<{ demo?: string; onboarding_error?: string; invite?: string; tour?: string }> }) {
   const params = searchParams ? await searchParams : {};
   if (params.demo === "new-user") return <NewUserPreview />;
 
@@ -52,8 +55,10 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
     // Un link de invitación abierto sin sesión deja el código esperando en una
     // cookie: el cliente lo canjea apenas monta y la ruta lo borra.
     const pendingInvite = await readPendingInvite();
-    return <ProgressClient pendingInviteCode={pendingInvite} inviteResult={params.invite === "ok" ? "ok" : params.invite === "error" ? "error" : ""} initialUser={{
+    return <ProgressClient pendingInviteCode={pendingInvite} inviteResult={params.invite === "ok" ? "ok" : params.invite === "error" ? "error" : ""} showTutorial={params.tour === "1"} initialUser={{
       displayName: profile?.displayName || user.displayName,
+      username: profile?.username || "",
+      avatarUrl: profile?.avatarUrl || "",
       email: user.email,
       onboardingCompleted: persistedOnboarding || user.onboardingCompleted,
       mainGoals: persistedOnboarding ? stringArray(profile?.mainGoalsJson) : user.mainGoals,

@@ -9,6 +9,7 @@ import {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME = /^[a-z0-9_]{3,20}$/;
 const now = () => new Date().toISOString();
 const ok = (extra = {}) => Response.json({ ok: true, ...extra });
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
@@ -200,8 +201,19 @@ export async function POST(request: Request) {
 
     // --- Amistades -------------------------------------------------------
     if (action === "invite_friend") {
-      const target = text(payload.email, 160).toLowerCase();
-      if (target && !EMAIL.test(target)) return fail("Ese email no es válido.");
+      // Se invita por nombre de usuario, no por email: nadie tiene que
+      // compartir su email para que lo sumen al círculo. El resuelve del
+      // nombre de usuario al email real vive en una función security
+      // definer porque la política de `profiles` sólo deja ver la fila
+      // propia.
+      const username = text(payload.username, 20).toLowerCase();
+      let target = "";
+      if (username) {
+        if (!USERNAME.test(username)) return fail("Ese nombre de usuario no es válido.");
+        const found = await callRpc<string | null>("avora_find_email_by_username", { p_username: username });
+        if (!found) return fail("No encontramos a nadie con ese nombre de usuario.");
+        target = found.toLowerCase();
+      }
       if (target === email) return fail("Ese sos vos.");
       if (target) {
         const already = await selectRows<Row>("friendships", { where: { userEmail: email, friendEmail: target }, limit: 1 });

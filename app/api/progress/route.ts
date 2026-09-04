@@ -1,8 +1,9 @@
 import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
-import { deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
+import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
+const USERNAME = /^[a-z0-9_]{3,20}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const now = () => new Date().toISOString();
 const today = () => now().slice(0, 10);
@@ -95,7 +96,7 @@ export async function GET(request: Request) {
     const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, goals, dailyCheckins, focusProjects, focusSessions, tasks, events] = result;
     const strength = disciplines.find((row) => row.kind === "strength");
     return Response.json({
-      profile: { email, displayName: profile?.displayName ?? user.displayName, onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? stringArray(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "" },
+      profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? stringArray(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "" },
       gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
       disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books, readingLogs, readingHistory, notes,
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
@@ -117,6 +118,32 @@ export async function POST(request: Request) {
       return ok();
     }
     if (action === "set_pro") { const active = Boolean(p.active); await updateRows("profiles", { email }, { proSince: active ? today() : "", updatedAt: now() }); return ok({ isPro: active }); }
+    // El nombre de usuario reemplaza al email para invitar amigos desde
+    // adentro de la app. `avora_find_email_by_username` es security definer
+    // porque la política de `profiles` sólo deja ver la fila propia.
+    if (action === "check_username") {
+      const username = String(p.username ?? "").trim().toLowerCase();
+      if (!USERNAME.test(username)) return ok({ available: false, reason: "format" });
+      const owner = await callRpc<string | null>("avora_find_email_by_username", { p_username: username });
+      return ok({ available: !owner || owner === email });
+    }
+    if (action === "set_username") {
+      const username = String(p.username ?? "").trim().toLowerCase();
+      if (!USERNAME.test(username)) return fail("El nombre de usuario tiene que tener 3 a 20 letras, números o _.");
+      const owner = await callRpc<string | null>("avora_find_email_by_username", { p_username: username });
+      if (owner && owner !== email) return fail("Ese nombre de usuario ya está en uso.");
+      await updateRows("profiles", { email }, { username, updatedAt: now() });
+      return ok({ username });
+    }
+    // Sólo el nombre visible: no toca metas ni preferencias, así que no
+    // sincroniza contra la metadata de auth (esa sí las pisa con lo que le
+    // pases, y acá no tenemos el valor actual para no perderlas).
+    if (action === "update_profile") {
+      const displayName = String(p.displayName ?? "").trim().slice(0, 60);
+      if (displayName.length < 2) return fail("Ingresá tu nombre.");
+      await updateRows("profiles", { email }, { displayName, updatedAt: now() });
+      return ok({ displayName });
+    }
     if (action === "toggle_gym") {
       const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); let strength = (await selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email, kind: "strength" }, limit: 1 }))[0];
       if (!strength) strength = (await insertRows<ProgressRow>("training_disciplines", { userEmail: email, name: "Gimnasio", kind: "strength" }, { upsert: true, onConflict: ["userEmail", "name"], returnRows: true }))[0];
@@ -136,7 +163,10 @@ export async function POST(request: Request) {
     if (action === "delete_exercise") { await deleteRows("exercise_logs", { id: Number(p.id), userEmail: email }); return ok(); }
     if (action === "save_sleep") { const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); await upsert("daily_checkins", { userEmail: email, entryDate: date, sleepMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.sleepMinutes) || 0))), bedtime: String(p.bedtime ?? "").slice(0, 20), wakeTime: String(p.wakeTime ?? "").slice(0, 20) }, ["userEmail", "entryDate"]); return ok(); }
     if (action === "add_focus_project") { const name = String(p.name ?? "").trim().slice(0, 80), kind = String(p.kind ?? "study"); if (!name || !["study", "work"].includes(kind)) return fail("Completá el nombre y el tipo."); await insertRows("focus_projects", { userEmail: email, name, kind }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }
-    if (action === "add_focus_session") { const projectId = Number(p.projectId), date = String(p.date ?? ""); if (!DATE.test(date) || !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Elegí un proyecto y fecha válidos."); await deleteRows("focus_sessions", { userEmail: email, projectId, sessionDate: date }); await insertRows("focus_sessions", { userEmail: email, projectId, sessionDate: date, minutes: Math.max(1, Math.min(1440, Math.round(Number(p.minutes) || 0))), note: String(p.note ?? "").slice(0, 1000) }); return ok(); }
+    // Cada envío suma un bloque nuevo (podés estudiar la misma materia dos
+    // veces en un día): antes borraba el bloque anterior del mismo día y se
+    // perdía tiempo real registrado.
+    if (action === "add_focus_session") { const projectId = Number(p.projectId), date = String(p.date ?? ""); if (!DATE.test(date) || !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Elegí un proyecto y fecha válidos."); await insertRows("focus_sessions", { userEmail: email, projectId, sessionDate: date, minutes: Math.max(1, Math.min(1440, Math.round(Number(p.minutes) || 0))), note: String(p.note ?? "").slice(0, 1000) }); return ok(); }
     if (action === "add_task") {
       const title = String(p.title ?? "").trim().slice(0, 180), projectId = Number(p.projectId) || null, dueDate = String(p.dueDate ?? ""), startTime = cleanTime(p.startTime), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))); if (!title || (dueDate && !DATE.test(dueDate))) return fail("Completá una tarea y fecha válida."); if (startTime === null) return fail("La hora no es válida."); if (startTime && !dueDate) return fail("Para darle un horario, la tarea necesita una fecha."); if (projectId && !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Proyecto no encontrado.", 404); await insertRows("tasks", { userEmail: email, projectId, title, dueDate: dueDate || null, startTime, durationMinutes: startTime ? duration || 60 : duration }); return ok();
     }
