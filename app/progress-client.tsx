@@ -1159,12 +1159,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   };
   // Orden estable cuando varias áreas empatan en peso.
   const metricOrder = ["gymWeight", "focusWeight", "sleepWeight", "nutritionWeight", "readingWeight", "goalsWeight"];
-  // Inicio muestra exactamente tus prioridades: si elegiste dos áreas ves dos
-  // bloques a mitad de ancho cada uno, si elegiste cuatro ves cuatro en
-  // cuartos. Cuando las seis pesan lo mismo no hay prioridad que respetar, así
-  // que caemos a las tres primeras en el orden de siempre.
+  // Inicio muestra todas las áreas que el usuario marcó explícitamente como
+  // "Prioridad". Si todavía no marcó ninguna en ese nivel, conservamos la
+  // selección anterior como respaldo para que Inicio nunca quede vacío.
   const priorityMetricKeys = metricOrder.filter((key) => priorityDraft[key as keyof Omit<Priorities, "monthKey">] === highestPriority);
-  const heroMetrics = (balanced ? metricOrder.slice(0, 3) : priorityMetricKeys.slice(0, 4)).map((key) => areaMetrics[key]);
+  const explicitPriorityMetricKeys = metricOrder.filter((key) => priorityDraft[key as keyof Omit<Priorities, "monthKey">] === 3);
+  const heroMetricKeys = explicitPriorityMetricKeys.length
+    ? explicitPriorityMetricKeys
+    : balanced
+      ? metricOrder.slice(0, 3)
+      : priorityMetricKeys;
+  const heroMetrics = heroMetricKeys.map((key) => areaMetrics[key]);
 
   const voiceRecorder = <article className="panel voice-capture-panel">
     <div className="voice-copy"><p className="voice-eyebrow">CIERRE RÁPIDO CON IA</p><h2>Contá tu día en un minuto.</h2><span>Decí qué entrenaste, qué comiste, cuánto trabajaste o estudiaste, cuánto leíste y dormiste. Revisás el resultado antes de guardarlo.</span><div className="voice-hints"><small>“Corrí 5 km…”</small><small>“Hice sentadilla…”</small><small>“Trabajé 2 horas…”</small><small>“Dormí 7 horas…”</small></div></div>
