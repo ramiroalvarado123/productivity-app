@@ -329,6 +329,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [goalDraft, setGoalDraft] = useState({ title: "", metric: "count" as GoalMetric, targetValue: 3, period: "weekly" as GroupGoal["period"], dueDate: "" });
   const publishedShareRef = useRef("");
   const pendingInviteRef = useRef(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   // Tildado optimista: la fila responde al toque y recién después se confirma
   // contra el servidor, así no hay medio segundo de pantalla muerta.
   const [pendingTasks, setPendingTasks] = useState<Record<number, boolean>>({});
@@ -435,6 +436,26 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadData, initialUser.onboardingCompleted]);
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+
+    function closeProfileMenu(event: PointerEvent) {
+      if (!profileMenuRef.current?.contains(event.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    }
+
+    function closeProfileMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setProfileMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeProfileMenu);
+    document.addEventListener("keydown", closeProfileMenuOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeProfileMenu);
+      document.removeEventListener("keydown", closeProfileMenuOnEscape);
+    };
+  }, [profileMenuOpen]);
   // El plan del día marca "ahora" y no ofrece horarios que ya pasaron.
   useEffect(() => {
     const timer = window.setInterval(() => setNowMinutes(argentinaMinutes()), 60000);
@@ -2208,7 +2229,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">A</span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu">
+    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small">A</span><b>AVORA</b></button><nav>{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu" ref={profileMenuRef}>
           {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">
             <p>CUENTA</p>
             <a className="profile-menu-signout" href="/signout-with-chatgpt?return_to=/" role="menuitem">
