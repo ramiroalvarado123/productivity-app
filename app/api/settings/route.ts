@@ -70,7 +70,12 @@ export async function POST(request: Request) {
       usagePreferencesJson: JSON.stringify(usagePreferences),
       updatedAt: new Date().toISOString(),
     });
-    await updateChatGPTUserMetadata({ displayName, usagePreferences });
+    await updateChatGPTUserMetadata({
+      displayName,
+      onboardingCompleted: current.user.onboardingCompleted,
+      mainGoals: current.user.mainGoals,
+      usagePreferences,
+    });
 
     return Response.json({ ok: true, displayName, weeklySummary });
   } catch {
