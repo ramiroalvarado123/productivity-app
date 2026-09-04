@@ -41,14 +41,39 @@ export type Group = {
   purpose: string;
   accent: GroupAccent;
   ownerEmail: string;
+  /**
+   * Si la sesión creó el grupo. Lo resuelve el servidor contra el email del
+   * token: comparar el `ownerEmail` con el del perfil en el cliente falla si
+   * los dos no coinciden exactamente, y ahí se pierde el acceso al engranaje.
+   */
+  isOwner: boolean;
   inviteCode: string;
   members: GroupMember[];
   goals: GroupGoal[];
+  /** Invitaciones del grupo que todavía nadie respondió. */
+  pending: GroupInvite[];
 };
 export type GroupMember = { userEmail: string; displayName: string; role: "owner" | "member" };
 
+/**
+ * Sumar a alguien al grupo no lo mete adentro: le deja una invitación, igual
+ * que en el círculo. Nadie entra a un grupo sin haber dicho que sí.
+ */
+export type GroupInvite = {
+  id: number;
+  groupId: number;
+  /** El nombre viaja en la fila: quien todavía no es integrante no puede leer el grupo. */
+  groupName: string;
+  fromEmail: string;
+  fromName: string;
+  toEmail: string;
+  createdAt: string;
+};
+
 export type GoalMetric = "count" | "minutes" | "pages" | "sessions";
 export type GoalPeriodKind = "weekly" | "monthly" | "custom";
+/** De dónde sale tu marca: la cargás a mano o la lee de lo que ya registrás. */
+export type GoalSource = "manual" | "training" | "focus" | "reading" | "sleep";
 export type GroupGoal = {
   id: number;
   groupId: number;
@@ -57,21 +82,31 @@ export type GroupGoal = {
   targetValue: number;
   period: GoalPeriodKind;
   dueDate: string;
+  source: GoalSource;
   createdBy: string;
+  createdAt: string;
   contributions: GoalContribution[];
 };
 export type GoalContribution = { userEmail: string; displayName: string; value: number };
 
 export type SocialData = {
+  /**
+   * El email con el que quedaron firmadas las filas de esta sesión. Todo lo que
+   * compara "esto es mío" usa este valor y no el del perfil: son dos fuentes
+   * distintas y basta que difieran para que tu aporte se vea como el de otro.
+   */
+  me: string;
   friends: Friend[];
   /** Invitaciones que me mandaron y todavía no respondí. */
   incoming: FriendInvite[];
   /** Las que mandé yo y siguen abiertas, con su link para compartir. */
   outgoing: FriendInvite[];
   groups: Group[];
+  /** Grupos a los que me invitaron y todavía no contesté. */
+  groupInvites: GroupInvite[];
 };
 
-export const emptySocial = (): SocialData => ({ friends: [], incoming: [], outgoing: [], groups: [] });
+export const emptySocial = (): SocialData => ({ me: "", friends: [], incoming: [], outgoing: [], groups: [], groupInvites: [] });
 
 export const GOAL_METRICS: Array<{ value: GoalMetric; label: string; unit: string }> = [
   { value: "count", label: "Veces", unit: "veces" },
@@ -82,8 +117,29 @@ export const GOAL_METRICS: Array<{ value: GoalMetric; label: string; unit: strin
 
 export const GROUP_ACCENTS: GroupAccent[] = ["mint", "violet", "coral"];
 
+/**
+ * Las fuentes automáticas. Cada una fija su métrica y su unidad: si el objetivo
+ * se alimenta de los entrenamientos, elegir "páginas" no querría decir nada.
+ */
+export const GOAL_SOURCES: Array<{ value: GoalSource; label: string; hint: string; metric: GoalMetric; unit: string }> = [
+  { value: "manual", label: "A mano", hint: "Cada integrante carga su marca acá.", metric: "count", unit: "veces" },
+  { value: "training", label: "Entrenamientos", hint: "Cuenta los días que registrás un entrenamiento en Físico.", metric: "sessions", unit: "entrenamientos" },
+  { value: "focus", label: "Foco", hint: "Suma los minutos de estudio y trabajo que registrás.", metric: "minutes", unit: "min" },
+  { value: "reading", label: "Lectura", hint: "Suma las páginas que cargás en tu biblioteca.", metric: "pages", unit: "págs" },
+  { value: "sleep", label: "Sueño", hint: "Cuenta las noches de siete horas o más.", metric: "count", unit: "noches" },
+];
+
+export function goalSource(source: GoalSource) {
+  return GOAL_SOURCES.find((item) => item.value === source) ?? GOAL_SOURCES[0];
+}
+
 export function metricUnit(metric: GoalMetric) {
   return GOAL_METRICS.find((item) => item.value === metric)?.unit ?? "veces";
+}
+
+/** La unidad que se lee en la tarjeta: la de la fuente manda sobre la métrica. */
+export function goalUnit(goal: Pick<GroupGoal, "metric" | "source">) {
+  return goal.source === "manual" ? metricUnit(goal.metric) : goalSource(goal.source).unit;
 }
 
 /** Iniciales para el avatar: una letra si hay un solo nombre, dos si hay más. */
@@ -118,6 +174,40 @@ export function shareStatus(share: FriendShare | null, today: string) {
 
 export function isFresh(share: FriendShare | null, today: string): share is FriendShare {
   return Boolean(share && share.shareDate === today);
+}
+
+function shiftDays(date: string, days: number) {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+/**
+ * El tramo de días que cuenta para un objetivo. Es lo que le permite a una
+ * fuente automática saber cuánto de lo que registraste entra en esta ronda: la
+ * semana en curso, el mes en curso, o desde que se fijó el objetivo hasta su
+ * fecha límite.
+ */
+export function goalWindow(goal: Pick<GroupGoal, "period" | "dueDate" | "createdAt">, today: string) {
+  if (goal.period === "weekly") {
+    const weekday = (new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7;
+    const monday = shiftDays(today, -weekday);
+    return { start: monday, end: shiftDays(monday, 6) };
+  }
+  if (goal.period === "monthly") {
+    const start = `${today.slice(0, 7)}-01`;
+    const next = new Date(`${start}T12:00:00Z`);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    return { start, end: shiftDays(next.toISOString().slice(0, 10), -1) };
+  }
+  const start = goal.createdAt.slice(0, 10) || today;
+  return { start, end: goal.dueDate || today };
+}
+
+export function goalPeriodLabel(goal: Pick<GroupGoal, "period" | "dueDate">) {
+  if (goal.period === "weekly") return "ESTA SEMANA";
+  if (goal.period === "monthly") return "ESTE MES";
+  return goal.dueDate ? `HASTA ${goal.dueDate}` : "SIN PLAZO";
 }
 
 export function goalTotal(goal: GroupGoal) {

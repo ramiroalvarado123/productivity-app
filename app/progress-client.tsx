@@ -10,9 +10,10 @@ import { buildInsights, closeInsights, insightHeadline, planInsights, type Comin
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, type DayRecord, type ScoreWeights } from "./lib/score";
 import {
-  GOAL_METRICS, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalTotal, initialsFor,
-  inviteMessage, isFresh, mailLink, metricUnit, shareStatus, whatsappLink,
-  type GoalMetric, type GroupAccent, type GroupGoal, type SocialData,
+  GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalPeriodLabel,
+  goalSource, goalTotal, goalUnit, goalWindow, initialsFor, inviteMessage, isFresh, mailLink,
+  shareStatus, whatsappLink,
+  type GoalMetric, type GoalSource, type Group, type GroupAccent, type GroupGoal, type SocialData,
 } from "./lib/social";
 
 type User = { displayName: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string };
@@ -66,10 +67,17 @@ type InsightTarget = { section: Section; physicalTab?: PhysicalTab; focusTab?: F
 type StatsPeriod = "weekly" | "monthly" | "annual";
 
 type NavItem = { id: Section; icon: ReactNode; label: string; mobile: string; center?: true };
+/** Los campos de un objetivo mientras se escribe, antes de existir en el grupo. */
+type GoalDraft = { title: string; source: GoalSource; metric: GoalMetric; targetValue: number; period: GroupGoal["period"]; dueDate: string };
+/** Qué se está administrando de un grupo: el engranaje, el más o los amigos. */
+type GroupPanelTab = "settings" | "goals" | "members";
+const emptyGoalDraft = (): GoalDraft => ({ title: "", source: "manual", metric: "count", targetValue: 3, period: "weekly", dueDate: "" });
 
 const friendsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" /><circle cx="16.5" cy="9" r="2.5" /><path d="M2.5 19c.5-4 2.4-6 5.5-6s5 2 5.5 6M13 14.5c1-.8 2.1-1.1 3.5-1.1 2.8 0 4.4 1.8 5 5.1" /></svg>;
 const physicalIcon = <svg className="physical-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5c1.8-2.2 2.8-4.6 2.8-7.2v-2.1a2.3 2.3 0 0 1 4.6 0v1.4" /><path d="m10.9 12.6 2.1-5.2a2.2 2.2 0 0 1 3-1.3l1.1.5" /><path d="m16 6.4.7-1a1.8 1.8 0 0 1 2.8-.1l.7.8c.5.6.8 1.4.8 2.2v2.4c0 5.1-4.1 9.3-9.3 9.3H7.5c-1.6 0-2.9.2-4 .5Z" /><path d="M9.8 15.1c2.3-2.1 5.4-2.7 8.2-1.5" /></svg>;
 const focusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 5.2a3.4 3.4 0 0 0-5.3 2.9c0 .5.1.9.3 1.3A3.7 3.7 0 0 0 5 16.5a3.5 3.5 0 0 0 4.2 2.3M14.8 5.2a3.4 3.4 0 0 1 5.3 2.9c0 .5-.1.9-.3 1.3a3.7 3.7 0 0 1-.8 7.1 3.5 3.5 0 0 1-4.2 2.3M12 4v16M8 9.2c1.1.1 2 .7 2.4 1.6M16 9.2c-1.1.1-2 .7-2.4 1.6M8.4 15.1c1-.1 1.7-.5 2.2-1.2M15.6 15.1c-1-.1-1.7-.5-2.2-1.2" /></svg>;
+const gearIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="m19.3 14.6.35.2a1.8 1.8 0 0 1-1.8 3.12l-.35-.2a1.8 1.8 0 0 0-2.7 1.56v.4a1.8 1.8 0 0 1-3.6 0v-.4a1.8 1.8 0 0 0-2.7-1.56l-.35.2a1.8 1.8 0 0 1-1.8-3.12l.35-.2a1.8 1.8 0 0 0 0-3.12l-.35-.2a1.8 1.8 0 1 1 1.8-3.12l.35.2a1.8 1.8 0 0 0 2.7-1.56v-.4a1.8 1.8 0 0 1 3.6 0v.4a1.8 1.8 0 0 0 2.7 1.56l.35-.2a1.8 1.8 0 0 1 1.8 3.12l-.35.2a1.8 1.8 0 0 0 0 3.12Z" /></svg>;
+const plusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13" /></svg>;
 const statsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 18 5-5 4 2 6-8" /><circle cx="4" cy="18" r="1.5" /><circle cx="9" cy="13" r="1.5" /><circle cx="13" cy="15" r="1.5" /><circle cx="19" cy="7" r="1.5" /></svg>;
 
 // En escritorio Inicio queda primero. En el celular usamos el mismo conjunto,
@@ -322,11 +330,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteLink, setInviteLink] = useState("");
   const [inviteCopied, setInviteCopied] = useState(false);
-  const [groupForm, setGroupForm] = useState(false);
-  const [groupDraft, setGroupDraft] = useState({ name: "", purpose: "", accent: "mint" as GroupAccent });
+  // Crear un grupo es un formulario aparte que termina en "Guardar grupo":
+  // nombre, objetivo e invitaciones se deciden juntos y una sola vez.
+  const [groupWizard, setGroupWizard] = useState(false);
+  const [groupDraft, setGroupDraft] = useState({ name: "", accent: "mint" as GroupAccent });
+  const [wizardGoal, setWizardGoal] = useState<GoalDraft>(emptyGoalDraft);
+  const [wizardInvites, setWizardInvites] = useState<string[]>([]);
   const [joinCode, setJoinCode] = useState("");
-  const [openGroupId, setOpenGroupId] = useState<number | null>(null);
-  const [goalDraft, setGoalDraft] = useState({ title: "", metric: "count" as GoalMetric, targetValue: 3, period: "weekly" as GroupGoal["period"], dueDate: "" });
+  // Un grupo ya guardado muestra sólo su objetivo: el nombre, el color, los
+  // objetivos y las invitaciones viven detrás de los tres íconos del encabezado.
+  const [groupPanel, setGroupPanel] = useState<{ id: number; tab: GroupPanelTab } | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState({ name: "", accent: "mint" as GroupAccent });
+  const [goalDraft, setGoalDraft] = useState<GoalDraft>(emptyGoalDraft);
+  const [editingGoalId, setEditingGoalId] = useState<number | null>(null);
+  /** Última marca automática publicada por objetivo, para no reenviarla igual. */
+  const autoGoalRef = useRef<Record<number, number>>({});
   const publishedShareRef = useRef("");
   const pendingInviteRef = useRef(false);
   // Tildado optimista: la fila responde al toque y recién después se confirma
@@ -677,6 +695,52 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       body: JSON.stringify({ action: "publish_share", shareDate: today, score, streak: streaks.logging.current, bestStreak: streaks.logging.best }),
     }).catch(() => { publishedShareRef.current = ""; });
   }, [initialUser.onboardingCompleted, loading, today, score, streaks]);
+
+  // ---------------------------------------------------------------------------
+  // Objetivos de grupo que se cuentan solos. Un objetivo puede declarar de qué
+  // se alimenta: si dice "entrenamientos", tu marca sale de lo que ya cargaste
+  // en Físico y no hay que anotarla dos veces. Lo que viaja al grupo sigue
+  // siendo un número, nunca el registro que lo produjo.
+  // ---------------------------------------------------------------------------
+  const autoSeries = useMemo(() => ({
+    training: sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1),
+    focus: sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes),
+    reading: sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages),
+    sleep: sumByDate(data.dailyCheckins.filter((row) => row.sleepMinutes >= 420), (row) => row.entryDate, () => 1),
+  }), [data.trainingLogs, uniqueFocusSessions, data.readingHistory, data.dailyCheckins]);
+
+  const autoGoalValue = useCallback((goal: GroupGoal) => {
+    if (goal.source === "manual") return 0;
+    const window = goalWindow(goal, today);
+    let total = 0;
+    for (const [date, value] of Object.entries(autoSeries[goal.source])) {
+      if (date >= window.start && date <= window.end) total += value;
+    }
+    return total;
+  }, [autoSeries, today]);
+
+  useEffect(() => {
+    if (!initialUser.onboardingCompleted || loading) return;
+    const me = social.me || data.profile.email.toLowerCase();
+    const stale = social.groups
+      .flatMap((group) => group.goals)
+      .filter((goal) => goal.source !== "manual")
+      .map((goal) => ({ goalId: goal.id, value: autoGoalValue(goal), saved: goal.contributions.find((item) => item.userEmail === me)?.value ?? 0 }))
+      // El `ref` corta el ciclo: sin él, la recarga que sigue al envío vuelve a
+      // disparar el efecto antes de que la fila nueva llegue al cliente.
+      .filter((row) => row.value !== row.saved && autoGoalRef.current[row.goalId] !== row.value);
+    if (!stale.length) return;
+    for (const row of stale) autoGoalRef.current[row.goalId] = row.value;
+    void (async () => {
+      for (const row of stale) {
+        await fetch("/api/friends", {
+          method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+          body: JSON.stringify({ action: "log_goal_progress", goalId: row.goalId, value: row.value }),
+        }).catch(() => { delete autoGoalRef.current[row.goalId]; });
+      }
+      await loadSocial();
+    })();
+  }, [social.groups, social.me, autoGoalValue, data.profile.email, initialUser.onboardingCompleted, loading, loadSocial]);
 
   // Sueño reciente contra la semana anterior, para detectar la caída.
   const sleepByDate = useMemo(
@@ -1871,7 +1935,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // ---------------------------------------------------------------------------
   // Amigos y grupos
   // ---------------------------------------------------------------------------
-  const myEmail = data.profile.email.toLowerCase();
+  const myEmail = social.me || data.profile.email.toLowerCase();
   const myStreak = streaks.logging;
 
   async function inviteFriend(event: FormEvent<HTMLFormElement>) {
@@ -1901,14 +1965,29 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     if (await sendSocial({ action: "remove_friend", email })) setFriendsNotice(`${name} ya no está en tu círculo.`);
   }
 
+  function closeGroupWizard() {
+    setGroupWizard(false);
+    setGroupDraft({ name: "", accent: "mint" });
+    setWizardGoal(emptyGoalDraft());
+    setWizardInvites([]);
+  }
+
+  /** El grupo se guarda entero: nombre, objetivo e invitaciones de una vez. */
   async function createGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = await sendSocial({ action: "create_group", ...groupDraft });
+    const result = await sendSocial({
+      action: "create_group",
+      name: groupDraft.name,
+      accent: groupDraft.accent,
+      goal: wizardGoal.title.trim() ? wizardGoal : null,
+      invites: wizardInvites,
+    });
     if (!result) return;
-    setGroupDraft({ name: "", purpose: "", accent: "mint" });
-    setGroupForm(false);
-    setOpenGroupId(Number(result.groupId) || null);
-    setFriendsNotice("Grupo creado. Sumá a tus amigos y fijen un objetivo en común.");
+    const invited = Number(result.invited ?? 0);
+    closeGroupWizard();
+    setFriendsNotice(invited
+      ? `Grupo guardado. Le mandamos la invitación a ${pluralize(invited, "persona", "personas")}: entran cuando la aceptan.`
+      : "Grupo guardado. Sumá gente cuando quieras desde el ícono de amigos.");
   }
 
   async function joinGroup(event: FormEvent<HTMLFormElement>) {
@@ -1919,13 +1998,69 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     }
   }
 
-  async function addGroupGoal(event: FormEvent<HTMLFormElement>, groupId: number) {
+  /** Abre —o cierra— uno de los tres paneles del encabezado de un grupo. */
+  function toggleGroupPanel(group: Group, tab: GroupPanelTab) {
+    const open = groupPanel?.id === group.id && groupPanel.tab === tab;
+    setGroupPanel(open ? null : { id: group.id, tab });
+    setEditingGoalId(null);
+    setGoalDraft(emptyGoalDraft());
+    if (!open && tab === "settings") setSettingsDraft({ name: group.name, accent: group.accent });
+  }
+
+  async function saveGroupSettings(event: FormEvent<HTMLFormElement>, groupId: number) {
     event.preventDefault();
-    if (await sendSocial({ action: "add_group_goal", groupId, ...goalDraft })) {
-      setGoalDraft({ title: "", metric: "count", targetValue: 3, period: "weekly", dueDate: "" });
-      setFriendsNotice("Objetivo fijado. Cada uno carga su parte y el grupo ve el total.");
+    if (await sendSocial({ action: "update_group", groupId, ...settingsDraft })) {
+      setFriendsNotice("Listo: el grupo quedó con el nombre y el color nuevos.");
     }
   }
+
+  async function saveGroupGoal(event: FormEvent<HTMLFormElement>, groupId: number) {
+    event.preventDefault();
+    const editing = editingGoalId;
+    const done = editing
+      ? await sendSocial({ action: "update_group_goal", goalId: editing, ...goalDraft })
+      : await sendSocial({ action: "add_group_goal", groupId, ...goalDraft });
+    if (!done) return;
+    setGoalDraft(emptyGoalDraft());
+    setEditingGoalId(null);
+    setFriendsNotice(editing
+      ? "Objetivo actualizado."
+      : "Objetivo fijado. Cada uno suma su parte y el grupo ve el total.");
+  }
+
+  /**
+   * Los campos de un objetivo. Son los mismos al crear el grupo y al editarlo
+   * después, así que el formulario se escribe una sola vez.
+   */
+  const goalFieldset = (draft: GoalDraft, update: (next: GoalDraft) => void) => <div className="goal-fields">
+    <label className="wide"><span>¿Qué se proponen?</span>
+      <input value={draft.title} onChange={(event) => update({ ...draft, title: event.target.value })} placeholder="Entrenar 12 veces este mes" maxLength={120} />
+    </label>
+    <label className="wide"><span>Cómo se cuenta</span>
+      <select value={draft.source} onChange={(event) => update({ ...draft, source: event.target.value as GoalSource })}>
+        {GOAL_SOURCES.map((source) => <option key={source.value} value={source.value}>{source.label}</option>)}
+      </select>
+    </label>
+    <small className="goal-source-hint">{goalSource(draft.source).hint}</small>
+    <label><span>Meta</span>
+      <input type="number" min={1} max={100000} value={draft.targetValue} onChange={(event) => update({ ...draft, targetValue: Number(event.target.value) })} />
+    </label>
+    <label><span>Unidad</span>
+      {draft.source === "manual"
+        ? <select value={draft.metric} onChange={(event) => update({ ...draft, metric: event.target.value as GoalMetric })}>
+            {GOAL_METRICS.map((metric) => <option key={metric.value} value={metric.value}>{metric.label}</option>)}
+          </select>
+        : <input value={goalSource(draft.source).unit} readOnly tabIndex={-1} />}
+    </label>
+    <label><span>Plazo</span>
+      <select value={draft.period} onChange={(event) => update({ ...draft, period: event.target.value as GroupGoal["period"] })}>
+        <option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="custom">Fecha propia</option>
+      </select>
+    </label>
+    {draft.period === "custom" && <label><span>Hasta</span>
+      <input type="date" value={draft.dueDate} onChange={(event) => update({ ...draft, dueDate: event.target.value })} />
+    </label>}
+  </div>;
 
   const inviteText = inviteMessage(data.profile.displayName, inviteLink);
   const shareBox = inviteLink ? <div className="invite-share">
@@ -2011,104 +2146,197 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   </>;
 
   const groupsTab = <>
+    {social.groupInvites.length > 0 && <article className="panel invite-inbox">
+      <div className="panel-heading"><div><p>TE INVITARON A UN GRUPO</p><h2>{pluralize(social.groupInvites.length, "invitación pendiente", "invitaciones pendientes")}</h2></div></div>
+      <ul className="invite-list">
+        {social.groupInvites.map((invite) => <li key={invite.id}>
+          <span className={"friend-avatar " + accentFor(invite.groupName || String(invite.groupId))}>{initialsFor(invite.groupName || "Grupo")}</span>
+          <p><b>{invite.groupName || "Un grupo"}</b><small>Te invitó {invite.fromName || invite.fromEmail}</small></p>
+          <div>
+            <button type="button" className="invite-accept" disabled={saving} onClick={() => void sendSocial({ action: "accept_group_invite", inviteId: invite.id })}>Entrar</button>
+            <button type="button" className="invite-decline" disabled={saving} onClick={() => void sendSocial({ action: "decline_group_invite", inviteId: invite.id })}>Rechazar</button>
+          </div>
+        </li>)}
+      </ul>
+    </article>}
+
     <article className="panel group-actions">
       <div className="panel-heading"><div><p>GRUPOS</p><h2>Objetivos en común</h2></div>
-        <button type="button" className="accountability-add is-inline" onClick={() => setGroupForm((open) => !open)}>{groupForm ? "Cancelar" : "＋ Crear grupo"}</button>
+        {!groupWizard && <button type="button" className="accountability-add is-inline" onClick={() => setGroupWizard(true)}>＋ Crear grupo</button>}
       </div>
-      {groupForm && <form className="group-form" onSubmit={createGroup}>
-        <label><span>Nombre</span><input value={groupDraft.name} onChange={(event) => setGroupDraft({ ...groupDraft, name: event.target.value })} placeholder="Los del gimnasio" required minLength={2} maxLength={60} /></label>
-        <label><span>Para qué <small>(opcional)</small></span><input value={groupDraft.purpose} onChange={(event) => setGroupDraft({ ...groupDraft, purpose: event.target.value })} placeholder="Entrenar tres veces por semana" maxLength={160} /></label>
-        <div className="group-accents">{GROUP_ACCENTS.map((accent) => <button key={accent} type="button" className={"group-accent " + accent + (groupDraft.accent === accent ? " is-on" : "")} aria-label={`Color ${accent}`} onClick={() => setGroupDraft({ ...groupDraft, accent })} />)}</div>
-        <button type="submit" disabled={saving}>Crear grupo <span>→</span></button>
-      </form>}
-      <form className="group-join" onSubmit={joinGroup}>
+      {groupWizard ? <form className="group-wizard" onSubmit={createGroup}>
+        <section className="group-step">
+          <p><span>01</span>Nombre y color</p>
+          <label className="group-field"><span>¿Cómo se llama el grupo?</span>
+            <input autoFocus value={groupDraft.name} onChange={(event) => setGroupDraft({ ...groupDraft, name: event.target.value })} placeholder="Los del gimnasio" required minLength={2} maxLength={60} />
+          </label>
+          <div className="group-field"><span>Color</span>
+            <div className="group-accents">{GROUP_ACCENTS.map((accent) => <button key={accent} type="button" className={"group-accent " + accent + (groupDraft.accent === accent ? " is-on" : "")} aria-label={`Color ${accent}`} aria-pressed={groupDraft.accent === accent} onClick={() => setGroupDraft({ ...groupDraft, accent })} />)}</div>
+          </div>
+        </section>
+
+        <section className="group-step">
+          <p><span>02</span>El objetivo en común</p>
+          {goalFieldset(wizardGoal, setWizardGoal)}
+        </section>
+
+        <section className="group-step">
+          <p><span>03</span>A quién invitás</p>
+          {social.friends.length > 0 ? <>
+            <div className="group-invite-picker">
+              {social.friends.map((friend) => {
+                const chosen = wizardInvites.includes(friend.email);
+                return <button key={friend.email} type="button" className={chosen ? "is-on" : ""} aria-pressed={chosen}
+                  onClick={() => setWizardInvites(chosen ? wizardInvites.filter((email) => email !== friend.email) : [...wizardInvites, friend.email])}>
+                  <span className={"friend-avatar " + accentFor(friend.email)}>{initialsFor(friend.name)}</span>
+                  <b>{friend.name}</b><i>{chosen ? "✓" : "＋"}</i>
+                </button>;
+              })}
+            </div>
+            <small className="group-step-hint">Les llega una invitación: entran al grupo recién cuando la aceptan.</small>
+          </> : <p className="group-step-empty">Todavía no tenés a nadie en tu círculo. Guardá el grupo igual y sumá gente después desde el ícono de amigos.</p>}
+        </section>
+
+        <div className="group-wizard-actions">
+          <button type="button" className="group-wizard-cancel" onClick={closeGroupWizard}>Cancelar</button>
+          <button type="submit" disabled={saving || groupDraft.name.trim().length < 2}>Guardar grupo <span>→</span></button>
+        </div>
+      </form> : <form className="group-join" onSubmit={joinGroup}>
         <label><span>¿Te pasaron un código?</span><input value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Código del grupo" /></label>
         <button type="submit" disabled={saving || !joinCode.trim()}>Entrar</button>
-      </form>
+      </form>}
     </article>
 
     {social.groups.map((group) => {
-      const isOwner = group.ownerEmail === myEmail;
-      const expanded = openGroupId === group.id;
-      const candidates = social.friends.filter((friend) => !group.members.some((member) => member.userEmail === friend.email));
+      const isOwner = group.isOwner;
+      const panel = groupPanel?.id === group.id ? groupPanel.tab : null;
+      const candidates = social.friends.filter((friend) =>
+        !group.members.some((member) => member.userEmail === friend.email)
+        && !group.pending.some((invite) => invite.toEmail === friend.email));
+      const tools: Array<[GroupPanelTab, ReactNode, string]> = [
+        ["settings", gearIcon, "Configuración del grupo"],
+        ["goals", plusIcon, "Objetivos del grupo"],
+        ["members", friendsIcon, "Invitar y ver integrantes"],
+      ];
       return <article className={"panel group-card " + group.accent} key={group.id}>
         <div className="group-card-head">
-          <div>
-            <p>{group.purpose || `${pluralize(group.members.length, "integrante", "integrantes")}`}</p>
+          <div className="group-card-id">
+            <p>{pluralize(group.members.length, "integrante", "integrantes")}{group.pending.length > 0 ? ` · ${group.pending.length} sin responder` : ""}</p>
             <h3>{group.name}</h3>
           </div>
           <div className="group-member-stack">{group.members.slice(0, 5).map((member) => <span key={member.userEmail} className={accentFor(member.userEmail)} title={member.displayName}>{initialsFor(member.displayName)}</span>)}</div>
-          <button type="button" className="group-toggle" aria-expanded={expanded} onClick={() => setOpenGroupId(expanded ? null : group.id)}>{expanded ? "Cerrar" : "Abrir"}</button>
+          <div className="group-card-tools">
+            {tools.map(([tab, icon, label]) => <button key={tab} type="button" className={"group-tool" + (panel === tab ? " is-on" : "")}
+              aria-label={`${label}: ${group.name}`} aria-pressed={panel === tab} onClick={() => toggleGroupPanel(group, tab)}>{icon}</button>)}
+          </div>
         </div>
 
         <ul className="group-goal-list">
           {group.goals.map((goal) => {
             const mine = goal.contributions.find((item) => item.userEmail === myEmail)?.value ?? 0;
+            const unit = goalUnit(goal);
             return <li key={goal.id}>
               <div className="group-goal-head">
-                <div><small>{goal.period === "weekly" ? "ESTA SEMANA" : goal.period === "monthly" ? "ESTE MES" : goal.dueDate ? `HASTA ${goal.dueDate}` : "SIN PLAZO"}</small><b>{goal.title}</b></div>
-                <p><strong>{goalTotal(goal)}</strong><small>de {goal.targetValue} {metricUnit(goal.metric)}</small></p>
+                <div><small>{goalPeriodLabel(goal)}</small><b>{goal.title}</b></div>
+                <p><strong>{goalTotal(goal)}</strong><small>de {goal.targetValue} {unit}</small></p>
               </div>
               <div className="accountability-track"><i style={{ width: `${goalPercent(goal)}%` }} /></div>
-              {expanded && <>
-                <ul className="group-goal-contributions">
-                  {group.members.map((member) => {
-                    const value = goal.contributions.find((item) => item.userEmail === member.userEmail)?.value ?? 0;
-                    return <li key={member.userEmail}><span className={"friend-avatar " + accentFor(member.userEmail)}>{initialsFor(member.displayName)}</span><b>{member.displayName}</b><small>{value} {metricUnit(goal.metric)}</small></li>;
-                  })}
-                </ul>
-                <div className="group-goal-mine">
-                  <span>Tu aporte</span>
-                  <button type="button" disabled={saving || mine <= 0} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine - 1 })}>−</button>
+              <div className="group-goal-mine">
+                {goal.source === "manual" ? <>
+                  <span>Tu marca</span>
+                  <button type="button" aria-label="Restar una" disabled={saving || mine <= 0} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine - 1 })}>−</button>
                   <b>{mine}</b>
-                  <button type="button" disabled={saving} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine + 1 })}>+</button>
-                  {(goal.createdBy === myEmail || isOwner) && <button type="button" className="group-goal-drop" disabled={saving} onClick={() => { if (window.confirm(`¿Borrar el objetivo "${goal.title}"?`)) void sendSocial({ action: "delete_group_goal", goalId: goal.id }); }}>Borrar</button>}
-                </div>
-              </>}
+                  <button type="button" aria-label="Sumar una" disabled={saving} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine + 1 })}>+</button>
+                </> : <span className="group-goal-auto">↻ Se cuenta solo con lo que registrás en {goalSource(goal.source).label} · <b>{mine} {unit}</b></span>}
+              </div>
+              {group.members.length > 1 && <ul className="group-goal-contributions">
+                {group.members.map((member) => {
+                  const value = goal.contributions.find((item) => item.userEmail === member.userEmail)?.value ?? 0;
+                  return <li key={member.userEmail}>
+                    <span className={"friend-avatar " + accentFor(member.userEmail)}>{initialsFor(member.displayName)}</span>
+                    <b>{member.displayName}</b><small>{value} {unit}</small>
+                  </li>;
+                })}
+              </ul>}
             </li>;
           })}
-          {!group.goals.length && <li className="group-goal-empty">Todavía no fijaron ningún objetivo en común.</li>}
+          {!group.goals.length && <li className="group-goal-empty">Todavía no hay ningún objetivo. Abrí el ＋ y poné el primero.</li>}
         </ul>
 
-        {expanded && <div className="group-panel">
-          <form className="group-goal-form" onSubmit={(event) => void addGroupGoal(event, group.id)}>
-            <label className="wide"><span>Nuevo objetivo</span><input value={goalDraft.title} onChange={(event) => setGoalDraft({ ...goalDraft, title: event.target.value })} placeholder="Entrenar 12 veces" required minLength={2} maxLength={120} /></label>
-            <label><span>Meta</span><input type="number" min={1} max={100000} value={goalDraft.targetValue} onChange={(event) => setGoalDraft({ ...goalDraft, targetValue: Number(event.target.value) })} /></label>
-            <label><span>Unidad</span><select value={goalDraft.metric} onChange={(event) => setGoalDraft({ ...goalDraft, metric: event.target.value as GoalMetric })}>{GOAL_METRICS.map((metric) => <option key={metric.value} value={metric.value}>{metric.label}</option>)}</select></label>
-            <label><span>Plazo</span><select value={goalDraft.period} onChange={(event) => setGoalDraft({ ...goalDraft, period: event.target.value as GroupGoal["period"] })}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="custom">Fecha propia</option></select></label>
-            {goalDraft.period === "custom" && <label><span>Hasta</span><input type="date" value={goalDraft.dueDate} onChange={(event) => setGoalDraft({ ...goalDraft, dueDate: event.target.value })} /></label>}
-            <button type="submit" disabled={saving}>Fijar objetivo</button>
-          </form>
+        {panel === "settings" && <form className="group-panel" onSubmit={(event) => void saveGroupSettings(event, group.id)}>
+          <p className="step-label">CONFIGURACIÓN DEL GRUPO</p>
+          {isOwner ? <>
+            <label className="group-field"><span>Nombre</span>
+              <input value={settingsDraft.name} onChange={(event) => setSettingsDraft({ ...settingsDraft, name: event.target.value })} required minLength={2} maxLength={60} />
+            </label>
+            <div className="group-field"><span>Color</span>
+              <div className="group-accents">{GROUP_ACCENTS.map((accent) => <button key={accent} type="button" className={"group-accent " + accent + (settingsDraft.accent === accent ? " is-on" : "")} aria-label={`Color ${accent}`} aria-pressed={settingsDraft.accent === accent} onClick={() => setSettingsDraft({ ...settingsDraft, accent })} />)}</div>
+            </div>
+            <button type="submit" className="group-save" disabled={saving}>Guardar cambios</button>
+          </> : <p className="group-panel-note">El nombre y el color los cambia quien creó el grupo.</p>}
+          <div className="group-code">
+            <p><small>CÓDIGO DEL GRUPO</small><code>{group.inviteCode}</code></p>
+            <button type="button" onClick={() => void copyInvite(group.inviteCode)}>Copiar</button>
+          </div>
+          <div className="group-danger">
+            {isOwner
+              ? <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Eliminar "${group.name}"? Se borra para todos los integrantes.`)) void sendSocial({ action: "delete_group", groupId: group.id }); }}>Eliminar grupo</button>
+              : <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Salir de "${group.name}"?`)) void sendSocial({ action: "leave_group", groupId: group.id }); }}>Salir del grupo</button>}
+          </div>
+        </form>}
 
-          <div className="group-members-panel">
-            <p className="step-label">INTEGRANTES</p>
-            <ul>
-              {group.members.map((member) => <li key={member.userEmail}>
-                <span className={"friend-avatar " + accentFor(member.userEmail)}>{initialsFor(member.displayName)}</span>
-                <b>{member.displayName}{member.userEmail === myEmail ? " (vos)" : ""}</b>
-                <small>{member.role === "owner" ? "Creó el grupo" : "Integrante"}</small>
-                {isOwner && member.userEmail !== myEmail && <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Sacar a ${member.displayName} del grupo?`)) void sendSocial({ action: "remove_group_member", groupId: group.id, email: member.userEmail }); }}>Sacar</button>}
-              </li>)}
-            </ul>
-            {candidates.length > 0 && <div className="group-add-member">
-              <span>Sumar a un amigo</span>
-              <div>{candidates.map((friend) => <button key={friend.email} type="button" disabled={saving} onClick={() => void sendSocial({ action: "add_group_member", groupId: group.id, email: friend.email })}>＋ {friend.name}</button>)}</div>
-            </div>}
-            <div className="group-code">
-              <p><small>CÓDIGO DEL GRUPO</small><code>{group.inviteCode}</code></p>
-              <button type="button" onClick={() => void copyInvite(group.inviteCode)}>Copiar</button>
+        {panel === "goals" && <div className="group-panel">
+          <p className="step-label">OBJETIVOS DEL GRUPO</p>
+          {group.goals.length > 0 && <ul className="group-goal-admin">
+            {group.goals.map((goal) => <li key={goal.id}>
+              <p><b>{goal.title}</b><small>{goal.targetValue} {goalUnit(goal)} · {goalPeriodLabel(goal).toLowerCase()} · {goal.source === "manual" ? "a mano" : "automático"}</small></p>
+              <button type="button" className={editingGoalId === goal.id ? "is-on" : ""} onClick={() => {
+                setEditingGoalId(goal.id);
+                setGoalDraft({ title: goal.title, source: goal.source, metric: goal.metric, targetValue: goal.targetValue, period: goal.period, dueDate: goal.dueDate });
+              }}>Editar</button>
+              {(goal.createdBy === myEmail || isOwner) && <button type="button" className="group-goal-drop" disabled={saving} onClick={() => { if (window.confirm(`¿Borrar el objetivo "${goal.title}"?`)) void sendSocial({ action: "delete_group_goal", goalId: goal.id }); }}>Borrar</button>}
+            </li>)}
+          </ul>}
+          <form className="group-goal-form" onSubmit={(event) => void saveGroupGoal(event, group.id)}>
+            <p className="step-label">{editingGoalId ? "EDITAR OBJETIVO" : "NUEVO OBJETIVO"}</p>
+            {goalFieldset(goalDraft, setGoalDraft)}
+            <div className="group-goal-form-actions">
+              {editingGoalId !== null && <button type="button" className="group-wizard-cancel" onClick={() => { setEditingGoalId(null); setGoalDraft(emptyGoalDraft()); }}>Cancelar</button>}
+              <button type="submit" disabled={saving || goalDraft.title.trim().length < 2}>{editingGoalId ? "Guardar objetivo" : "Fijar objetivo"}</button>
             </div>
-            <div className="group-danger">
-              {isOwner
-                ? <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Eliminar "${group.name}"? Se borra para todos los integrantes.`)) void sendSocial({ action: "delete_group", groupId: group.id }); }}>Eliminar grupo</button>
-                : <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Salir de "${group.name}"?`)) void sendSocial({ action: "leave_group", groupId: group.id }); }}>Salir del grupo</button>}
-            </div>
+          </form>
+        </div>}
+
+        {panel === "members" && <div className="group-panel">
+          <p className="step-label">INTEGRANTES</p>
+          <ul className="group-member-list">
+            {group.members.map((member) => <li key={member.userEmail}>
+              <span className={"friend-avatar " + accentFor(member.userEmail)}>{initialsFor(member.displayName)}</span>
+              <b>{member.displayName}{member.userEmail === myEmail ? " (vos)" : ""}</b>
+              <small>{member.role === "owner" ? "Creó el grupo" : "Integrante"}</small>
+              {isOwner && member.userEmail !== myEmail && <button type="button" disabled={saving} onClick={() => { if (window.confirm(`¿Sacar a ${member.displayName} del grupo?`)) void sendSocial({ action: "remove_group_member", groupId: group.id, email: member.userEmail }); }}>Sacar</button>}
+            </li>)}
+            {group.pending.map((invite) => <li key={"invite-" + invite.id} className="is-pending">
+              <span className="friend-avatar">{initialsFor(invite.toEmail)}</span>
+              <b>{invite.toEmail}</b>
+              <small>Invitación enviada</small>
+              <button type="button" disabled={saving} onClick={() => void sendSocial({ action: "revoke_group_invite", inviteId: invite.id })}>Cancelar</button>
+            </li>)}
+          </ul>
+          {candidates.length > 0 ? <div className="group-add-member">
+            <span>Invitar a alguien de tu círculo</span>
+            <div>{candidates.map((friend) => <button key={friend.email} type="button" disabled={saving} onClick={() => void sendSocial({ action: "invite_to_group", groupId: group.id, email: friend.email })}>＋ {friend.name}</button>)}</div>
+            <small>Le llega una invitación: entra al grupo recién cuando la acepta.</small>
+          </div> : <p className="group-panel-note">Todos los de tu círculo ya están adentro o tienen una invitación abierta.</p>}
+          <div className="group-code">
+            <p><small>CÓDIGO DEL GRUPO</small><code>{group.inviteCode}</code></p>
+            <button type="button" onClick={() => void copyInvite(group.inviteCode)}>Copiar</button>
           </div>
         </div>}
       </article>;
     })}
 
-    {!social.groups.length && <p className="friends-empty">Sin grupos todavía. Creá uno, sumá a tus amigos y fijen un objetivo que dependa de todos.</p>}
+    {!social.groups.length && !groupWizard && <p className="friends-empty">Sin grupos todavía. Creá uno, fijá el objetivo que los une e invitá a tu círculo.</p>}
   </>;
 
   const friendsPanel = <section className="friends-page">
@@ -2119,7 +2347,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <small>Tus amigos ven tu Daily Score y tu racha de uso. Nada más: ni tus comidas, ni tu sueño, ni lo que escribís.</small>
         <div className="friends-hero-actions">
           <button type="button" className={friendsTab === "circle" ? "" : "secondary"} onClick={() => setFriendsTab("circle")}>Mi círculo{social.incoming.length > 0 ? ` (${social.incoming.length})` : ""}</button>
-          <button type="button" className={friendsTab === "groups" ? "" : "secondary"} onClick={() => setFriendsTab("groups")}>Grupos</button>
+          <button type="button" className={friendsTab === "groups" ? "" : "secondary"} onClick={() => setFriendsTab("groups")}>Grupos{social.groupInvites.length > 0 ? ` (${social.groupInvites.length})` : ""}</button>
         </div>
       </div>
       <div className="friends-hero-visual" aria-hidden="true">

@@ -2,9 +2,9 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
 import { clearPendingInvite } from "../../lib/auth-cookies";
 import {
-  GOAL_METRICS, GROUP_ACCENTS, shareHeadline,
-  type Friend, type FriendInvite, type FriendShare, type GoalMetric, type Group,
-  type GroupAccent, type GroupGoal, type GroupMember, type SocialData,
+  GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, shareHeadline,
+  type Friend, type FriendInvite, type FriendShare, type GoalMetric, type GoalSource, type Group,
+  type GroupAccent, type GroupGoal, type GroupInvite, type GroupMember, type SocialData,
 } from "../../lib/social";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -35,6 +35,42 @@ function siteOrigin(request: Request) {
   return new URL(request.url).origin;
 }
 
+/**
+ * Los campos de un objetivo, validados igual al crearlo que al editarlo. Una
+ * fuente automática fija su propia métrica: contar "páginas" en un objetivo que
+ * se alimenta de los entrenamientos no querría decir nada.
+ */
+function goalFields(payload: Row): Row | string {
+  const title = text(payload.title, 120);
+  if (title.length < 2) return "Escribí un objetivo.";
+  const source = (GOAL_SOURCES.some((item) => item.value === payload.source) ? String(payload.source) : "manual") as GoalSource;
+  const metric = source === "manual"
+    ? (GOAL_METRICS.some((item) => item.value === payload.metric) ? String(payload.metric) : "count")
+    : GOAL_SOURCES.find((item) => item.value === source)!.metric;
+  const period = ["weekly", "monthly", "custom"].includes(String(payload.period)) ? String(payload.period) : "weekly";
+  const dueDate = period === "custom" ? String(payload.dueDate ?? "") : "";
+  if (dueDate && !DATE.test(dueDate)) return "La fecha límite no es válida.";
+  return { title, metric, source, period, dueDate, targetValue: clamp(payload.targetValue, 1, 100000) };
+}
+
+/**
+ * Sumar a alguien al grupo deja una invitación, nunca una membresía: nadie
+ * entra a un grupo sin haber dicho que sí. Devuelve si quedó algo para
+ * responder, así el que invita a varios de una no se frena en el primero que
+ * ya estaba adentro.
+ */
+async function inviteToGroup(from: string, fromName: string, groupId: number, groupName: string, target: string) {
+  if (!EMAIL.test(target) || target === from) return false;
+  const edge = (await selectRows<Row>("friendships", { where: { userEmail: from, friendEmail: target }, limit: 1 }))[0];
+  if (!edge) return false;
+  const member = await selectRows<Row>("group_members", { where: { groupId, userEmail: target }, limit: 1 });
+  if (member.length) return false;
+  const open = await selectRows<Row>("group_invites", { where: { groupId, toEmail: target, status: "pending" }, limit: 1 });
+  if (open.length) return false;
+  await insertRows("group_invites", { groupId, groupName, fromEmail: from, fromName, toEmail: target, status: "pending" });
+  return true;
+}
+
 async function session() {
   const user = await getChatGPTUser();
   if (!user) return null;
@@ -46,10 +82,13 @@ async function session() {
 // ---------------------------------------------------------------------------
 
 async function readSocial(email: string): Promise<SocialData> {
-  const [edges, invites, memberships] = await Promise.all([
+  const [edges, invites, memberships, groupInviteRows] = await Promise.all([
     selectRows<Row>("friendships", { where: { userEmail: email }, order: [["createdAt", "asc"]] }),
     selectRows<Row>("friend_invites", { where: { status: "pending" }, order: [["createdAt", "desc"]], limit: 60 }),
     selectRows<Row>("group_members", { where: { userEmail: email } }),
+    // La política deja ver las mías y las de mis grupos: las primeras van a la
+    // bandeja, las segundas al panel de integrantes del grupo.
+    selectRows<Row>("group_invites", { where: { status: "pending" }, order: [["createdAt", "desc"]], limit: 120 }),
   ]);
 
   const friendEmails = edges.map((row) => String(row.friendEmail));
@@ -93,13 +132,20 @@ async function readSocial(email: string): Promise<SocialData> {
   });
   const pending = invites.map(toInvite);
 
+  const groupInvites: GroupInvite[] = groupInviteRows.map((row) => ({
+    id: Number(row.id), groupId: Number(row.groupId), groupName: String(row.groupName ?? ""),
+    fromEmail: String(row.fromEmail ?? "").toLowerCase(), fromName: String(row.fromName ?? ""),
+    toEmail: String(row.toEmail ?? "").toLowerCase(), createdAt: String(row.createdAt ?? ""),
+  }));
+
   const groups: Group[] = groupRows.map((row) => {
     const id = Number(row.id);
     const goals: GroupGoal[] = goalRows.filter((goal) => Number(goal.groupId) === id).map((goal) => ({
       id: Number(goal.id), groupId: id, title: String(goal.title),
       metric: String(goal.metric) as GoalMetric, targetValue: Number(goal.targetValue ?? 0),
       period: String(goal.period) as GroupGoal["period"], dueDate: String(goal.dueDate ?? ""),
-      createdBy: String(goal.createdBy ?? "").toLowerCase(),
+      source: (GOAL_SOURCES.some((item) => item.value === goal.source) ? goal.source : "manual") as GoalSource,
+      createdBy: String(goal.createdBy ?? "").toLowerCase(), createdAt: String(goal.createdAt ?? ""),
       contributions: progressRows.filter((item) => Number(item.goalId) === Number(goal.id)).map((item) => ({
         userEmail: String(item.userEmail), displayName: String(item.displayName || item.userEmail), value: Number(item.value ?? 0),
       })),
@@ -112,16 +158,20 @@ async function readSocial(email: string): Promise<SocialData> {
     return {
       id, name: String(row.name), purpose: String(row.purpose ?? ""),
       accent: (GROUP_ACCENTS.includes(row.accent as GroupAccent) ? row.accent : "mint") as GroupAccent,
-      ownerEmail: String(row.ownerEmail).toLowerCase(), inviteCode: String(row.inviteCode),
-      members, goals,
+      ownerEmail: String(row.ownerEmail).toLowerCase(),
+      isOwner: String(row.ownerEmail).toLowerCase() === email,
+      inviteCode: String(row.inviteCode),
+      members, goals, pending: groupInvites.filter((invite) => invite.groupId === id),
     };
   });
 
   return {
+    me: email,
     friends,
     incoming: pending.filter((invite) => invite.toEmail === email && invite.fromEmail !== email),
     outgoing: pending.filter((invite) => invite.fromEmail === email),
     groups,
+    groupInvites: groupInvites.filter((invite) => invite.toEmail === email),
   };
 }
 
@@ -212,12 +262,35 @@ export async function POST(request: Request) {
       const name = text(payload.name, 60);
       if (name.length < 2) return fail("Poné un nombre para el grupo.");
       const accent = GROUP_ACCENTS.includes(payload.accent as GroupAccent) ? String(payload.accent) : "mint";
+      // El grupo se guarda entero de una: nombre, su primer objetivo y las
+      // invitaciones. Guardar a medias dejaría un grupo vacío si el objetivo
+      // no valida, que es justo lo que el formulario intenta evitar.
+      const draft = payload.goal && text((payload.goal as Row).title, 120) ? goalFields(payload.goal as Row) : null;
+      if (typeof draft === "string") return fail(draft);
       const created = await callRpc<Row[]>("avora_create_group", {
         p_name: name, p_purpose: text(payload.purpose, 160), p_accent: accent,
         p_code: inviteCode(), p_display_name: user.displayName,
       });
       const group = Array.isArray(created) ? created[0] : null;
-      return ok({ groupId: group ? Number(group.id) : null });
+      const groupId = group ? Number(group.id) : 0;
+      if (!groupId) return fail("No pudimos crear el grupo.", 500);
+      if (draft) await insertRows("group_goals", { groupId, ...draft, createdBy: email });
+      let invited = 0;
+      for (const candidate of (Array.isArray(payload.invites) ? payload.invites : []).slice(0, 25)) {
+        if (await inviteToGroup(email, user.displayName, groupId, name, text(candidate, 160).toLowerCase())) invited += 1;
+      }
+      return ok({ groupId, invited });
+    }
+    if (action === "update_group") {
+      const groupId = Number(payload.groupId);
+      const name = text(payload.name, 60);
+      if (!groupId || name.length < 2) return fail("Poné un nombre para el grupo.");
+      const accent = GROUP_ACCENTS.includes(payload.accent as GroupAccent) ? String(payload.accent) : "mint";
+      await updateRows("avora_groups", { id: groupId, ownerEmail: email }, { name, accent });
+      // El nombre viaja copiado en las invitaciones abiertas: quien todavía no
+      // contestó tiene que ver el nombre nuevo, no el viejo.
+      await updateRows("group_invites", { groupId, status: "pending" }, { groupName: name });
+      return ok();
     }
     if (action === "join_group") {
       const code = text(payload.code, 64);
@@ -225,15 +298,33 @@ export async function POST(request: Request) {
       await callRpc("avora_join_group", { p_code: code, p_display_name: user.displayName });
       return ok();
     }
-    if (action === "add_group_member") {
+    if (action === "invite_to_group") {
       const groupId = Number(payload.groupId);
       const target = text(payload.email, 160).toLowerCase();
       if (!groupId || !EMAIL.test(target)) return fail("Elegí un grupo y un amigo válidos.");
-      const edge = (await selectRows<Row>("friendships", { where: { userEmail: email, friendEmail: target }, limit: 1 }))[0];
-      if (!edge) return fail("Sólo podés sumar a gente que ya sea tu amiga.");
-      await insertRows("group_members", {
-        groupId, userEmail: target, displayName: String(edge.friendName || target), role: "member",
-      }, { upsert: true, onConflict: ["groupId", "userEmail"], ignoreDuplicates: true });
+      const group = (await selectRows<Row>("avora_groups", { where: { id: groupId }, limit: 1 }))[0];
+      if (!group) return fail("Grupo no encontrado.", 404);
+      if (!await inviteToGroup(email, user.displayName, groupId, String(group.name), target)) {
+        return fail("Sólo podés invitar a gente de tu círculo que todavía no esté en el grupo ni tenga una invitación abierta.");
+      }
+      return ok();
+    }
+    if (action === "accept_group_invite") {
+      const id = Number(payload.inviteId);
+      if (!id) return fail("Invitación inválida.");
+      await callRpc("avora_accept_group_invite", { p_id: id, p_display_name: user.displayName });
+      return ok();
+    }
+    if (action === "decline_group_invite") {
+      const id = Number(payload.inviteId);
+      if (!id) return fail("Invitación inválida.");
+      await callRpc("avora_decline_group_invite", { p_id: id });
+      return ok();
+    }
+    if (action === "revoke_group_invite") {
+      const id = Number(payload.inviteId);
+      if (!id) return fail("Invitación inválida.");
+      await updateRows("group_invites", { id }, { status: "revoked", respondedAt: now() });
       return ok();
     }
     if (action === "leave_group") {
@@ -265,16 +356,18 @@ export async function POST(request: Request) {
     // --- Objetivos en común ----------------------------------------------
     if (action === "add_group_goal") {
       const groupId = Number(payload.groupId);
-      const title = text(payload.title, 120);
-      const metric = GOAL_METRICS.some((item) => item.value === payload.metric) ? String(payload.metric) : "count";
-      const period = ["weekly", "monthly", "custom"].includes(String(payload.period)) ? String(payload.period) : "weekly";
-      const dueDate = String(payload.dueDate ?? "");
-      if (!groupId || title.length < 2) return fail("Escribí un objetivo y elegí el grupo.");
-      if (dueDate && !DATE.test(dueDate)) return fail("La fecha límite no es válida.");
-      await insertRows("group_goals", {
-        groupId, title, metric, targetValue: clamp(payload.targetValue, 1, 100000),
-        period, dueDate, createdBy: email,
-      });
+      if (!groupId) return fail("Elegí el grupo.");
+      const draft = goalFields(payload);
+      if (typeof draft === "string") return fail(draft);
+      await insertRows("group_goals", { groupId, ...draft, createdBy: email });
+      return ok();
+    }
+    if (action === "update_group_goal") {
+      const goalId = Number(payload.goalId);
+      if (!goalId) return fail("Objetivo inválido.");
+      const draft = goalFields(payload);
+      if (typeof draft === "string") return fail(draft);
+      await updateRows("group_goals", { id: goalId }, draft);
       return ok();
     }
     if (action === "delete_group_goal") {
