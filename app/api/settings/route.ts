@@ -54,7 +54,8 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null) as { displayName?: unknown; weeklySummary?: unknown } | null;
     if (!body) return fail("Datos inválidos.");
 
-    const displayName = String(body.displayName ?? current.profile?.displayName ?? current.user.displayName).trim().slice(0, 60);
+    const requestedName = String(body.displayName ?? "").trim();
+    const displayName = (requestedName || current.profile?.displayName || current.user.displayName).trim().slice(0, 60);
     if (displayName.length < 2) return fail("El nombre debe tener al menos 2 caracteres.");
 
     const currentPreferences = stringArray(current.profile?.usagePreferencesJson);
