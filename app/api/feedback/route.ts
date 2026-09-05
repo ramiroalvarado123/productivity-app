@@ -10,15 +10,7 @@ const TYPE_LABELS: Record<string, string> = {
   dislike: "Hay algo que no me gusta",
 };
 
-const feedbackRecipients = (process.env.FEEDBACK_TO_EMAILS ?? "")
-  .split(",")
-  .map((email) => email.trim())
-  .filter(Boolean);
-const feedbackFrom = process.env.FEEDBACK_FROM_EMAIL?.trim() || "AVORA <onboarding@resend.dev>";
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;", "'": "&#39;" })[character] ?? character);
-}
+const feedbackWebhookUrl = process.env.FEEDBACK_WEBHOOK_URL?.trim() || "https://script.google.com/macros/s/AKfycbyIg-cLJRFPV2Vgvt6CfD5j8ObnolwU7SeCb8BvbzgQy5hO7HhPcW1rtldQFDyDVELx8w/exec";
 
 async function notifyFeedbackByEmail(values: {
   userEmail: string;
@@ -29,44 +21,17 @@ async function notifyFeedbackByEmail(values: {
   userAgent: string;
   appVersion: string;
 }) {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey || !feedbackRecipients.length) {
-    console.warn("feedback_email_not_configured");
-    return "not_configured" as const;
-  }
-
   const typeLabel = TYPE_LABELS[values.type] ?? values.type;
   const safeSection = values.section.replace(/[\r\n]+/g, " ");
-  const subject = `[AVORA] ${typeLabel} · ${safeSection}`.slice(0, 180);
-  const submittedAt = new Intl.DateTimeFormat("es-AR", {
-    timeZone: "America/Argentina/Buenos_Aires",
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date());
-  const text = [
-    `Nuevo comentario de AVORA`,
-    `Tipo: ${typeLabel}`,
-    `Sección: ${safeSection}`,
-    `Usuario: ${values.userEmail}`,
-    `Fecha: ${submittedAt}`,
-    "",
-    values.message,
-    "",
-    `Ruta: ${values.pagePath || "/"}`,
-    `Versión: ${values.appVersion}`,
-    `Navegador: ${values.userAgent || "No disponible"}`,
-  ].join("\n");
-  const html = `<h2>Nuevo comentario de AVORA</h2><p><strong>Tipo:</strong> ${escapeHtml(typeLabel)}<br><strong>Sección:</strong> ${escapeHtml(safeSection)}<br><strong>Usuario:</strong> ${escapeHtml(values.userEmail)}<br><strong>Fecha:</strong> ${escapeHtml(submittedAt)}</p><blockquote>${escapeHtml(values.message).replace(/\n/g, "<br>")}</blockquote><p><strong>Ruta:</strong> ${escapeHtml(values.pagePath || "/")}<br><strong>Versión:</strong> ${escapeHtml(values.appVersion)}<br><strong>Navegador:</strong> ${escapeHtml(values.userAgent || "No disponible")}</p>`;
-
   try {
-    const response = await fetch("https://api.resend.com/emails", {
+    const response = await fetch(feedbackWebhookUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: feedbackFrom, to: feedbackRecipients, reply_to: values.userEmail, subject, text, html }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: values.userEmail, email: values.userEmail, type: typeLabel, message: values.message, section: safeSection, pagePath: values.pagePath || "/", appVersion: values.appVersion, userAgent: values.userAgent || "No disponible" }),
       cache: "no-store",
     });
     if (!response.ok) {
-      console.error("feedback_email_failed", response.status, await response.text());
+      console.error("feedback_email_failed", response.status);
       return "failed" as const;
     }
     return "sent" as const;
