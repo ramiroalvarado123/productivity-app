@@ -3,6 +3,78 @@ import { insertRows } from "../../lib/supabase-db";
 
 const TYPES = new Set(["positive", "idea", "bug", "dislike"]);
 const MAX_MESSAGE = 2000;
+const TYPE_LABELS: Record<string, string> = {
+  positive: "Me gustó algo",
+  idea: "Tengo una sugerencia",
+  bug: "Encontré un problema",
+  dislike: "Hay algo que no me gusta",
+};
+
+const feedbackRecipients = (process.env.FEEDBACK_TO_EMAILS ?? "")
+  .split(",")
+  .map((email) => email.trim())
+  .filter(Boolean);
+const feedbackFrom = process.env.FEEDBACK_FROM_EMAIL?.trim() || "AVORA <onboarding@resend.dev>";
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
+
+async function notifyFeedbackByEmail(values: {
+  userEmail: string;
+  type: string;
+  message: string;
+  section: string;
+  pagePath: string;
+  userAgent: string;
+  appVersion: string;
+}) {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey || !feedbackRecipients.length) {
+    console.warn("feedback_email_not_configured");
+    return "not_configured" as const;
+  }
+
+  const typeLabel = TYPE_LABELS[values.type] ?? values.type;
+  const safeSection = values.section.replace(/[\r\n]+/g, " ");
+  const subject = `[AVORA] ${typeLabel} · ${safeSection}`.slice(0, 180);
+  const submittedAt = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date());
+  const text = [
+    `Nuevo comentario de AVORA`,
+    `Tipo: ${typeLabel}`,
+    `Sección: ${safeSection}`,
+    `Usuario: ${values.userEmail}`,
+    `Fecha: ${submittedAt}`,
+    "",
+    values.message,
+    "",
+    `Ruta: ${values.pagePath || "/"}`,
+    `Versión: ${values.appVersion}`,
+    `Navegador: ${values.userAgent || "No disponible"}`,
+  ].join("\n");
+  const html = `<h2>Nuevo comentario de AVORA</h2><p><strong>Tipo:</strong> ${escapeHtml(typeLabel)}<br><strong>Sección:</strong> ${escapeHtml(safeSection)}<br><strong>Usuario:</strong> ${escapeHtml(values.userEmail)}<br><strong>Fecha:</strong> ${escapeHtml(submittedAt)}</p><blockquote>${escapeHtml(values.message).replace(/\n/g, "<br>")}</blockquote><p><strong>Ruta:</strong> ${escapeHtml(values.pagePath || "/")}<br><strong>Versión:</strong> ${escapeHtml(values.appVersion)}<br><strong>Navegador:</strong> ${escapeHtml(values.userAgent || "No disponible")}</p>`;
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: feedbackFrom, to: feedbackRecipients, reply_to: values.userEmail, subject, text, html }),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      console.error("feedback_email_failed", response.status, await response.text());
+      return "failed" as const;
+    }
+    return "sent" as const;
+  } catch (error) {
+    console.error("feedback_email_failed", error);
+    return "failed" as const;
+  }
+}
 
 function fail(message: string, status = 400) { return Response.json({ error: message }, { status }); }
 
@@ -22,7 +94,8 @@ export async function POST(request: Request) {
     if (message.length < 3) return fail("Contanos un poco más para poder entender el comentario.");
     if (message.length > MAX_MESSAGE) return fail(`El comentario puede tener hasta ${MAX_MESSAGE} caracteres.`);
     await insertRows("user_feedback", { userEmail: user.email, type, message, section, status: "pending", pagePath, userAgent, appVersion });
-    return Response.json({ ok: true });
+    const emailDelivery = await notifyFeedbackByEmail({ userEmail: user.email, type, message, section, pagePath, userAgent, appVersion });
+    return Response.json({ ok: true, emailDelivery });
   } catch (error) {
     console.error("feedback_submit_failed", error);
     return fail("No pudimos guardar el comentario. Probá nuevamente.", 500);
