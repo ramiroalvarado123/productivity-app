@@ -437,6 +437,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }, [showTutorial]);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileProfileRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsView, setSettingsView] = useState<SettingsView>("home");
   const [settingsName, setSettingsName] = useState("");
@@ -594,7 +595,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   useEffect(() => {
     if (!profileMenuOpen) return;
     const closeOutside = (event: PointerEvent) => {
-      if (!profileMenuRef.current?.contains(event.target as Node)) setProfileMenuOpen(false);
+      const target = event.target as Node;
+      if (!profileMenuRef.current?.contains(target) && !mobileProfileRef.current?.contains(target)) setProfileMenuOpen(false);
     };
     const closeWithEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setProfileMenuOpen(false); };
     document.addEventListener("pointerdown", closeOutside);
@@ -1905,8 +1907,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   </article>;
 
   const quotePanel = <aside className="quote-strip">
-    <span className="quote-mark" aria-hidden="true">”</span>
-    <p>{quote.text}”</p>
+    <span className="quote-mark" aria-hidden="true">“</span>
+    <p>{quote.text}<span className="quote-mark" aria-hidden="true">”</span></p>
     <b>{quote.author}</b>
   </aside>;
 
@@ -2940,27 +2942,29 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </main>;
   }
 
+  const profileMenuActions = <>
+    <p>CUENTA</p>
+    <button type="button" className="profile-menu-item" role="menuitem" onClick={() => { setProfileMenuOpen(false); openSection("pro"); }}>
+      <span aria-hidden="true">★</span>
+      Gestionar membresía
+    </button>
+    <button type="button" className="profile-menu-item" role="menuitem" onClick={openSettings}>
+      <span aria-hidden="true">⚙</span>
+      Configuración
+    </button>
+    <button type="button" className="profile-menu-item" role="menuitem" onClick={openFeedback}>
+      <span aria-hidden="true">♡</span>
+      Ayudanos a mejorar AVORA
+    </button>
+    <a className="profile-menu-signout" href="/signout-with-chatgpt?return_to=/" role="menuitem">
+      <span aria-hidden="true">↪</span>
+      Cerrar sesión
+    </a>
+  </>;
+
   return <main className="app-shell">
     <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav data-tour="nav">{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu" ref={profileMenuRef}>
-          {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">
-            <p>CUENTA</p>
-            <button type="button" className="profile-menu-item" role="menuitem" onClick={() => { setProfileMenuOpen(false); openSection("pro"); }}>
-              <span aria-hidden="true">★</span>
-              Gestionar membresía
-            </button>
-            <button type="button" className="profile-menu-item" role="menuitem" onClick={openSettings}>
-              <span aria-hidden="true">⚙</span>
-              Configuración
-            </button>
-            <button type="button" className="profile-menu-item" role="menuitem" onClick={openFeedback}>
-              <span aria-hidden="true">♡</span>
-              Ayudanos a mejorar AVORA
-            </button>
-            <a className="profile-menu-signout" href="/signout-with-chatgpt?return_to=/" role="menuitem">
-              <span aria-hidden="true">↪</span>
-              Cerrar sesión
-            </a>
-          </div>}
+          {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}
           <button
             type="button"
             className="profile-chip profile-chip-button"
@@ -2974,7 +2978,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <i className="profile-menu-chevron" aria-hidden="true">{profileMenuOpen ? "▾" : "▴"}</i>
           </button>
         </div></aside>
-    <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div></header>
+    <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
       {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
         {quotePanel}
