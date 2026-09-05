@@ -14,6 +14,7 @@ const feedbackWebhookUrl = process.env.FEEDBACK_WEBHOOK_URL?.trim() || "https://
 
 async function notifyFeedbackByEmail(values: {
   userEmail: string;
+  userName: string;
   type: string;
   message: string;
   section: string;
@@ -27,7 +28,7 @@ async function notifyFeedbackByEmail(values: {
     const response = await fetch(feedbackWebhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: values.userEmail, email: values.userEmail, type: typeLabel, message: values.message, section: safeSection, pagePath: values.pagePath || "/", appVersion: values.appVersion, userAgent: values.userAgent || "No disponible" }),
+      body: JSON.stringify({ name: values.userName || values.userEmail, email: values.userEmail, type: typeLabel, message: values.message, section: safeSection, pagePath: values.pagePath || "/", appVersion: values.appVersion, userAgent: values.userAgent || "No disponible" }),
       cache: "no-store",
     });
     if (!response.ok) {
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     if (message.length < 3) return fail("Contanos un poco más para poder entender el comentario.");
     if (message.length > MAX_MESSAGE) return fail(`El comentario puede tener hasta ${MAX_MESSAGE} caracteres.`);
     await insertRows("user_feedback", { userEmail: user.email, type, message, section, status: "pending", pagePath, userAgent, appVersion });
-    const emailDelivery = await notifyFeedbackByEmail({ userEmail: user.email, type, message, section, pagePath, userAgent, appVersion });
+    const emailDelivery = await notifyFeedbackByEmail({ userEmail: user.email, userName: user.fullName || user.displayName, type, message, section, pagePath, userAgent, appVersion });
     return Response.json({ ok: true, emailDelivery });
   } catch (error) {
     console.error("feedback_submit_failed", error);
