@@ -1905,7 +1905,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   </article>;
 
   const quotePanel = <aside className="quote-strip">
-    <span className="quote-mark" aria-hidden="true">“</span>
+    <span className="quote-mark" aria-hidden="true">”</span>
     <p>{quote.text}”</p>
     <b>{quote.author}</b>
   </aside>;
