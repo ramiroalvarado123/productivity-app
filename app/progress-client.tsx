@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 58508)
+Total output lines: 3069
+
 "use client";
 
 import Image from "next/image";
@@ -147,8 +150,6 @@ const periodLabels: Record<GoalPeriod, string> = { weekly: "Esta semana", monthl
 const BEDTIME_HOUR_OPTIONS = ["19", "20", "21", "22", "23", "00", "01", "02", "03", "04", "05"];
 const WAKE_HOUR_OPTIONS = ["05", "06", "07", "08", "09", "10", "11", "12", "13", "14"];
 const WEEKLY_TARGET_OPTIONS: DropdownOption[] = Array.from({ length: 14 }, (_, index) => ({ value: String(index + 1), label: `${index + 1} por semana` }));
-const FOCUS_HOUR_OPTIONS: DropdownOption[] = Array.from({ length: 13 }, (_, index) => ({ value: String(index), label: `${index} h` }));
-const FOCUS_MINUTE_OPTIONS: DropdownOption[] = [0, 15, 30, 45].map((minutes) => ({ value: String(minutes), label: `${String(minutes).padStart(2, "0")} min` }));
 const EVENT_CATEGORY_OPTIONS: DropdownOption[] = [
   { value: "personal", label: "Personal" }, { value: "study", label: "Estudio" }, { value: "work", label: "Trabajo" },
   { value: "training", label: "Entrenamiento" }, { value: "health", label: "Salud" }, { value: "other", label: "Otro" },
@@ -268,6 +269,11 @@ function sleepDuration(bedtime: string, wakeTime: string) {
 }
 function durationOptions(minutesList: number[]): DropdownOption[] {
   return minutesList.map((minutes) => ({ value: String(minutes), label: formatMinutes(minutes) }));
+}
+function formatFocusHours(minutes: number) {
+  const hours = Math.max(0, minutes) / 60;
+  const value = Number.isInteger(hours) ? String(hours) : hours.toLocaleString("es-AR", { maximumFractionDigits: 2 });
+  return `${value} h`;
 }
 function projectOptions(projects: Array<{ id: number; name: string }>, noneLabel = "Sin proyecto"): DropdownOption[] {
   return [{ value: "", label: noneLabel }, ...projects.map((project) => ({ value: String(project.id), label: project.name }))];
@@ -570,7 +576,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [sleepBedtime, setSleepBedtime] = useState("23:00");
   const [sleepWaketime, setSleepWaketime] = useState("07:00");
   const [focusHours, setFocusHours] = useState(0);
-  const [focusMinutesPart, setFocusMinutesPart] = useState(30);
   const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>("weekly");
   const [customDate, setCustomDate] = useState(() => datePlus(argentinaDate(), 30));
   const [recording, setRecording] = useState(false);
@@ -1548,7 +1553,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     focusWeight: {
       icon: "⌁", tone: "coral", label: "FOCO HOY", area: "focus",
       value: (focusToday / 60).toFixed(focusToday % 60 ? 1 : 0), unit: "h",
-      caption: formatMinutes(focusToday),
+      caption: formatFocusHours(focusToday),
     },
     sleepWeight: {
       icon: "☾", tone: "mint", label: "SUEÑO", area: "sleep",
@@ -1592,7 +1597,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {voiceResult && <div className="voice-review"><div className="voice-review-head"><div><p>REVISÁ ANTES DE GUARDAR</p><h3>{voiceResult.summary || "Esto fue lo que entendimos"}</h3></div><span className={"confidence " + voiceResult.confidence}>Confianza {voiceResult.confidence === "high" ? "alta" : voiceResult.confidence === "medium" ? "media" : "baja"}</span></div><div className="voice-review-grid">
       <div><span>↗</span><p><b>Entrenamiento</b><small>{voiceResult.gym.attended ? "Entrenamiento registrado" : "Sin asistencia"} {voiceResult.gym.detail}</small></p></div>
       <div><span>◇</span><p><b>Comidas</b><small>{voiceResult.meals.length ? voiceResult.meals.map((meal) => meal.name + " ≈" + meal.calories + " kcal").join(" · ") : "Sin comidas"}</small></p></div>
-      <div><span>⌁</span><p><b>Estudio / trabajo</b><small>{voiceResult.study.minutes ? voiceResult.study.minutes + " min · " : ""}{voiceResult.study.detail || "Sin dato"}</small></p></div>
+      <div><span>⌁</span><p><b>Estudio / trabajo</b><small>{voiceResult.study.minutes ? formatFocusHours(voiceResult.study.minutes) + " · " : ""}{voiceResult.study.detail || "Sin dato"}</small></p></div>
       <div><span>☾</span><p><b>Sueño</b><small>{voiceResult.sleep.minutes ? Math.round(voiceResult.sleep.minutes / 6) / 10 + " horas" : "Sin dato"}</small></p></div>
       <div><span>▱</span><p><b>Lectura</b><small>{voiceResult.reading.bookTitle || "Libro actual"} · {voiceResult.reading.pages} páginas</small></p></div>
       <div><span>✎</span><p><b>Reflexión</b><small>{voiceResult.journal || "Sin reflexión"}</small></p></div>
@@ -1643,394 +1648,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </article>
     {selectedDiscipline && <div className="training-detail-grid single-session">
       <article className="panel">
-        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><span className="week-pill">{trainingDate === today ? "Hoy" : formatDate(trainingDate)}</span></div>
-        {selectedDiscipline.kind === "strength" ? <>
-          <form key={`${selectedDiscipline.id}-${trainingDate}-notes`} className="data-form strength-notes-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: selectedTrainingLog?.durationMinutes || 0, distanceKm: 0, notes: form.get("notes") }); }}>
-            <label>Notas de la sesión<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Rutina, sensaciones, técnica…" /></label>
-            <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar notas" phase={savePhase("save_training")} /></button>
-          </form>
-          <div className="panel-divider" />
-          <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
-          <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: form.get("weightKg"), sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
-            <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
-            <div className="three-fields"><label>Kg<input name="weightKg" type="number" min="0" step=".1" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
-            <label className="check-label"><input name="isRecord" type="checkbox" /> Es un récord personal</label>
-            <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar ejercicio" phase={savePhase("add_exercise")} /></button>
-          </form>
-          <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
-        </> : isDistanceDiscipline ? <DistanceSessionForm
-          key={`${selectedDiscipline.id}-${trainingDate}`}
-          disciplineId={selectedDiscipline.id}
-          date={trainingDate}
-          log={selectedTrainingLog}
-          notePlaceholder="Ritmo, sensaciones, recorrido…"
-          saving={saving}
-          savePhase={savePhase("save_training")}
-          onSave={(payload) => void save(payload)}
-        /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0, notes: form.get("notes") }); }}>
-          <label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label>
-          <label>Descripción<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Qué hiciste, sensaciones, detalle de la sesión…" /></label>
-          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase("save_training")} /></button>
-        </form>}
-      </article>
-    </div>}
-  </section>;
-
-  const sleepPanel = <section className="module-stack sleep-page">
-    <div className="split-grid">
-      <article className="panel"><div className="panel-heading"><div><p>DESCANSO DE HOY</p><h2>Registrar sueño</h2></div><span className="sleep-icon">☾</span></div>
-        <form className="data-form sleep-form" onSubmit={(event) => void submitForm(event, { action: "save_sleep", date: today, sleepMinutes: calculatedSleepMinutes, bedtime: sleepBedtime, wakeTime: sleepWaketime })}>
-          <div className="sleep-duration-badge"><span>TIEMPO CALCULADO</span><b>{Math.floor(calculatedSleepMinutes / 60)} h {calculatedSleepMinutes % 60 ? calculatedSleepMinutes % 60 + " min" : ""}</b><small>Entre la hora de acostarte y la de despertarte</small></div>
-          <div className="sleep-time-grid">
-            <div className="time-picker-card">
-              <span className="time-symbol">☾</span>
-              <TimeFieldPicker idPrefix="sleep-bedtime" label="Me acosté" value={sleepBedtime} onChange={setSleepBedtime} hourOptions={BEDTIME_HOUR_OPTIONS} />
-            </div>
-            <div className="time-picker-card wake">
-              <span className="time-symbol">☀</span>
-              <TimeFieldPicker idPrefix="sleep-waketime" label="Me desperté" value={sleepWaketime} onChange={setSleepWaketime} hourOptions={WAKE_HOUR_OPTIONS} />
-            </div>
-          </div>
-          <p className="sleep-form-note">Elegí la hora de la lista: sin escribir y sin AM/PM.</p>
-          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar descanso" phase={savePhase("save_sleep")} /></button>
-        </form>
-      </article>
-      <article className="panel sleep-summary"><div className="panel-heading"><div><p>ÚLTIMOS 7 DÍAS</p><h2>Regularidad</h2></div></div>
-        <div className="sleep-bars">{week.map((day) => { const minutes = data.dailyCheckins.find((item) => item.entryDate === day.iso)?.sleepMinutes ?? 0; return <div key={day.iso}><span><i style={{ height: String(Math.min(100, minutes / 600 * 100)) + "%" }} /></span><b>{minutes ? Math.round(minutes / 6) / 10 : "—"}</b><small>{day.short}</small></div>; })}</div>
-        <p className="soft-note">Objetivo visual de referencia: 8 horas. Cada persona puede necesitar un rango diferente.</p>
-      </article>
-    </div>
-    <article className="panel wearable-panel"><div className="wearable-copy"><span className="wearable-icon">⌚</span><div><p>DISPOSITIVO DE SALUD</p><h2>Importar el sueño desde tu reloj</h2><small>Al conectarlo podremos traer duración real, etapas del sueño, frecuencia cardíaca, oxígeno y regularidad, según lo que admita tu dispositivo.</small></div></div><div className="wearable-actions"><div className="wearable-badges"><span>Apple Health</span><span>Health Connect</span><span>Garmin</span></div><button type="button" disabled>Elegir dispositivo · próximo paso</button></div></article>
-  </section>;
-
-  const focusProjectsInTab = data.focusProjects.filter((project) => project.kind === focusTab);
-  const focusProjectIds = new Set(focusProjectsInTab.map((project) => project.id));
-  const focusSessionsInTab = uniqueFocusSessions.filter((session) => focusProjectIds.has(session.projectId));
-  // Las tareas sin proyecto se muestran en las dos vistas: no pertenecen a
-  // ninguna de las dos y esconderlas en ambas sería peor.
-  const tasksInTab = data.tasks.filter((task) => !task.projectId || focusProjectIds.has(task.projectId));
-  const focusTodayInTab = focusSessionsInTab.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0);
-  const focusWeekInTab = focusSessionsInTab.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0);
-
-  const focusPanel = <section className="module-stack">
-      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div>
-        <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_focus_project")} /></button></form>
-        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? (todayMinutes / 60).toFixed(todayMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? (weekMinutes / 60).toFixed(weekMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
-        {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = focusHours * 60 + focusMinutesPart; if (minutes <= 0) return; void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
-          <label>{focusTab === "study" ? "Materia" : "Proyecto"}<Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia" : "Proyecto"} options={focusProjectsInTab.map((project) => ({ value: String(project.id), label: project.name }))} /></label>
-          <label>Trabajo profundo<div className="focus-duration-control"><Dropdown ariaLabel="Horas de trabajo profundo" value={String(focusHours)} onChange={(value) => setFocusHours(Number(value))} options={FOCUS_HOUR_OPTIONS} /><Dropdown ariaLabel="Minutos de trabajo profundo" value={String(focusMinutesPart)} onChange={(value) => setFocusMinutesPart(Number(value))} options={FOCUS_MINUTE_OPTIONS} /></div></label>
-          <label>Qué avanzaste<input name="note" placeholder="Tema, entrega o avance…" /></label>
-          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar bloque de foco" phase={savePhase("add_focus_session")} /></button>
-        </form>}
-      </article>
-    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE HOY" : "TRABAJO DE HOY"}</p><b>{formatMinutes(focusTodayInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatMinutes(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
-      <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{tasksInTab.filter((item) => item.completedAt).length}/{tasksInTab.length} hechas</span></div>
-        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia de la tarea" : "Proyecto de la tarea"} options={projectOptions(focusProjectsInTab, focusTab === "study" ? "Sin materia" : "Sin proyecto")} /><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><Dropdown name="durationMinutes" ariaLabel="Duración" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120])} /><button disabled={saving}><SaveButtonContent label="＋" phase={savePhase("add_task")} /></button></form>
-        <div className="task-list compact-task-list">{tasksInTab.map((task) => { const done = taskDone(task.id, Boolean(task.completedAt)); return <div className={done ? "completed" : ""} key={task.id}><button className="task-check" aria-pressed={done} onClick={() => void toggleTask(task.id, !done)}>{done ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? formatDate(task.dueDate) : "Sin fecha"}{task.startTime ? ` · ${task.startTime}${task.durationMinutes ? " (" + formatMinutes(task.durationMinutes) + ")" : ""}` : task.dueDate ? " · sin horario" : ""}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>; })}{!tasksInTab.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
-      </article>
-  </section>;
-
-  const calendarStart = new Date(calendarCursor + "-01T12:00:00");
-  const calendarMonthName = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(calendarStart);
-  const calendarOffset = (calendarStart.getDay() + 6) % 7;
-  const calendarDays = new Date(calendarStart.getFullYear(), calendarStart.getMonth() + 1, 0).getDate();
-  const shiftCalendar = (amount: number) => {
-    const next = new Date(calendarStart);
-    next.setMonth(next.getMonth() + amount);
-    setCalendarCursor(next.toISOString().slice(0, 7));
-  };
-  const calendarItems = [
-    ...data.events.map((item) => ({ key: "e" + item.id, date: item.eventDate, title: item.title, type: item.category, id: item.id, source: "event" })),
-    ...data.tasks.filter((item) => item.dueDate).map((item) => ({ key: "t" + item.id, date: item.dueDate as string, title: item.title, type: "task", id: item.id, source: "task" })),
-    ...activeGoals.map((item) => ({ key: "g" + item.id, date: item.targetDate, title: item.title, type: "goal", id: item.id, source: "goal" })),
-  ].sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = calendarItems.filter((item) => item.date >= today).slice(0, 8);
-  // ---------------------------------------------------------------------------
-  // Plan del día
-  // ---------------------------------------------------------------------------
-  const blockCategoryLabel: Record<string, string> = {
-    task: "Tarea", study: "Estudio", work: "Trabajo", personal: "Personal",
-    training: "Entrenamiento", health: "Salud", other: "Otro",
-  };
-  const currentBlock = todayBlocks.find((block) => !block.done && block.start <= nowMinutes && block.end > nowMinutes);
-  const nextBlock = todayBlocks.find((block) => !block.done && block.start > nowMinutes);
-
-  const dayPlanPanel = <article className="panel day-plan">
-    <div className="panel-heading">
-      <div><p>PLAN DEL DÍA</p><h2>{todayBlocks.length ? "Tu día, hora por hora" : "Todavía no armaste el día"}</h2></div>
-      <div className="day-plan-actions">
-        <button className="text-link" onClick={() => { setAgendaView("week"); openSection("plan"); }}>Ver la semana →</button>
-      </div>
-    </div>
-    {todayBlocks.length ? <>
-      <div className="day-now">
-        {currentBlock
-          ? <p><i className="live" /><b>Ahora: {currentBlock.title}</b><small>hasta las {clockFromMinutes(currentBlock.end)}</small></p>
-          : nextBlock
-            ? <p><i /><b>Lo próximo: {nextBlock.title}</b><small>a las {clockFromMinutes(nextBlock.start)}</small></p>
-            : <p><i /><b>No queda nada agendado</b><small>el resto del día es tuyo</small></p>}
-      </div>
-      <ol className="day-timeline">
-        {todayBlocks.map((block) => {
-          const done = block.taskId ? taskDone(block.taskId, block.done) : block.done;
-          const past = block.end <= nowMinutes;
-          const live = block.start <= nowMinutes && block.end > nowMinutes;
-          const classes = ["day-block", done ? "done" : "", past ? "past" : "", live ? "live" : ""].filter(Boolean).join(" ");
-          // Para una tarea, toda la fila es el botón: en el celular apuntarle a
-          // un cuadradito de 26 px era la mitad de los toques fallados.
-          return <li key={block.key} className={classes}>
-            {block.taskId ? <button
-              type="button"
-              className="day-block-hit"
-              aria-pressed={done}
-              aria-label={`${block.title}, ${clockFromMinutes(block.start)}. ${done ? "Marcar como pendiente" : "Marcar como hecha"}.`}
-              onClick={() => void toggleTask(block.taskId as number, !done)}
-            >
-              <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
-              <span className={"block-body " + block.category}>
-                <b>{block.title}</b>
-                <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
-              </span>
-              <span className="block-check" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg></span>
-            </button> : <div className="day-block-hit is-event">
-              <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
-              <span className={"block-body " + block.category}>
-                <b>{block.title}</b>
-                <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
-              </span>
-              <span className="block-check block-check-event" aria-hidden="true" title="Evento del calendario">◇</span>
-            </div>}
-          </li>;
-        })}
-      </ol>
-    </> : <div className="inline-empty tall">
-      <span>◷</span>
-      <p><b>Sin bloques para hoy</b><small>Poné una hora a tus tareas y aparecen acá, ordenadas.</small></p>
-    </div>}
-    {todayUnscheduled.length > 0 && <div className="unscheduled-strip">
-      <p>{pluralize(todayUnscheduled.length, "tarea sin horario", "tareas sin horario")}</p>
-      <div>{todayUnscheduled.slice(0, 4).map((task) => <span key={task.id}>{task.title}</span>)}</div>
-      <button className="text-link" onClick={() => openSection("focus")}>Organizarlas →</button>
-    </div>}
-    {todaySlots.length > 0 && <p className="slot-hint">
-      Huecos libres: {todaySlots.slice(0, 3).map((slot) => `${clockFromMinutes(slot.start)}–${clockFromMinutes(slot.end)}`).join(" · ")}
-    </p>}
-  </article>;
-
-  const insightsPanel = <article className="panel insights-panel">
-    <div className="panel-heading">
-      <div><p>LO QUE VEO EN TUS DATOS</p><h2>{insightHeadline(planNotices, score, balanced ? [] : priorityNames)}</h2></div>
-    </div>
-    {planNotices.length ? <div className="insight-list">
-      {planNotices.map((insight) => <article key={insight.id} className={"insight " + insight.tone}>
-        <span className="insight-icon">{insight.icon}</span>
-        <div className="insight-copy">
-          <b>{insight.title}</b>
-          <p>{insight.body}</p>
-          <details><summary>Por qué aparece esto</summary><p>{insight.because}</p></details>
-        </div>
-        {insight.action && <button className="insight-action" disabled={saving} onClick={() => void applyInsightAction(insight.action as InsightAction)}>{insight.action.label}</button>}
-      </article>)}
-    </div> : <div className="inline-empty">
-      <span>✓</span>
-      <p><b>Nada que corregir</b><small>Cuando el sueño, la agenda o las rachas se crucen mal, te aviso acá.</small></p>
-    </div>}
-  </article>;
-
-  // ---------------------------------------------------------------------------
-  // Los dos cortes: el del día y, los domingos, el de la semana.
-  // ---------------------------------------------------------------------------
-  const close = dayClose({
-    score,
-    blocks: todayBlocks,
-    trained: trainedToday,
-    sleepMinutes: sleepToday,
-    focusMinutes: focusToday,
-    pages: pagesToday,
-    meals: data.meals.length,
-    calories,
-  });
-
-  const dayClosePanel = <article className="panel day-close">
-    <div className="panel-heading">
-      <div><p>{nowMinutes >= 18 * 60 ? "CIERRE DEL DÍA" : "CÓMO VIENE EL DÍA"}</p><h2>{close.headline}</h2></div>
-      {close.blocksTotal > 0 && <span className="week-pill">{close.blocksDone} de {close.blocksTotal} bloques</span>}
-    </div>
-    {close.done.length > 0 && <p className="day-close-done">{close.done.join(" · ")}</p>}
-    {close.pending.length > 0 && <p className="day-close-pending">Quedó sin cerrar: {listPhrase(close.pending)}.</p>}
-    {closeNotices.length > 0 && <div className="day-close-notes">
-      {closeNotices.map((notice) => <div key={notice.id}>
-        <span aria-hidden="true">{notice.icon}</span>
-        <p><b>{notice.title}</b><small>{notice.body}</small></p>
-      </div>)}
-    </div>}
-    {close.done.length === 0 && close.pending.length === 0 && closeNotices.length === 0 && <p className="day-close-done">Cuando registres algo, el balance del día aparece acá.</p>}
-  </article>;
-
-  // El corte semanal sólo se arma el domingo: el resto de la semana no hay nada
-  // cerrado que mirar y ocuparía lugar por nada.
-  const review = isReviewDay(today) ? weeklyReview({
-    days: Array.from({ length: 7 }, (_, index) => {
-      const date = dateMinus(today, 6 - index);
-      return { date, blocks: dayBlocks(scheduleInput, date), score: scoreForDate(date) };
-    }),
-    areas: [
-      { label: "Entrenamiento", activeDays: countActiveDays(trainingByDate, today) },
-      { label: "Foco", activeDays: countActiveDays(focusByDate, today) },
-      { label: "Lectura", activeDays: countActiveDays(readingByDate, today) },
-      { label: "Alimentación", activeDays: countActiveDays(mealCountByDate, today) },
-      { label: "Sueño", activeDays: countActiveDays(sleepMinutesByDate, today) },
-    ],
-    staleGoals: data.goals
-      .filter((goal) => !goal.completedAt && !activeCategories.has(goal.category))
-      .map((goal) => ({ id: goal.id, title: goal.title, days: dayDistance(today, goal.targetDate) })),
-  }) : null;
-
-  const weeklyReviewPanel = review && <article className="panel weekly-review">
-    <div className="panel-heading">
-      <div><p>DOMINGO</p><h2>Tu semana</h2></div>
-      <span className="week-pill">Promedio {review.averageScore}/100</span>
-    </div>
-    <div className="review-stats">
-      <div><b>{review.blocksTotal ? `${review.blocksDone} de ${review.blocksTotal}` : "—"}</b><small>{review.blocksTotal ? `bloques cumplidos · ${review.completionPercent} %` : "no agendaste bloques"}</small></div>
-      <div><b>{review.bestDay ? formatDate(review.bestDay.date) : "—"}</b><small>{review.bestDay ? `tu mejor día · ${review.bestDay.score}/100` : "sin registros esta semana"}</small></div>
-      <div><b>{review.quietAreas.length ? listPhrase(review.quietAreas) : "Ninguna"}</b><small>{review.quietAreas.length ? "sin registros en toda la semana" : "todas las áreas tuvieron movimiento"}</small></div>
-    </div>
-    {review.staleGoals.length > 0 && <div className="review-goals">
-      <p>OBJETIVOS SIN MOVIMIENTO</p>
-      {review.staleGoals.map((goal) => <div key={goal.id}>
-        <p><b>{goal.title}</b><small>{countdownLabelCapitalized(goal.days)} · sin actividad en su área</small></p>
-        <button disabled={saving} onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: true })}>Cerrarlo</button>
-        <button className="ghost" disabled={saving} onClick={() => openSection("plan")}>Sigue en pie</button>
-      </div>)}
-    </div>}
-  </article>;
-
-  const quotePanel = <aside className="quote-strip">
-    <span className="quote-mark" aria-hidden="true">“</span>
-    <p>{quote.text}<span className="quote-mark" aria-hidden="true">”</span></p>
-    <b>{quote.author}</b>
-  </aside>;
-
-  // ---------------------------------------------------------------------------
-  // Agenda semanal por horas
-  // ---------------------------------------------------------------------------
-  const agendaWeek = useMemo(() => weekFor(weekAnchor), [weekAnchor]);
-  const agendaBlocksByDay = useMemo(
-    () => Object.fromEntries(agendaWeek.map((day) => [day.iso, dayBlocks(scheduleInput, day.iso)])) as Record<string, Block[]>,
-    [agendaWeek, scheduleInput],
-  );
-  const agendaAllBlocks = useMemo(() => Object.values(agendaBlocksByDay).flat(), [agendaBlocksByDay]);
-  const agendaStartHour = Math.floor(Math.min(todayWindow.start, ...agendaAllBlocks.map((block) => block.start), 8 * 60) / 60);
-  const agendaEndHour = Math.ceil(Math.max(todayWindow.end, ...agendaAllBlocks.map((block) => block.end), 21 * 60) / 60);
-  const agendaHours = Array.from({ length: Math.max(1, agendaEndHour - agendaStartHour) }, (_, index) => agendaStartHour + index);
-  const shiftWeek = (amount: number) => setWeekAnchor((current) => dateMinus(current, -amount * 7));
-
-  const weekAgendaPanel = <article className="panel week-agenda">
-    <div className="agenda-head">
-      <button onClick={() => shiftWeek(-1)} aria-label="Semana anterior">‹</button>
-      <div><p>ZOOM DE LA SEMANA</p><h2>{formatDate(agendaWeek[0].iso)} — {formatDate(agendaWeek[6].iso)}</h2></div>
-      <button onClick={() => shiftWeek(1)} aria-label="Semana siguiente">›</button>
-    </div>
-    <div className="agenda-scroll">
-      <div className="agenda-grid" style={{ "--hours": String(agendaHours.length) } as CSSProperties}>
-        <div className="agenda-corner" />
-        {agendaWeek.map((day) => <div className={"agenda-day-head " + (day.iso === today ? "today" : "")} key={day.iso}>
-          <small>{day.short}</small><b>{day.number}</b>
-        </div>)}
-        <div className="agenda-hours">
-          {agendaHours.map((hour) => <span key={hour}>{String(hour).padStart(2, "0")}:00</span>)}
-        </div>
-        {agendaWeek.map((day) => {
-          const blocks = agendaBlocksByDay[day.iso] ?? [];
-          return <div className={"agenda-column " + (day.iso === today ? "today" : "")} key={day.iso}>
-            {agendaHours.map((hour) => <button
-              key={hour}
-              className="agenda-slot"
-              aria-label={`Agregar un bloque el ${formatDate(day.iso)} a las ${String(hour).padStart(2, "0")}:00`}
-              onClick={() => setSlotDraft({ date: day.iso, startTime: `${String(hour).padStart(2, "0")}:00` })}
-            />)}
-            {blocks.map((block) => {
-              const top = (block.start - agendaStartHour * 60) / 60;
-              const height = block.minutes / 60;
-              if (top + height <= 0 || top >= agendaHours.length) return null;
-              return <div
-                key={block.key}
-                className={"agenda-block " + block.category + (block.done ? " done" : "")}
-                style={{ top: `calc(${Math.max(0, top)} * var(--hour-height))`, height: `calc(${Math.min(height, agendaHours.length - top)} * var(--hour-height) - 3px)` }}
-                title={`${block.title} · ${clockFromMinutes(block.start)}–${clockFromMinutes(block.end)}`}
-              >
-                <b>{block.title}</b>
-                <small>{clockFromMinutes(block.start)}</small>
-              </div>;
-            })}
-            {day.iso === today && nowMinutes >= agendaStartHour * 60 && nowMinutes <= agendaEndHour * 60 && <i
-              className="agenda-now"
-              style={{ top: `calc(${(nowMinutes - agendaStartHour * 60) / 60} * var(--hour-height))` }}
-            />}
-          </div>;
-        })}
-      </div>
-    </div>
-    {slotDraft && <form className="slot-form" onSubmit={(event) => {
-      event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      void save({
-        action: "add_task",
-        title: form.get("title"),
-        projectId: form.get("projectId"),
-        dueDate: slotDraft.date,
-        startTime: slotDraft.startTime,
-        durationMinutes: Number(form.get("durationMinutes")) || 60,
-      }).then((ok) => { if (ok) setSlotDraft(null); });
-    }}>
-      <p>Nuevo bloque · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
-      <div className="slot-fields">
-        <input name="title" required autoFocus placeholder="Ej. Estudiar capítulo 2" />
-        <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />
-        <Dropdown name="durationMinutes" ariaLabel="Duración del bloque" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120, 180])} />
-      </div>
-      <div className="slot-actions">
-        <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
-        <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar bloque" phase={savePhase("add_task")} /></button>
-      </div>
-    </form>}
-    <p className="agenda-hint">Tocá cualquier franja vacía para poner un bloque ahí.</p>
-  </article>;
-
-  const monthCalendarPanel = <article className="panel calendar-panel"><div className="calendar-head"><button onClick={() => shiftCalendar(-1)}>‹</button><h2>{calendarMonthName}</h2><button onClick={() => shiftCalendar(1)}>›</button></div><div className="calendar-grid"><div className="calendar-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((item, index) => <b key={item + index}>{item}</b>)}</div><div className="calendar-cells">{Array.from({ length: calendarOffset }, (_, index) => <span className="blank" key={"blank" + index} />)}{Array.from({ length: calendarDays }, (_, index) => {
-    const date = calendarCursor + "-" + String(index + 1).padStart(2, "0");
-    const items = calendarItems.filter((item) => item.date === date);
-    const daySummary = items.map((item) => item.title).join(", ");
-    return <button className={date === today ? "today" : ""} key={date} aria-label={items.length ? `${index + 1}: ${daySummary}` : String(index + 1)} title={daySummary || undefined} onClick={() => { setWeekAnchor(date); setAgendaView("week"); }}><b>{index + 1}</b><div className="calendar-day-events">{items.slice(0, 2).map((item) => <span className={"calendar-event " + item.type} key={item.key}><i />{item.title}</span>)}{items.length > 2 && <small className="calendar-more">+{items.length - 2} más</small>}</div></button>;
-  })}</div></div></article>;
-
-  const calendarPanel = <section className="module-stack">
-    <div className="period-switch agenda-switch">
-      <button className={agendaView === "week" ? "active" : ""} onClick={() => setAgendaView("week")}>Semana por horas</button>
-      <button className={agendaView === "month" ? "active" : ""} onClick={() => setAgendaView("month")}>Mes completo</button>
-    </div>
-    {agendaView === "week" ? weekAgendaPanel : monthCalendarPanel}
-    <div className="calendar-layout">
-      <article className="panel"><div className="panel-heading"><div><p>NUEVO RECORDATORIO</p><h2>Evento importante</h2></div></div><form className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_event", title: form.get("title"), eventDate: form.get("eventDate"), eventTime: form.get("eventTime"), durationMinutes: form.get("durationMinutes"), category: form.get("category"), notes: form.get("notes") }); }}>
-        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="three-fields"><label>Fecha<DatePicker name="eventDate" ariaLabel="Fecha del evento" defaultValue={today} /></label><TimeFieldPicker idPrefix="event-time" label="Hora" name="eventTime" defaultValue="09:00" hourOptions={FULL_DAY_HOUR_OPTIONS} /><label>Dura<Dropdown name="durationMinutes" ariaLabel="Duración del evento" defaultValue="60" options={durationOptions([30, 60, 90, 120, 180, 240])} /></label></div><label>Categoría<Dropdown name="category" ariaLabel="Categoría del evento" options={EVENT_CATEGORY_OPTIONS} /></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar evento" phase={savePhase("add_event")} /></button>
-      </form></article>
-      <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{countdownLabelCapitalized(dayDistance(today, item.date))}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
-    </div>
-  </section>;
-  const periodDays = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 365;
-  const statsStart = dateMinus(today, periodDays - 1);
-  const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart);
-  const periodFocus = uniqueFocusSessions.filter((item) => item.sessionDate >= statsStart);
-  const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.sleepMinutes > 0);
-  const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart);
-  const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart);
-  // Tendencias diarias del período elegido, con comparación contra el período
+        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div>…8508 tokens truncated…ndencias diarias del período elegido, con comparación contra el período
   // anterior de la misma longitud.
   const trendSpan = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 180;
   const trends: Array<{ key: string; icon: string; label: string; trend: Trend; format: (value: number) => string; caption: string; useAverage?: boolean }> = [
     { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, today, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
-    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, today, (date) => focusByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "tiempo de trabajo concentrado" },
+    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, today, (date) => focusByDate[date] ?? 0), format: (value) => formatFocusHours(value), caption: "tiempo de trabajo concentrado" },
     { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, today, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "promedio dormido por día", useAverage: true },
     { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, today, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
     { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, today, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "promedio diario", useAverage: true },
