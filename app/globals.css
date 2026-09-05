@@ -1834,3 +1834,26 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .score-history-now .score-ring div,
 .score-history-now .score-ring b{color:#fff}
 .score-history-now .score-ring small{color:#fff;opacity:.86}
+
+/* Las comillas de apertura y cierre de la frase usan exactamente el mismo
+   cuerpo, color y tamaño; sólo cambia su orientación tipográfica. */
+.quote-mark{font-family:var(--font-serif);font-size:15px;line-height:1.45;color:#454f49;transform:none}
+.quote-strip p .quote-mark{font-size:inherit;line-height:inherit;color:inherit}
+
+/* Perfil accesible desde la cabecera en la versión móvil. */
+.topbar-actions{display:flex;align-items:center;gap:9px}
+.mobile-profile-wrap{display:none;position:relative}
+.mobile-profile-button{width:42px;height:42px;border:1px solid #c9d9cf;border-radius:50%;background:#e9ddff;color:#573e76;display:grid;place-items:center;padding:0;font-size:15px;font-weight:800;cursor:pointer;overflow:hidden;box-shadow:0 3px 10px #173e2f12}
+.mobile-profile-button img{width:100%;height:100%;object-fit:cover}
+.mobile-profile-button:focus-visible{outline:3px solid #b8dc76;outline-offset:3px}
+.mobile-profile-panel{left:auto;right:0;bottom:auto;top:calc(100% + 10px);width:240px;min-width:240px}
+
+@media(max-width:760px){
+  .topbar{position:relative}
+  .topbar-actions{gap:7px}
+  .mobile-profile-wrap{display:block}
+  .mobile-profile-panel{padding:9px}
+  .mobile-profile-panel .profile-menu-item{font-size:12px;min-height:42px}
+  .mobile-profile-panel .profile-menu-signout{font-size:12px}
+  .topbar .save-status{font-size:8px;padding:7px 9px;gap:5px}
+}
