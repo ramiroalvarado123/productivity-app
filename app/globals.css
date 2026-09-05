@@ -1816,3 +1816,16 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .settings-dialog-head{padding:20px 16px 15px}.settings-hub,.settings-subpanel,.feedback-form{padding-left:16px;padding-right:16px}.settings-navigation>.avatar-editor{padding-left:16px;padding-right:16px}.settings-navigation>.settings-form{padding-left:16px;padding-right:16px}
   .feedback-types{grid-template-columns:1fr}
 }
+
+/* Menú lateral: un poco más de presencia para leerlo mejor de un vistazo. */
+.side-brand{font-size:18px;gap:13px}
+.sidebar .brand-mark.small{width:42px;height:42px;border-radius:14px;font-size:20px}
+.nav-item{font-size:15px;padding:14px 13px;gap:14px}
+.nav-item span{font-size:21px;width:25px}
+.nav-item .nav-icon svg{width:22px;height:22px}
+.profile-chip>span,.profile-chip-avatar{width:40px;height:40px}
+.profile-chip b{font-size:14px}.profile-chip small{font-size:11px}
+.profile-menu-chevron{width:31px;height:31px;font-size:17px}
+.profile-menu-item{font-size:12px;min-height:43px}
+.profile-menu-item span{font-size:16px}
+.profile-menu-signout{font-size:13px}.profile-menu-signout span{font-size:18px}
