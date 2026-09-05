@@ -70,6 +70,9 @@ type FocusTab = "study" | "work";
 /** Área de la vida a la que apunta un aviso, y dónde vive ahora en la interfaz. */
 type InsightTarget = { section: Section; physicalTab?: PhysicalTab; focusTab?: FocusTab };
 type StatsPeriod = "weekly" | "monthly" | "annual";
+type SettingsView = "home" | "personal" | "language" | "notifications";
+type FeedbackType = "positive" | "idea" | "bug" | "dislike";
+type SavePhase = "saving" | "saved" | null;
 
 type NavItem = { id: Section; icon: ReactNode; label: string; mobile: string; center?: true };
 /** Los campos de un objetivo mientras se escribe, antes de existir en el grupo. */
@@ -79,7 +82,7 @@ type GroupPanelTab = "settings" | "goals" | "members";
 const emptyGoalDraft = (): GoalDraft => ({ title: "", source: "manual", metric: "count", targetValue: 3, period: "weekly", dueDate: "" });
 
 const friendsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" /><circle cx="16.5" cy="9" r="2.5" /><path d="M2.5 19c.5-4 2.4-6 5.5-6s5 2 5.5 6M13 14.5c1-.8 2.1-1.1 3.5-1.1 2.8 0 4.4 1.8 5 5.1" /></svg>;
-const physicalIcon = <svg className="physical-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5c1.8-2.2 2.8-4.6 2.8-7.2v-2.1a2.3 2.3 0 0 1 4.6 0v1.4" /><path d="m10.9 12.6 2.1-5.2a2.2 2.2 0 0 1 3-1.3l1.1.5" /><path d="m16 6.4.7-1a1.8 1.8 0 0 1 2.8-.1l.7.8c.5.6.8 1.4.8 2.2v2.4c0 5.1-4.1 9.3-9.3 9.3H7.5c-1.6 0-2.9.2-4 .5Z" /><path d="M9.8 15.1c2.3-2.1 5.4-2.7 8.2-1.5" /></svg>;
+const physicalIcon = <svg className="physical-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.409 13.017A5 5 0 0 1 22 15c0 3.866-4 7-9 7-4.077 0-8.153-.82-10.371-2.462-.426-.316-.631-.832-.62-1.362C2.118 12.723 2.627 2 10 2a3 3 0 0 1 3 3 2 2 0 0 1-2 2c-1.105 0-1.64-.444-2-1" /><path d="M15 14a5 5 0 0 0-7.584 2" /><path d="M9.964 6.825C8.019 7.977 9.5 13 8 15" /></svg>;
 const focusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 5.2a3.4 3.4 0 0 0-5.3 2.9c0 .5.1.9.3 1.3A3.7 3.7 0 0 0 5 16.5a3.5 3.5 0 0 0 4.2 2.3M14.8 5.2a3.4 3.4 0 0 1 5.3 2.9c0 .5-.1.9-.3 1.3a3.7 3.7 0 0 1-.8 7.1 3.5 3.5 0 0 1-4.2 2.3M12 4v16M8 9.2c1.1.1 2 .7 2.4 1.6M16 9.2c-1.1.1-2 .7-2.4 1.6M8.4 15.1c1-.1 1.7-.5 2.2-1.2M15.6 15.1c-1-.1-1.7-.5-2.2-1.2" /></svg>;
 const gearIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="m19.3 14.6.35.2a1.8 1.8 0 0 1-1.8 3.12l-.35-.2a1.8 1.8 0 0 0-2.7 1.56v.4a1.8 1.8 0 0 1-3.6 0v-.4a1.8 1.8 0 0 0-2.7-1.56l-.35.2a1.8 1.8 0 0 1-1.8-3.12l.35-.2a1.8 1.8 0 0 0 0-3.12l-.35-.2a1.8 1.8 0 1 1 1.8-3.12l.35.2a1.8 1.8 0 0 0 2.7-1.56v-.4a1.8 1.8 0 0 1 3.6 0v.4a1.8 1.8 0 0 0 2.7 1.56l.35-.2a1.8 1.8 0 0 1 1.8 3.12l-.35.2a1.8 1.8 0 0 0 0 3.12Z" /></svg>;
 const plusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13" /></svg>;
@@ -119,6 +122,13 @@ const insightTargets: Record<string, InsightTarget> = {
   stats: { section: "stats" },
 };
 const priorityLabels = ["", "Secundario", "Importante", "Prioridad"];
+const FEEDBACK_TYPES: Array<[FeedbackType, string, string, string]> = [
+  ["positive", "♡", "Me gustó algo", "Algo que querés que mantengamos."],
+  ["idea", "✦", "Tengo una sugerencia", "Una idea, función o cambio que sumarías."],
+  ["bug", "!", "Encontré un problema", "Algo no funciona como debería."],
+  ["dislike", "−", "Hay algo que no me gusta", "Funciona, pero lo cambiarías."],
+];
+const FEEDBACK_SECTIONS = ["Inicio", "Daily Score", "Físico", "Foco", "Sueño", "Plan", "Estadísticas", "Amigos", "Cuenta / configuración", "Otra"];
 const MAX_VOICE_UPLOAD_BYTES = 900 * 1024;
 const VOICE_AUTO_STOP_BYTES = 800 * 1024;
 // Safari puede rechazar rutas relativas dentro de previews embebidos. Construir
@@ -316,6 +326,15 @@ function paceLabel(durationMinutes: number, distanceKm: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")} min/km`;
 }
 
+/** Mantiene el ancho original del botón mientras muestra carga y confirmación. */
+function SaveButtonContent({ label, phase }: { label: ReactNode; phase: SavePhase }) {
+  return <span className="save-button-content">
+    <span className="save-button-label" aria-hidden={phase !== null}>{label}</span>
+    {phase === "saving" && <span className="save-button-feedback save-button-loading" role="status" aria-label="Guardando"><i /><i /><i /></span>}
+    {phase === "saved" && <span className="save-button-feedback save-button-saved" role="status" aria-label="Guardado">✓</span>}
+  </span>;
+}
+
 /**
  * Detalle de sesión para disciplinas de distancia (running, ciclismo,
  * natación): distancia + tiempo, con el ritmo calculado en vivo. Es
@@ -323,12 +342,13 @@ function paceLabel(durationMinutes: number, distanceKm: number) {
  * escribe; `key={disciplineId-date}` en el padre lo remonta al cambiar de
  * disciplina o de día, así vuelve a partir de lo que ya había ese día.
  */
-function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving, onSave }: {
+function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving, savePhase, onSave }: {
   disciplineId: number;
   date: string;
   log: TrainingLog | undefined;
   notePlaceholder: string;
   saving: boolean;
+  savePhase: SavePhase;
   onSave: (payload: Record<string, unknown>) => void;
 }) {
   const [durationMinutes, setDurationMinutes] = useState(log?.durationMinutes ?? 0);
@@ -341,7 +361,7 @@ function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving,
     </div>
     <div className="pace-preview"><span>◷</span><p><small>RITMO</small><b>{pace ?? "Cargá distancia y tiempo"}</b></p></div>
     <label>Notas<textarea name="notes" defaultValue={log?.notes || ""} placeholder={notePlaceholder} /></label>
-    <button className="primary-action" disabled={saving}>Guardar sesión</button>
+    <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase} /></button>
   </form>;
 }
 
@@ -416,12 +436,22 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     window.history.replaceState(null, "", window.location.pathname);
   }, [showTutorial]);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsView>("home");
   const [settingsName, setSettingsName] = useState("");
   const [settingsUsername, setSettingsUsername] = useState("");
+  const [weeklySummary, setWeeklySummary] = useState(initialUser.usagePreferences.includes("weekly"));
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackType, setFeedbackType] = useState<FeedbackType>("idea");
+  const [feedbackSection, setFeedbackSection] = useState("Inicio");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackSent, setFeedbackSent] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [loading, setLoading] = useState(initialUser.onboardingCompleted);
   const [saving, setSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<{ key: string; phase: Exclude<SavePhase, null> } | null>(null);
+  const saveFeedbackTimerRef = useRef<number | null>(null);
   const [error, setError] = useState(initialError);
   const [onboardingStep, setOnboardingStep] = useState<1 | 2>(1);
   const [onboardingName, setOnboardingName] = useState(initialUser.displayName);
@@ -559,6 +589,26 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const dietHydratedRef = useRef(false);
   const sleepHydratedRef = useRef(false);
 
+  // El menú de cuenta se comporta como un desplegable real: cualquier toque
+  // exterior o Escape lo cierra, sin interferir con sus acciones internas.
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!profileMenuRef.current?.contains(event.target as Node)) setProfileMenuOpen(false);
+    };
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setProfileMenuOpen(false); };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [profileMenuOpen]);
+
+  useEffect(() => () => {
+    if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current);
+  }, []);
+
   const loadData = useCallback(async () => {
     try {
       const response = await fetch("/api/progress?date=" + today + "&weekStart=" + week[0].iso + "&weekEnd=" + week[6].iso + "&month=" + monthKey, { cache: "no-store", credentials: "same-origin" });
@@ -640,7 +690,27 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     return () => window.clearInterval(timer);
   }, [recording]);
 
-  async function save(payload: Record<string, unknown>) {
+  const beginSaveFeedback = useCallback((key: string) => {
+    if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current);
+    setSaveFeedback({ key, phase: "saving" });
+  }, []);
+
+  const finishSaveFeedback = useCallback((key: string, succeeded: boolean) => {
+    if (!succeeded) {
+      setSaveFeedback((current) => current?.key === key ? null : current);
+      return;
+    }
+    setSaveFeedback({ key, phase: "saved" });
+    saveFeedbackTimerRef.current = window.setTimeout(() => {
+      setSaveFeedback((current) => current?.key === key && current.phase === "saved" ? null : current);
+      saveFeedbackTimerRef.current = null;
+    }, 1000);
+  }, []);
+
+  const savePhase = (key: string): SavePhase => saveFeedback?.key === key ? saveFeedback.phase : null;
+
+  async function save(payload: Record<string, unknown>, feedbackKey = String(payload.action ?? "save")) {
+    beginSaveFeedback(feedbackKey);
     setSaving(true);
     setError("");
     try {
@@ -648,9 +718,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       const result = await readJson<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo guardar.");
       await loadData();
+      finishSaveFeedback(feedbackKey, true);
       return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "No se pudo guardar.");
+      finishSaveFeedback(feedbackKey, false);
       return false;
     } finally {
       setSaving(false);
@@ -672,21 +744,24 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     }
   }, []);
 
-  const sendSocial = useCallback(async (payload: Record<string, unknown>) => {
+  const sendSocial = useCallback(async (payload: Record<string, unknown>, feedbackKey = String(payload.action ?? "social")) => {
+    beginSaveFeedback(feedbackKey);
     setSaving(true);
     try {
       const response = await fetch("/api/friends", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
       const result = await readJson<{ error?: string } & Record<string, unknown>>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo completar la acción.");
       await loadSocial();
+      finishSaveFeedback(feedbackKey, true);
       return result;
     } catch (caught) {
       setFriendsNotice(caught instanceof Error ? caught.message : "No se pudo completar la acción.");
+      finishSaveFeedback(feedbackKey, false);
       return null;
     } finally {
       setSaving(false);
     }
-  }, [loadSocial]);
+  }, [beginSaveFeedback, finishSaveFeedback, loadSocial]);
 
   // Sólo saca duplicados reales (misma fila repetida): antes agrupaba por
   // proyecto+fecha y se comía sesiones legítimas cuando estudiabas la misma
@@ -745,9 +820,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // significa "equilibrio": significa que esas áreas son las prioritarias.
   // Sólo hay equilibrio real cuando las seis pesan lo mismo.
   const priorityNames = topPriorities.map((item) => item[0]);
-  // Con más de tres áreas empatadas arriba ya no hay foco: enumerarlas cinco
-  // por cinco no dice nada y llena la tarjeta de texto.
-  const balanced = topPriorities.length > 3;
+  // Sólo hay equilibrio cuando las seis áreas pesan exactamente lo mismo.
+  // Cuatro o cinco prioridades siguen siendo una selección válida y deben
+  // mostrarse completas en Inicio.
+  const balanced = topPriorities.length === priorityPairs.length;
   const priorityCaption = balanced
     ? "Las seis áreas pesan lo mismo en tu Daily Score."
     : priorityNames.length === 1
@@ -989,18 +1065,91 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   function openSettings() {
     setSettingsName(data.profile.displayName);
     setSettingsUsername(data.profile.username);
+    setWeeklySummary(data.profile.usagePreferences.includes("weekly"));
+    setSettingsView("home");
     setError("");
     setSettingsOpen(true);
+    setProfileMenuOpen(false);
+  }
+  function openPersonalSettings() {
+    setSettingsName(data.profile.displayName);
+    setSettingsUsername(data.profile.username);
+    setError("");
+    setSettingsView("personal");
+  }
+  function openFeedback() {
+    setFeedbackSent(false);
+    setError("");
+    setFeedbackOpen(true);
     setProfileMenuOpen(false);
   }
   async function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = settingsName.trim();
     if (trimmedName.length < 2) { setError("Ingresá tu nombre."); return; }
-    if (trimmedName !== data.profile.displayName && !await save({ action: "update_profile", displayName: trimmedName })) return;
+    if (trimmedName !== data.profile.displayName && !await save({ action: "update_profile", displayName: trimmedName }, "personal_settings")) return;
     const trimmedUsername = settingsUsername.trim().toLowerCase();
-    if (trimmedUsername !== data.profile.username && !await save({ action: "set_username", username: trimmedUsername })) return;
+    if (trimmedUsername !== data.profile.username && !await save({ action: "set_username", username: trimmedUsername }, "personal_settings")) return;
     setSettingsOpen(false);
+  }
+  async function saveNotifications(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const feedbackKey = "notification_settings";
+    beginSaveFeedback(feedbackKey);
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ displayName: data.profile.displayName, weeklySummary }),
+      });
+      const result = await readJson<{ error?: string }>(response);
+      if (!response.ok) throw new Error(result.error || "No pudimos guardar las notificaciones.");
+      await loadData();
+      finishSaveFeedback(feedbackKey, true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No pudimos guardar las notificaciones.");
+      finishSaveFeedback(feedbackKey, false);
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function submitFeedback(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (feedbackMessage.trim().length < 3) return;
+    const feedbackKey = "submit_feedback";
+    beginSaveFeedback(feedbackKey);
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          type: feedbackType,
+          section: feedbackSection,
+          message: feedbackMessage.trim(),
+          pagePath: window.location.pathname,
+          userAgent: navigator.userAgent,
+          appVersion: "beta",
+        }),
+      });
+      const result = await readJson<{ error?: string }>(response);
+      if (!response.ok) throw new Error(result.error || "No pudimos enviar el comentario.");
+      finishSaveFeedback(feedbackKey, true);
+      window.setTimeout(() => {
+        setFeedbackMessage("");
+        setFeedbackSent(true);
+      }, 1000);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No pudimos enviar el comentario.");
+      finishSaveFeedback(feedbackKey, false);
+    } finally {
+      setSaving(false);
+    }
   }
   async function uploadAvatar(file: File | null | undefined) {
     if (!file) return;
@@ -1422,12 +1571,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   };
   // Orden estable cuando varias áreas empatan en peso.
   const metricOrder = ["gymWeight", "focusWeight", "sleepWeight", "nutritionWeight", "readingWeight", "goalsWeight"];
-  // Inicio muestra exactamente tus prioridades: si elegiste dos áreas ves dos
-  // bloques a mitad de ancho cada uno, si elegiste cuatro ves cuatro en
-  // cuartos. Cuando las seis pesan lo mismo no hay prioridad que respetar, así
-  // que caemos a las tres primeras en el orden de siempre.
+  // Inicio muestra todas las áreas marcadas explícitamente como "Prioridad".
+  // Si todavía no hay ninguna, conserva la selección de mayor peso existente;
+  // y en el estado inicial completamente equilibrado usa tres accesos útiles.
   const priorityMetricKeys = metricOrder.filter((key) => priorityDraft[key as keyof Omit<Priorities, "monthKey">] === highestPriority);
-  const heroMetrics = (balanced ? metricOrder.slice(0, 3) : priorityMetricKeys.slice(0, 4)).map((key) => areaMetrics[key]);
+  const explicitPriorityMetricKeys = metricOrder.filter((key) => priorityDraft[key as keyof Omit<Priorities, "monthKey">] === 3);
+  const featuredMetricKeys = explicitPriorityMetricKeys.length ? explicitPriorityMetricKeys : balanced ? metricOrder.slice(0, 3) : priorityMetricKeys;
+  const heroMetrics = featuredMetricKeys.map((key) => areaMetrics[key]);
 
   const voiceRecorder = <article className="panel voice-capture-panel">
     <div className="voice-copy"><p className="voice-eyebrow">CIERRE RÁPIDO CON IA</p><h2>Contá tu día en un minuto.</h2><span>Decí qué entrenaste, qué comiste, cuánto trabajaste o estudiaste, cuánto leíste y dormiste. Revisás el resultado antes de guardarlo.</span><div className="voice-hints"><small>“Corrí 5 km…”</small><small>“Hice sentadilla…”</small><small>“Trabajé 2 horas…”</small><small>“Dormí 7 horas…”</small></div></div>
@@ -1444,7 +1594,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <div><span>☾</span><p><b>Sueño</b><small>{voiceResult.sleep.minutes ? Math.round(voiceResult.sleep.minutes / 6) / 10 + " horas" : "Sin dato"}</small></p></div>
       <div><span>▱</span><p><b>Lectura</b><small>{voiceResult.reading.bookTitle || "Libro actual"} · {voiceResult.reading.pages} páginas</small></p></div>
       <div><span>✎</span><p><b>Reflexión</b><small>{voiceResult.journal || "Sin reflexión"}</small></p></div>
-    </div><details><summary>Ver transcripción</summary><p>{voiceResult.transcript}</p></details><div className="voice-review-actions"><button className="discard-voice" onClick={() => setVoiceResult(null)}>Descartar</button><button className="confirm-voice" disabled={saving} onClick={() => void applyVoiceCheckin()}>Confirmar y guardar</button></div></div>}
+    </div><details><summary>Ver transcripción</summary><p>{voiceResult.transcript}</p></details><div className="voice-review-actions"><button className="discard-voice" onClick={() => setVoiceResult(null)}>Descartar</button><button className="confirm-voice" disabled={saving} onClick={() => void applyVoiceCheckin()}><SaveButtonContent label="Confirmar y guardar" phase={savePhase("apply_voice_checkin")} /></button></div></div>}
   </article>;
 
   // Semana navegable del historial de entrenamientos: independiente de "week"
@@ -1463,7 +1613,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_discipline", name: form.get("name"), kind: form.get("kind") }); }}>
         <input name="name" required placeholder="Nueva disciplina: pádel, fútbol…" />
         <Dropdown name="kind" ariaLabel="Tipo de disciplina" defaultValue="other" options={disciplineKindOptions} />
-        <button disabled={saving}>＋ Agregar</button>
+        <button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_discipline")} /></button>
       </form>
       <div className="calendar-head training-week-nav">
         <button type="button" onClick={() => shiftTrainingWeek(-1)} aria-label="Semana anterior">‹</button>
@@ -1495,7 +1645,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         {selectedDiscipline.kind === "strength" ? <>
           <form key={`${selectedDiscipline.id}-${trainingDate}-notes`} className="data-form strength-notes-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: selectedTrainingLog?.durationMinutes || 0, distanceKm: 0, notes: form.get("notes") }); }}>
             <label>Notas de la sesión<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Rutina, sensaciones, técnica…" /></label>
-            <button className="primary-action" disabled={saving}>Guardar notas</button>
+            <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar notas" phase={savePhase("save_training")} /></button>
           </form>
           <div className="panel-divider" />
           <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
@@ -1503,7 +1653,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
             <div className="three-fields"><label>Kg<input name="weightKg" type="number" min="0" step=".1" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
             <label className="check-label"><input name="isRecord" type="checkbox" /> Es un récord personal</label>
-            <button className="primary-action" disabled={saving}>Agregar ejercicio</button>
+            <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar ejercicio" phase={savePhase("add_exercise")} /></button>
           </form>
           <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
         </> : isDistanceDiscipline ? <DistanceSessionForm
@@ -1513,11 +1663,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           log={selectedTrainingLog}
           notePlaceholder="Ritmo, sensaciones, recorrido…"
           saving={saving}
+          savePhase={savePhase("save_training")}
           onSave={(payload) => void save(payload)}
         /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0, notes: form.get("notes") }); }}>
           <label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label>
           <label>Descripción<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Qué hiciste, sensaciones, detalle de la sesión…" /></label>
-          <button className="primary-action" disabled={saving}>Guardar sesión</button>
+          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase("save_training")} /></button>
         </form>}
       </article>
     </div>}
@@ -1539,7 +1690,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             </div>
           </div>
           <p className="sleep-form-note">Elegí la hora de la lista: sin escribir y sin AM/PM.</p>
-          <button className="primary-action" disabled={saving}>Guardar descanso</button>
+          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar descanso" phase={savePhase("save_sleep")} /></button>
         </form>
       </article>
       <article className="panel sleep-summary"><div className="panel-heading"><div><p>ÚLTIMOS 7 DÍAS</p><h2>Regularidad</h2></div></div>
@@ -1561,18 +1712,18 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const focusPanel = <section className="module-stack">
       <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div>
-        <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button>＋ Agregar</button></form>
+        <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_focus_project")} /></button></form>
         <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? (todayMinutes / 60).toFixed(todayMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? (weekMinutes / 60).toFixed(weekMinutes % 60 ? 1 : 0) + " h" : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
         {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = focusHours * 60 + focusMinutesPart; if (minutes <= 0) return; void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
           <label>{focusTab === "study" ? "Materia" : "Proyecto"}<Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia" : "Proyecto"} options={focusProjectsInTab.map((project) => ({ value: String(project.id), label: project.name }))} /></label>
           <label>Trabajo profundo<div className="focus-duration-control"><Dropdown ariaLabel="Horas de trabajo profundo" value={String(focusHours)} onChange={(value) => setFocusHours(Number(value))} options={FOCUS_HOUR_OPTIONS} /><Dropdown ariaLabel="Minutos de trabajo profundo" value={String(focusMinutesPart)} onChange={(value) => setFocusMinutesPart(Number(value))} options={FOCUS_MINUTE_OPTIONS} /></div></label>
           <label>Qué avanzaste<input name="note" placeholder="Tema, entrega o avance…" /></label>
-          <button className="primary-action">Guardar bloque de foco</button>
+          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar bloque de foco" phase={savePhase("add_focus_session")} /></button>
         </form>}
       </article>
     <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE HOY" : "TRABAJO DE HOY"}</p><b>{formatMinutes(focusTodayInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatMinutes(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
       <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{tasksInTab.filter((item) => item.completedAt).length}/{tasksInTab.length} hechas</span></div>
-        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia de la tarea" : "Proyecto de la tarea"} options={projectOptions(focusProjectsInTab, focusTab === "study" ? "Sin materia" : "Sin proyecto")} /><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><Dropdown name="durationMinutes" ariaLabel="Duración" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120])} /><button>＋</button></form>
+        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia de la tarea" : "Proyecto de la tarea"} options={projectOptions(focusProjectsInTab, focusTab === "study" ? "Sin materia" : "Sin proyecto")} /><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><Dropdown name="durationMinutes" ariaLabel="Duración" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120])} /><button disabled={saving}><SaveButtonContent label="＋" phase={savePhase("add_task")} /></button></form>
         <div className="task-list compact-task-list">{tasksInTab.map((task) => { const done = taskDone(task.id, Boolean(task.completedAt)); return <div className={done ? "completed" : ""} key={task.id}><button className="task-check" aria-pressed={done} onClick={() => void toggleTask(task.id, !done)}>{done ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? formatDate(task.dueDate) : "Sin fecha"}{task.startTime ? ` · ${task.startTime}${task.durationMinutes ? " (" + formatMinutes(task.durationMinutes) + ")" : ""}` : task.dueDate ? " · sin horario" : ""}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>; })}{!tasksInTab.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
       </article>
   </section>;
@@ -1839,7 +1990,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </div>
       <div className="slot-actions">
         <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
-        <button className="primary-action" disabled={saving}>{saving ? "Guardando…" : "Agregar bloque"}</button>
+        <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar bloque" phase={savePhase("add_task")} /></button>
       </div>
     </form>}
     <p className="agenda-hint">Tocá cualquier franja vacía para poner un bloque ahí.</p>
@@ -1860,7 +2011,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {agendaView === "week" ? weekAgendaPanel : monthCalendarPanel}
     <div className="calendar-layout">
       <article className="panel"><div className="panel-heading"><div><p>NUEVO RECORDATORIO</p><h2>Evento importante</h2></div></div><form className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_event", title: form.get("title"), eventDate: form.get("eventDate"), eventTime: form.get("eventTime"), durationMinutes: form.get("durationMinutes"), category: form.get("category"), notes: form.get("notes") }); }}>
-        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="three-fields"><label>Fecha<DatePicker name="eventDate" ariaLabel="Fecha del evento" defaultValue={today} /></label><TimeFieldPicker idPrefix="event-time" label="Hora" name="eventTime" defaultValue="09:00" hourOptions={FULL_DAY_HOUR_OPTIONS} /><label>Dura<Dropdown name="durationMinutes" ariaLabel="Duración del evento" defaultValue="60" options={durationOptions([30, 60, 90, 120, 180, 240])} /></label></div><label>Categoría<Dropdown name="category" ariaLabel="Categoría del evento" options={EVENT_CATEGORY_OPTIONS} /></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action">Guardar evento</button>
+        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="three-fields"><label>Fecha<DatePicker name="eventDate" ariaLabel="Fecha del evento" defaultValue={today} /></label><TimeFieldPicker idPrefix="event-time" label="Hora" name="eventTime" defaultValue="09:00" hourOptions={FULL_DAY_HOUR_OPTIONS} /><label>Dura<Dropdown name="durationMinutes" ariaLabel="Duración del evento" defaultValue="60" options={durationOptions([30, 60, 90, 120, 180, 240])} /></label></div><label>Categoría<Dropdown name="category" ariaLabel="Categoría del evento" options={EVENT_CATEGORY_OPTIONS} /></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar evento" phase={savePhase("add_event")} /></button>
       </form></article>
       <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{countdownLabelCapitalized(dayDistance(today, item.date))}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
     </div>
@@ -2026,7 +2177,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE HOY</p><h2>Comidas</h2></div></div>
     {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><Image src={photoPreview} alt="Comida a analizar" width={38} height={38} unoptimized /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
-      {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" onClick={() => void saveEstimate()}>Confirmar y guardar</button></div>}
+      {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" disabled={saving} onClick={() => void saveEstimate()}><SaveButtonContent label="Confirmar y guardar" phase={savePhase("add_meal")} /></button></div>}
     </div> : <LockedFeature
       title="Calorías con IA"
       note="Escribí qué comiste o sacale una foto al plato: la app estima calorías y macros."
@@ -2036,7 +2187,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <label>Comida<input name="name" required placeholder="Ej. Milanesa con puré" /></label>
       <label>Detalle<input name="detail" required placeholder="Porción mediana, con ensalada…" /></label>
       <label>Calorías<input name="calories" type="number" min="0" placeholder="kcal" /></label>
-      <button>＋ Agregar</button>
+      <button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_meal")} /></button>
     </form>
     <div className="meal-list">{data.meals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!data.meals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{calories.toLocaleString("es-AR")} kcal</b></div>
   </article>;
@@ -2057,7 +2208,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </div>
     <div className="diet-quick-result">
       <label><span>CALORÍAS OBJETIVO</span><input type="number" min="1000" max="6000" step="10" value={dietQuickCaloriesValue || ""} onChange={(event) => setDietQuickCalories(Number(event.target.value) || 0)} /><small>{dietEstimate ? `Sugerencia: ${dietEstimate.targetCalories.toLocaleString("es-AR")} kcal · mantenimiento ${dietEstimate.maintenanceCalories.toLocaleString("es-AR")} kcal` : "Completá tus datos para calcular una sugerencia."}</small></label>
-      <button className="primary-action" type="button" disabled={saving || !dietQuickCaloriesValue} onClick={() => void saveDietTarget(dietQuickCaloriesValue)}>Guardar objetivo</button>
+      <button className="primary-action" type="button" disabled={saving || !dietQuickCaloriesValue} onClick={() => void saveDietTarget(dietQuickCaloriesValue)}><SaveButtonContent label="Guardar objetivo" phase={savePhase("set_diet_target")} /></button>
     </div>
   </article>;
 
@@ -2078,16 +2229,16 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <div className="diet-conversation"><div className="diet-conversation-head"><span>✦</span><div><b>Contale los detalles a la aplicación</b><small>Intolerancias, alergias, horarios, gustos, presupuesto o alimentos que evitás.</small></div></div><div className="diet-detail-chips">{["Intolerancia a la lactosa", "Sin gluten", "Vegetariano", "Poco tiempo para cocinar"].map((detail) => <button key={detail} type="button" onClick={() => addDietDetail(detail)}>{detail}</button>)}</div><textarea value={dietForm.details} onChange={(event) => setDietForm({ ...dietForm, details: event.target.value })} placeholder="Ej. Soy intolerante a la lactosa, almuerzo fuera de casa y necesito comidas simples…" /><button className={"diet-voice-button " + (dietRecording ? "recording" : "")} type="button" disabled={dietVoiceLoading} onClick={() => dietRecording ? stopDietRecording() : void startDietRecording()}><span>{dietRecording ? "■" : "●"}</span>{dietVoiceLoading ? "Interpretando audio…" : dietRecording ? "Terminar grabación" : "Contarlo por audio"}</button><small className="privacy-note">El audio se transcribe y no se conserva.</small></div>
     </div>
     <button className="generate-diet-button" type="button" disabled={dietGenerating} onClick={() => void generateDietPlan()}>{dietGenerating ? "Creando opciones…" : displayedDietPlan ? "Actualizar mi plan con IA" : "Crear mi plan con IA"}</button>
-    {displayedDietPlan && <div className="diet-plan-result"><div className="diet-plan-summary"><div><span>OBJETIVO DIARIO APROXIMADO</span><b>{displayedDietPlan.targetCalories.toLocaleString("es-AR")} kcal</b><small>Rango orientativo {displayedDietPlan.calorieRangeMinimum.toLocaleString("es-AR")}–{displayedDietPlan.calorieRangeMaximum.toLocaleString("es-AR")} kcal · mantenimiento estimado {displayedDietPlan.maintenanceCalories.toLocaleString("es-AR")}</small></div><p>{displayedDietPlan.summary}</p></div><div className="macro-row"><span><b>{displayedDietPlan.macros.proteinGrams} g</b>Proteínas</span><span><b>{displayedDietPlan.macros.carbsGrams} g</b>Carbohidratos</span><span><b>{displayedDietPlan.macros.fatGrams} g</b>Grasas</span></div><div className="diet-meal-options">{displayedDietPlan.meals.map((meal) => <article key={meal.slot}><span>{meal.slot}</span><p>{meal.guidance}</p><ul>{meal.options.map((option) => <li key={option}>{option}</li>)}</ul></article>)}</div><div className="diet-plan-bottom"><div><b>Restricciones aplicadas</b><p>{displayedDietPlan.appliedRestrictions.length ? displayedDietPlan.appliedRestrictions.join(" · ") : "Ninguna indicada"}</p></div><div><b>Importante</b><p>{displayedDietPlan.safetyNote}</p></div></div>{generatedDietPlan && <button className="save-diet-button" type="button" disabled={saving} onClick={() => void saveDietPlan()}>Guardar este plan y usarlo como objetivo</button>}</div>}
+    {displayedDietPlan && <div className="diet-plan-result"><div className="diet-plan-summary"><div><span>OBJETIVO DIARIO APROXIMADO</span><b>{displayedDietPlan.targetCalories.toLocaleString("es-AR")} kcal</b><small>Rango orientativo {displayedDietPlan.calorieRangeMinimum.toLocaleString("es-AR")}–{displayedDietPlan.calorieRangeMaximum.toLocaleString("es-AR")} kcal · mantenimiento estimado {displayedDietPlan.maintenanceCalories.toLocaleString("es-AR")}</small></div><p>{displayedDietPlan.summary}</p></div><div className="macro-row"><span><b>{displayedDietPlan.macros.proteinGrams} g</b>Proteínas</span><span><b>{displayedDietPlan.macros.carbsGrams} g</b>Carbohidratos</span><span><b>{displayedDietPlan.macros.fatGrams} g</b>Grasas</span></div><div className="diet-meal-options">{displayedDietPlan.meals.map((meal) => <article key={meal.slot}><span>{meal.slot}</span><p>{meal.guidance}</p><ul>{meal.options.map((option) => <li key={option}>{option}</li>)}</ul></article>)}</div><div className="diet-plan-bottom"><div><b>Restricciones aplicadas</b><p>{displayedDietPlan.appliedRestrictions.length ? displayedDietPlan.appliedRestrictions.join(" · ") : "Ninguna indicada"}</p></div><div><b>Importante</b><p>{displayedDietPlan.safetyNote}</p></div></div>{generatedDietPlan && <button className="save-diet-button" type="button" disabled={saving} onClick={() => void saveDietPlan()}><SaveButtonContent label="Guardar este plan y usarlo como objetivo" phase={savePhase("save_diet_plan")} /></button>}</div>}
   </article>;
 
   const calorieCalendarPanel = <article className="panel calorie-calendar-panel"><div className="calorie-calendar-top"><div><p>SEGUIMIENTO DE LA DIETA</p><h2>Calorías por día</h2><small>{dietTargetCalories ? <>Tu referencia actual es <b>{dietTargetCalories.toLocaleString("es-AR")} kcal diarias.</b></> : "Creá y guardá un plan para comparar cada día con tu objetivo."}</small></div><div className="calorie-calendar-nav"><button onClick={() => shiftDietCalendar(-1)}>‹</button><b>{dietCalendarMonthName}</b><button onClick={() => shiftDietCalendar(1)}>›</button></div></div><div className="calorie-calendar"><div className="calorie-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <b key={day + index}>{day}</b>)}</div><div className="calorie-calendar-cells">{Array.from({ length: dietCalendarOffset }, (_, index) => <span className="blank" key={"diet-blank-" + index} />)}{Array.from({ length: dietCalendarDays }, (_, index) => { const day = index + 1; const iso = dietCalendarCursor + "-" + String(day).padStart(2, "0"); const total = caloriesByDate[iso] ?? 0; return <div className={calorieStatus(total) + (iso === today ? " today" : "")} key={iso} title={total ? total + " kcal registradas" : "Sin comidas registradas"}><span>{day}</span><b>{total ? total.toLocaleString("es-AR") : "—"}</b><small>kcal</small></div>; })}</div></div><div className="calorie-legend"><span><i className="on-target" />En objetivo ±10%</span><span><i className="near-target" />Cerca ±20%</span><span><i className="off-target" />Fuera del rango</span><span><i className="empty" />Sin registro</span></div></article>;
 
   const booksPanel = <section className="books-layout"><article className="panel section-panel books-panel"><div className="panel-heading"><div><p>TU BIBLIOTECA</p><h2>Libros</h2></div><button className="add-button light" onClick={() => bookForm ? setBookForm(false) : openAddBook(bookTab)}>{bookForm ? "Cerrar" : "＋ Nuevo libro"}</button></div>
-    {bookForm && <form className="book-form smart-book-form" onSubmit={(event) => void submitNewBook(event)}><div className="book-title-search"><input name="title" autoComplete="off" required value={bookDraft.title} onFocus={() => { if (bookSuggestions.length) setBookSuggestionOpen(true); }} onChange={(event) => { const title = event.target.value; setBookDraft({ ...bookDraft, title, coverUrl: "", externalKey: "" }); setBookSuggestionOpen(true); if (title.trim().length < 2) { setBookSuggestions([]); setBookSuggestLoading(false); } }} placeholder="Empezá a escribir el título…" />{(bookDraft.title.trim().length >= 2 && bookSuggestionOpen && (bookSuggestLoading || bookSuggestions.length > 0)) && <div className="book-autocomplete">{bookSuggestLoading && <div className="book-searching"><span className="voice-spinner" />Buscando en el catálogo…</div>}{!bookSuggestLoading && bookSuggestions.map((book) => <button type="button" key={book.key} onClick={() => chooseBookSuggestion(book)}><CatalogBookCover book={book} compact /><p><b>{book.title}</b><small>{book.author}{book.year ? ` · ${book.year}` : ""}</small></p>{book.pages > 0 && <em>{book.pages} pág.</em>}</button>)}</div>}</div><input name="author" value={bookDraft.author} onChange={(event) => setBookDraft({ ...bookDraft, author: event.target.value })} placeholder="Autor" /><input name="totalPages" value={bookDraft.totalPages || ""} onChange={(event) => setBookDraft({ ...bookDraft, totalPages: Number(event.target.value) || 0 })} type="number" min="0" placeholder="Páginas" /><Dropdown ariaLabel="Estado del libro" value={bookDraft.status} onChange={(value) => setBookDraft({ ...bookDraft, status: value as BookStatus })} options={[{ value: "reading", label: "Leyendo" }, { value: "read", label: "Leído" }, { value: "wishlist", label: "Quiero leer" }]} /><button disabled={saving || bookMatching}>{bookMatching ? "Identificando…" : "Guardar"}</button></form>}
+    {bookForm && <form className="book-form smart-book-form" onSubmit={(event) => void submitNewBook(event)}><div className="book-title-search"><input name="title" autoComplete="off" required value={bookDraft.title} onFocus={() => { if (bookSuggestions.length) setBookSuggestionOpen(true); }} onChange={(event) => { const title = event.target.value; setBookDraft({ ...bookDraft, title, coverUrl: "", externalKey: "" }); setBookSuggestionOpen(true); if (title.trim().length < 2) { setBookSuggestions([]); setBookSuggestLoading(false); } }} placeholder="Empezá a escribir el título…" />{(bookDraft.title.trim().length >= 2 && bookSuggestionOpen && (bookSuggestLoading || bookSuggestions.length > 0)) && <div className="book-autocomplete">{bookSuggestLoading && <div className="book-searching"><span className="voice-spinner" />Buscando en el catálogo…</div>}{!bookSuggestLoading && bookSuggestions.map((book) => <button type="button" key={book.key} onClick={() => chooseBookSuggestion(book)}><CatalogBookCover book={book} compact /><p><b>{book.title}</b><small>{book.author}{book.year ? ` · ${book.year}` : ""}</small></p>{book.pages > 0 && <em>{book.pages} pág.</em>}</button>)}</div>}</div><input name="author" value={bookDraft.author} onChange={(event) => setBookDraft({ ...bookDraft, author: event.target.value })} placeholder="Autor" /><input name="totalPages" value={bookDraft.totalPages || ""} onChange={(event) => setBookDraft({ ...bookDraft, totalPages: Number(event.target.value) || 0 })} type="number" min="0" placeholder="Páginas" /><Dropdown ariaLabel="Estado del libro" value={bookDraft.status} onChange={(value) => setBookDraft({ ...bookDraft, status: value as BookStatus })} options={[{ value: "reading", label: "Leyendo" }, { value: "read", label: "Leído" }, { value: "wishlist", label: "Quiero leer" }]} /><button disabled={saving || bookMatching}>{bookMatching && savePhase("add_book") === null ? "Identificando…" : <SaveButtonContent label="Guardar" phase={savePhase("add_book")} />}</button></form>}
     <div className="book-tabs">{(["reading", "read", "wishlist"] as BookStatus[]).map((tab) => <button className={bookTab === tab ? "active" : ""} key={tab} onClick={() => { setBookTab(tab); setBookShelfPage(0); setSelectedBookId(null); }}>{tab === "reading" ? "Leyendo" : tab === "read" ? "Leídos" : "Quiero leer"} <i>{data.books.filter((book) => book.status === tab).length}</i></button>)}</div>
-    {booksInTab.length ? <><div className="book-shelf-list">{visibleBooks.map((book) => { const isSelected = selectedBook?.id === book.id; return <article className={"current-book shelf-book " + (isSelected ? "selected" : "")} key={book.id}><SavedBookCover book={book} /><div className="book-info"><button type="button" className="book-card-select" aria-pressed={isSelected} onClick={() => setSelectedBookId(book.id)}><span>{bookTab === "reading" ? "LEYENDO AHORA" : bookTab === "read" ? "TERMINADO" : "PRÓXIMA LECTURA"}</span><h3>{book.title}</h3><p>{book.author}</p></button><div className="progress-line"><i style={{ width: String(book.totalPages ? Math.min(100, book.currentPage / book.totalPages * 100) : 0) + "%" }} /></div><small>{book.currentPage} de {book.totalPages || "?"} páginas</small><button type="button" className="delete-book-trigger" onClick={() => setBookToDelete(book)}>Eliminar libro</button></div>{bookTab === "reading" && isSelected ? <div className="page-counter"><label>Páginas hoy</label><div><input type="number" min="0" value={pagesInput} onChange={(event) => setPagesInput(Number(event.target.value) || 0)} /><button className="save-pages" onClick={() => void save({ action: "set_pages", bookId: book.id, date: today, pages: pagesInput })}>Guardar</button></div></div> : <button type="button" className="book-select-action" onClick={() => setSelectedBookId(book.id)}>{isSelected ? "✓ Seleccionado" : "Ver notas y detalles"}</button>}</article>; })}</div>{bookShelfPageCount > 1 && <div className="book-shelf-pagination"><button type="button" disabled={visibleBookShelfPage === 0} onClick={() => showBookShelfPage(visibleBookShelfPage - 1)}>← Anteriores</button><span>{visibleBookShelfPage + 1} de {bookShelfPageCount}</span><button type="button" disabled={visibleBookShelfPage === bookShelfPageCount - 1} onClick={() => showBookShelfPage(visibleBookShelfPage + 1)}>Siguientes →</button></div>}</> : <button type="button" className="empty-shelf" onClick={() => openAddBook(bookTab)}><span>＋</span><b>No hay libros en esta lista</b><p>Tocá acá para agregar el primero.</p></button>}
-  </article><article className="panel notes-panel section-panel"><div className="panel-heading"><div><p>IDEAS QUE QUEDAN</p><h2>Notas del libro</h2></div></div>{selectedBook ? <><form onSubmit={(event) => { event.preventDefault(); void save({ action: "add_note", bookId: selectedBook.id, content: note }).then((ok) => { if (ok) setNote(""); }); }}><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={"Idea u observación de " + selectedBook.title + "…"} /><button>Guardar nota</button></form><div className="notes-list">{data.notes.filter((item) => item.bookId === selectedBook.id).map((item) => <div key={item.id}><span>“</span><p>{item.content}</p></div>)}</div></> : <div className="inline-empty"><span>✎</span><p><b>Elegí un libro</b><small>Sus notas aparecerán acá.</small></p></div>}</article>
+    {booksInTab.length ? <><div className="book-shelf-list">{visibleBooks.map((book) => { const isSelected = selectedBook?.id === book.id; return <article className={"current-book shelf-book " + (isSelected ? "selected" : "")} key={book.id}><SavedBookCover book={book} /><div className="book-info"><button type="button" className="book-card-select" aria-pressed={isSelected} onClick={() => setSelectedBookId(book.id)}><span>{bookTab === "reading" ? "LEYENDO AHORA" : bookTab === "read" ? "TERMINADO" : "PRÓXIMA LECTURA"}</span><h3>{book.title}</h3><p>{book.author}</p></button><div className="progress-line"><i style={{ width: String(book.totalPages ? Math.min(100, book.currentPage / book.totalPages * 100) : 0) + "%" }} /></div><small>{book.currentPage} de {book.totalPages || "?"} páginas</small><button type="button" className="delete-book-trigger" onClick={() => setBookToDelete(book)}>Eliminar libro</button></div>{bookTab === "reading" && isSelected ? <div className="page-counter"><label>Páginas hoy</label><div><input type="number" min="0" value={pagesInput} onChange={(event) => setPagesInput(Number(event.target.value) || 0)} /><button className="save-pages" onClick={() => void save({ action: "set_pages", bookId: book.id, date: today, pages: pagesInput })}><SaveButtonContent label="Guardar" phase={savePhase("set_pages")} /></button></div></div> : <button type="button" className="book-select-action" onClick={() => setSelectedBookId(book.id)}>{isSelected ? "✓ Seleccionado" : "Ver notas y detalles"}</button>}</article>; })}</div>{bookShelfPageCount > 1 && <div className="book-shelf-pagination"><button type="button" disabled={visibleBookShelfPage === 0} onClick={() => showBookShelfPage(visibleBookShelfPage - 1)}>← Anteriores</button><span>{visibleBookShelfPage + 1} de {bookShelfPageCount}</span><button type="button" disabled={visibleBookShelfPage === bookShelfPageCount - 1} onClick={() => showBookShelfPage(visibleBookShelfPage + 1)}>Siguientes →</button></div>}</> : <button type="button" className="empty-shelf" onClick={() => openAddBook(bookTab)}><span>＋</span><b>No hay libros en esta lista</b><p>Tocá acá para agregar el primero.</p></button>}
+  </article><article className="panel notes-panel section-panel"><div className="panel-heading"><div><p>IDEAS QUE QUEDAN</p><h2>Notas del libro</h2></div></div>{selectedBook ? <><form onSubmit={(event) => { event.preventDefault(); void save({ action: "add_note", bookId: selectedBook.id, content: note }).then((ok) => { if (ok) setNote(""); }); }}><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={"Idea u observación de " + selectedBook.title + "…"} /><button disabled={saving}><SaveButtonContent label="Guardar nota" phase={savePhase("add_note")} /></button></form><div className="notes-list">{data.notes.filter((item) => item.bookId === selectedBook.id).map((item) => <div key={item.id}><span>“</span><p>{item.content}</p></div>)}</div></> : <div className="inline-empty"><span>✎</span><p><b>Elegí un libro</b><small>Sus notas aparecerán acá.</small></p></div>}</article>
   <article className="panel section-panel book-discover-panel"><div className="book-discover-head"><span>✦</span><div><p>DESCUBRIR NUEVAS LECTURAS</p><h2>¿Sobre qué querés leer?</h2><small>Buscá por un tema, una idea o un interés y elegí el idioma de la edición.</small></div></div><form className="book-discover-form" onSubmit={(event) => void discoverBooks(event)}><input value={discoverQuery} onChange={(event) => setDiscoverQuery(event.target.value)} placeholder="Ej. finanzas personales, inteligencia artificial, historia…" /><Dropdown ariaLabel="Idioma del libro" value={discoverLanguage} onChange={setDiscoverLanguage} options={bookLanguageOptions.map(([value, label]) => ({ value, label }))} /><button disabled={discoverLoading || discoverQuery.trim().length < 2}>{discoverLoading ? "Buscando…" : "Buscar libros"}</button></form><div className="book-topic-chips">{["Finanzas personales", "Productividad", "Historia", "Tecnología", "Psicología", "Biografías"].map((topic) => <button type="button" key={topic} onClick={() => setDiscoverQuery(topic)}>{topic}</button>)}</div>{discoverLoading && <div className="discover-loading"><span className="voice-spinner" /><b>Buscando buenas opciones…</b></div>}{!discoverLoading && discoverResults.length > 0 && <div className="book-results-grid">{discoverResults.map((book) => { const isSaved = data.books.some((savedBook) => savedBook.title.toLowerCase() === book.title.toLowerCase() && (!savedBook.author || savedBook.author.toLowerCase() === book.author.toLowerCase())); return <article key={book.key}><CatalogBookCover book={book} /><div className="book-result-copy"><span>{book.year || "Edición disponible"}</span><h3>{book.title}</h3><p>{book.author}</p><small>{book.pages ? `${book.pages} páginas aproximadas` : "Páginas no informadas"}</small></div><div className="book-result-actions"><button type="button" disabled={saving || isSaved} onClick={() => void saveDiscoveredBook(book)}>{isSaved ? "✓ En tu biblioteca" : "＋ Quiero leer"}</button><a href={book.openLibraryUrl} target="_blank" rel="noreferrer">Ver ficha ↗</a></div></article>; })}</div>}{!discoverLoading && discoverSearched && !discoverResults.length && <div className="inline-empty discover-empty"><span>⌕</span><p><b>No encontramos opciones con esos filtros</b><small>Probá con un tema más amplio u otro idioma.</small></p></div>}<p className="catalog-credit">Información bibliográfica y portadas provistas por <a href="https://openlibrary.org/" target="_blank" rel="noreferrer">Open Library</a>.</p></article></section>;
 
   const priorityEditor = <article className="panel priority-panel"><div className="panel-heading"><div><p>PRIORIDAD DEL MES</p><h2>¿Qué te importa más cumplir?</h2></div></div><p className="panel-intro">Estas prioridades definen el peso de cada área en el Daily Score.</p><div className="priority-list">{([
@@ -2097,9 +2248,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     ["focusWeight", "Estudio / Trabajo", "⌁", "Trabajo profundo en materias y proyectos"],
     ["readingWeight", "Lectura", "▱", "Leer y avanzar en tus libros"],
     ["goalsWeight", "Objetivos y organización", "◎", "Completar metas y próximos pasos"],
-  ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Estadísticas reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}>Guardar prioridades</button></article>;
+  ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Estadísticas reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" disabled={saving} onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}><SaveButtonContent label="Guardar prioridades" phase={savePhase("set_priorities")} /></button></article>;
   const goalTargetDate = goalPeriod === "custom" ? customDate : goalDeadline(today, goalPeriod);
-  const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalTargetDate }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<Dropdown name="category" ariaLabel="Área del objetivo" options={goalAreaOptions.map((area) => ({ value: area.value, label: area.label }))} /></label><label>Plazo<Dropdown ariaLabel="Plazo del objetivo" value={goalPeriod} onChange={(value) => setGoalPeriod(value as GoalPeriod)} options={[{ value: "weekly", label: "Esta semana" }, { value: "monthly", label: "Este mes" }, { value: "annual", label: "Este año" }, { value: "custom", label: "Fecha exacta" }]} /></label>{goalPeriod === "custom" && <label>Fecha exacta<DatePicker ariaLabel="Fecha exacta del objetivo" value={customDate} onChange={setCustomDate} min={today} /></label>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalTargetDate)}</b></p></div><button className="primary-action">Crear objetivo</button></form></article>
+  const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalTargetDate }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<Dropdown name="category" ariaLabel="Área del objetivo" options={goalAreaOptions.map((area) => ({ value: area.value, label: area.label }))} /></label><label>Plazo<Dropdown ariaLabel="Plazo del objetivo" value={goalPeriod} onChange={(value) => setGoalPeriod(value as GoalPeriod)} options={[{ value: "weekly", label: "Esta semana" }, { value: "monthly", label: "Este mes" }, { value: "annual", label: "Este año" }, { value: "custom", label: "Fecha exacta" }]} /></label>{goalPeriod === "custom" && <label>Fecha exacta<DatePicker ariaLabel="Fecha exacta del objetivo" value={customDate} onChange={setCustomDate} min={today} /></label>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalTargetDate)}</b></p></div><button className="primary-action" disabled={saving}><SaveButtonContent label="Crear objetivo" phase={savePhase("add_goal")} /></button></form></article>
     <article className="panel goal-list-panel"><div className="panel-heading"><div><p>TU CAMINO</p><h2>Objetivos guardados</h2></div><span className="week-pill">{activeGoals.length} activos</span></div><div className="goal-list">{data.goals.map((goal) => <div className={"goal-row " + (goal.completedAt ? "completed" : "")} key={goal.id}><button className="goal-check" onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: !goal.completedAt })}>{goal.completedAt ? "✓" : ""}</button><div><div className="goal-meta"><span className={"category-chip " + goal.category}>{categoryLabels[goal.category]}</span><span>{periodLabels[goal.period]}</span></div><b>{goal.title}</b><small>{goal.completedAt ? "Objetivo cumplido" : formatDate(goal.targetDate) + " · " + countdownLabel(Math.max(0, dayDistance(today, goal.targetDate)))}</small></div><button className="goal-delete" onClick={() => void save({ action: "delete_goal", id: goal.id })}>×</button></div>)}{!data.goals.length && <div className="inline-empty tall"><span>◎</span><p><b>Todavía no hay objetivos</b><small>Empezá con uno concreto.</small></p></div>}</div></article></div></section>;
 
   // ---------------------------------------------------------------------------
@@ -2209,26 +2360,71 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </section>
   </div>;
 
+  const settingsTitles: Record<SettingsView, string> = { home: "Configuración", personal: "Datos personales", language: "Idioma", notifications: "Notificaciones" };
   const settingsDialog = settingsOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
-    <section className="checkout-dialog settings-dialog" role="dialog" aria-modal="true" aria-label="Datos personales">
-      <p className="checkout-label">DATOS PERSONALES</p>
-      <h2>Tu cuenta</h2>
-      <div className="avatar-editor">
-        <div className="avatar-preview">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="Tu foto de perfil" width={64} height={64} unoptimized /> : <span>{displayName.charAt(0)}</span>}</div>
-        <label className="avatar-upload-button">
-          {avatarUploading ? "Subiendo…" : "Cambiar foto"}
-          <input type="file" accept="image/*" disabled={avatarUploading} onChange={(event) => { void uploadAvatar(event.target.files?.[0]); event.target.value = ""; }} />
-        </label>
-      </div>
-      <form className="data-form settings-form" onSubmit={saveSettings}>
-        <label>Nombre<input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} maxLength={60} required /></label>
-        <label>Nombre de usuario<div className="username-input"><span>@</span><input value={settingsUsername} onChange={(event) => setSettingsUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} maxLength={20} /></div><small className="field-note">3 a 20 letras, números o _. Con esto te invitan tus amigos.</small></label>
-        {error && <div className="error-banner">{error}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
-        <div className="checkout-actions">
-          <button type="button" className="checkout-cancel" onClick={() => setSettingsOpen(false)}>Cancelar</button>
-          <button type="submit" className="checkout-pay" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button>
+    <section className="checkout-dialog settings-dialog settings-navigation" role="dialog" aria-modal="true" aria-label={settingsTitles[settingsView]}>
+      <header className="settings-dialog-head">
+        {settingsView !== "home" && <button type="button" className="settings-back" onClick={() => { setError(""); setSettingsView("home"); }} aria-label="Volver a Configuración">←</button>}
+        <div><p className="checkout-label">CONFIGURACIÓN</p><h2>{settingsTitles[settingsView]}</h2></div>
+        <button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="Cerrar">×</button>
+      </header>
+
+      {settingsView === "home" && <div className="settings-hub">
+        <p>CUENTA</p>
+        <button type="button" onClick={openPersonalSettings}><span aria-hidden="true">♙</span><div><b>Datos personales</b><small>Nombre, usuario y foto de perfil</small></div><i aria-hidden="true">›</i></button>
+        <p>PREFERENCIAS</p>
+        <button type="button" onClick={() => setSettingsView("language")}><span aria-hidden="true">文</span><div><b>Idioma</b><small>Español (Argentina)</small></div><i aria-hidden="true">›</i></button>
+        <button type="button" onClick={() => setSettingsView("notifications")}><span aria-hidden="true">◌</span><div><b>Notificaciones</b><small>Resúmenes y próximos recordatorios</small></div><i aria-hidden="true">›</i></button>
+      </div>}
+
+      {settingsView === "personal" && <>
+        <div className="avatar-editor">
+          <div className="avatar-preview">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="Tu foto de perfil" width={64} height={64} unoptimized /> : <span>{displayName.charAt(0)}</span>}</div>
+          <label className="avatar-upload-button">
+            {avatarUploading ? "Subiendo…" : "Cambiar foto"}
+            <input type="file" accept="image/*" disabled={avatarUploading} onChange={(event) => { void uploadAvatar(event.target.files?.[0]); event.target.value = ""; }} />
+          </label>
         </div>
-      </form>
+        <form className="data-form settings-form" onSubmit={saveSettings}>
+          <label>Nombre<input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} maxLength={60} required /></label>
+          <label>Nombre de usuario<div className="username-input"><span>@</span><input value={settingsUsername} onChange={(event) => setSettingsUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} maxLength={20} /></div><small className="field-note">3 a 20 letras, números o _. Con esto te invitan tus amigos.</small></label>
+          {error && <div className="error-banner">{error}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
+          <div className="checkout-actions">
+            <button type="button" className="checkout-cancel" onClick={() => setSettingsOpen(false)}>Cancelar</button>
+            <button type="submit" className="checkout-pay" disabled={saving}><SaveButtonContent label="Guardar cambios" phase={savePhase("personal_settings")} /></button>
+          </div>
+        </form>
+      </>}
+
+      {settingsView === "language" && <div className="settings-subpanel">
+        <p className="settings-copy">Elegí el idioma de la interfaz de AVORA.</p>
+        <button type="button" className="settings-choice is-selected"><span>ES</span><div><b>Español (Argentina)</b><small>Idioma actual</small></div><i>✓</i></button>
+        <button type="button" className="settings-choice" disabled><span>EN</span><div><b>English</b><small>Disponible próximamente</small></div><i>Próximamente</i></button>
+      </div>}
+
+      {settingsView === "notifications" && <form className="settings-subpanel" onSubmit={saveNotifications}>
+        <p className="settings-copy">Elegí qué comunicaciones querés recibir asociadas a tu cuenta.</p>
+        <label className="settings-toggle"><input type="checkbox" checked={weeklySummary} onChange={(event) => setWeeklySummary(event.target.checked)} /><span><b>Resumen semanal</b><small>Guardamos tu preferencia para recibir un resumen de tu progreso.</small></span></label>
+        <div className="settings-disabled-row"><span><b>Recordatorios push</b><small>Avisos en el celular para tareas y cierres del día.</small></span><i>Próximamente</i></div>
+        {error && <div className="error-banner">{error}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
+        <button className="checkout-pay settings-save" disabled={saving}><SaveButtonContent label="Guardar notificaciones" phase={savePhase("notification_settings")} /></button>
+        <small className="field-note">La preferencia queda guardada. El envío automático se conectará cuando definamos el proveedor de notificaciones.</small>
+      </form>}
+    </section>
+  </div>;
+
+  const feedbackDialog = feedbackOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setFeedbackOpen(false); }}>
+    <section className="checkout-dialog settings-dialog feedback-dialog" role="dialog" aria-modal="true" aria-label="Ayudanos a mejorar AVORA">
+      <header className="settings-dialog-head"><div><p className="checkout-label">TU EXPERIENCIA IMPORTA</p><h2>Ayudanos a mejorar AVORA</h2></div><button type="button" className="settings-close" onClick={() => setFeedbackOpen(false)} aria-label="Cerrar">×</button></header>
+      {feedbackSent ? <div className="feedback-success"><span>✓</span><h3>Gracias por ayudarnos.</h3><p>Tu comentario quedó guardado para que podamos revisarlo durante la beta.</p><button type="button" onClick={() => setFeedbackSent(false)}>Enviar otro comentario</button></div> : <form className="feedback-form" onSubmit={submitFeedback}>
+        <p className="settings-copy">Puede ser algo que te gustó, una idea, algo que cambiarías o un error.</p>
+        <div className="feedback-types">{FEEDBACK_TYPES.map(([value, icon, title, copy]) => <button type="button" key={value} className={feedbackType === value ? "active" : ""} onClick={() => setFeedbackType(value)}><span>{icon}</span><p><b>{title}</b><small>{copy}</small></p><i>{feedbackType === value ? "✓" : ""}</i></button>)}</div>
+        <label>¿En qué parte de AVORA?<select value={feedbackSection} onChange={(event) => setFeedbackSection(event.target.value)}>{FEEDBACK_SECTIONS.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>Contanos un poco más<textarea value={feedbackMessage} onChange={(event) => setFeedbackMessage(event.target.value)} maxLength={2000} required placeholder={feedbackType === "bug" ? "Ej. Cuando selecciono cuatro prioridades, solo aparecen tres…" : "Escribí tu comentario…"} /></label>
+        <div className="feedback-meta"><span>Adjuntamos automáticamente la pantalla, el navegador y la versión para entender el contexto.</span><b>{feedbackMessage.length}/2000</b></div>
+        {error && <div className="error-banner">{error}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
+        <button className="checkout-pay settings-save" disabled={saving || feedbackMessage.trim().length < 3}><SaveButtonContent label="Enviar comentario" phase={savePhase("submit_feedback")} /></button>
+      </form>}
     </section>
   </div>;
 
@@ -2501,7 +2697,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
         <div className="group-wizard-actions">
           <button type="button" className="group-wizard-cancel" onClick={closeGroupWizard}>Cancelar</button>
-          <button type="submit" disabled={saving || groupDraft.name.trim().length < 2}>Guardar grupo <span>→</span></button>
+          <button type="submit" disabled={saving || groupDraft.name.trim().length < 2}><SaveButtonContent label="Guardar grupo" phase={savePhase("create_group")} /></button>
         </div>
       </form> : <form className="group-join" onSubmit={joinGroup}>
         <label><span>¿Te pasaron un código?</span><input value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Código del grupo" /></label>
@@ -2574,7 +2770,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <div className="group-field"><span>Color</span>
               <div className="group-accents">{GROUP_ACCENTS.map((accent) => <button key={accent} type="button" className={"group-accent " + accent + (settingsDraft.accent === accent ? " is-on" : "")} aria-label={`Color ${accent}`} aria-pressed={settingsDraft.accent === accent} onClick={() => setSettingsDraft({ ...settingsDraft, accent })} />)}</div>
             </div>
-            <button type="submit" className="group-save" disabled={saving}>Guardar cambios</button>
+            <button type="submit" className="group-save" disabled={saving}><SaveButtonContent label="Guardar cambios" phase={savePhase("update_group")} /></button>
           </> : <p className="group-panel-note">El nombre y el color los cambia quien creó el grupo.</p>}
           <div className="group-code">
             <p><small>CÓDIGO DEL GRUPO</small><code>{group.inviteCode}</code></p>
@@ -2604,7 +2800,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             {goalFieldset(goalDraft, setGoalDraft)}
             <div className="group-goal-form-actions">
               {editingGoalId !== null && <button type="button" className="group-wizard-cancel" onClick={() => { setEditingGoalId(null); setGoalDraft(emptyGoalDraft()); }}>Cancelar</button>}
-              <button type="submit" disabled={saving || goalDraft.title.trim().length < 2}>{editingGoalId ? "Guardar objetivo" : "Fijar objetivo"}</button>
+              <button type="submit" disabled={saving || goalDraft.title.trim().length < 2}><SaveButtonContent label={editingGoalId ? "Guardar objetivo" : "Fijar objetivo"} phase={savePhase(editingGoalId ? "update_group_goal" : "add_group_goal")} /></button>
             </div>
           </form>
         </div>}
@@ -2745,16 +2941,20 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav data-tour="nav">{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu">
+    <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav data-tour="nav">{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu" ref={profileMenuRef}>
           {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">
             <p>CUENTA</p>
-            <button type="button" className="profile-menu-item" role="menuitem" onClick={openSettings}>
-              <span aria-hidden="true">⚙</span>
-              Datos personales
-            </button>
             <button type="button" className="profile-menu-item" role="menuitem" onClick={() => { setProfileMenuOpen(false); openSection("pro"); }}>
               <span aria-hidden="true">★</span>
               Gestionar membresía
+            </button>
+            <button type="button" className="profile-menu-item" role="menuitem" onClick={openSettings}>
+              <span aria-hidden="true">⚙</span>
+              Configuración
+            </button>
+            <button type="button" className="profile-menu-item" role="menuitem" onClick={openFeedback}>
+              <span aria-hidden="true">♡</span>
+              Ayudanos a mejorar AVORA
             </button>
             <a className="profile-menu-signout" href="/signout-with-chatgpt?return_to=/" role="menuitem">
               <span aria-hidden="true">↪</span>
@@ -2849,6 +3049,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <nav className="mobile-nav">{mobileNavItems.map((item) => <button key={item.id} className={[section === item.id ? "active" : "", item.center ? "is-center" : ""].filter(Boolean).join(" ")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.mobile}</button>)}</nav>
     {checkoutDialog}
     {settingsDialog}
+    {feedbackDialog}
     {tourActive && section === "summary" && <TourOverlay steps={TOUR_STEPS} onDone={() => setTourActive(false)} />}
     {voiceOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setVoiceOpen(false); }}>
       <section className="voice-dialog" role="dialog" aria-modal="true" aria-label="Cierre del día">
