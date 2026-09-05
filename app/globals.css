@@ -1829,3 +1829,8 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .profile-menu-item{font-size:12px;min-height:43px}
 .profile-menu-item span{font-size:16px}
 .profile-menu-signout{font-size:13px}.profile-menu-signout span{font-size:18px}
+
+/* Daily Score en Estadísticas: el valor del anillo necesita contraste pleno. */
+.score-history-now .score-ring div,
+.score-history-now .score-ring b{color:#fff}
+.score-history-now .score-ring small{color:#fff;opacity:.86}
