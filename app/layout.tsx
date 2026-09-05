@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Instrument_Sans, Newsreader } from "next/font/google";
 import "./globals.css";
 
@@ -6,6 +6,12 @@ const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-i
 const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-newsreader", display: "swap" });
 const cormorantGaramond = Cormorant_Garamond({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-cormorant", display: "swap" });
 const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://productivity-app-git-feat-vercel-supabase-c7675b-ralvarado-3362.vercel.app");
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
