@@ -1847,6 +1847,9 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .mobile-profile-button img{width:100%;height:100%;object-fit:cover}
 .mobile-profile-button:focus-visible{outline:3px solid #b8dc76;outline-offset:3px}
 .mobile-profile-panel{left:auto;right:0;bottom:auto;top:calc(100% + 10px);width:240px;min-width:240px}
+.focus-duration-control{display:flex;align-items:center;gap:7px}
+.focus-duration-control input{flex:1}
+.focus-duration-control>span{font-size:10px;color:#65706a;font-weight:600}
 
 @media(max-width:760px){
   .topbar{position:relative}
