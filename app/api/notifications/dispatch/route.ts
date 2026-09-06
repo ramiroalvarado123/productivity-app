@@ -272,7 +272,7 @@ export async function POST(request: Request) {
     webpush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:notifications@avora.app", publicKey, privateKey);
 
     const now = new Date();
-    const [preferences, subscriptions, profiles, events] = await Promise.all([
+    const [preferenceRows, subscriptions, profiles, events] = await Promise.all([
       adminRequest("notification_preferences", new URLSearchParams({ push_enabled: "eq.true" }).toString()),
       adminRequest("push_subscriptions"),
       adminRequest("profiles", new URLSearchParams({ select: "email,display_name,pro_since" }).toString()),
@@ -298,17 +298,17 @@ export async function POST(request: Request) {
     let usersChecked = 0;
     let sent = 0;
     let expired = 0;
-    for (const preferences of preferences) {
-      const email = stringValue(preferences, "user_email");
-      const subscriptions = subscriptionsByEmail.get(email) ?? [];
-      if (!email || !subscriptions.length) continue;
+    for (const preference of preferenceRows) {
+      const email = stringValue(preference, "user_email");
+      const userSubscriptions = subscriptionsByEmail.get(email) ?? [];
+      if (!email || !userSubscriptions.length) continue;
       usersChecked += 1;
       const profile = profilesByEmail.get(email) ?? {};
-      const timezone = stringValue(preferences, "timezone", DEFAULT_TIMEZONE);
+      const timezone = stringValue(preference, "timezone", DEFAULT_TIMEZONE);
       const clock = localClock(now, timezone);
-      const candidates = summaryCandidates(email, profile, preferences, clock);
+      const candidates = summaryCandidates(email, profile, preference, clock);
 
-      if (booleanValue(preferences, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preferences, "calendar_reminder_time", "18:00"))) {
+      if (booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
         const tomorrow = addDays(clock.date, 1);
         for (const event of eventsByEmail.get(email) ?? []) {
           if (stringValue(event, "event_date") !== tomorrow) continue;
@@ -327,7 +327,7 @@ export async function POST(request: Request) {
       }
 
       for (const candidate of candidates) {
-        const result = await sendCandidate(candidate, subscriptions);
+        const result = await sendCandidate(candidate, userSubscriptions);
         sent += result.sent;
         expired += result.expired;
       }
