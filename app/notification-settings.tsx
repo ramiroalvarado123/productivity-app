@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 
 type NotificationPreferences = {
   pushEnabled: boolean;
@@ -92,7 +93,7 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
     setPreferences((current) => ({ ...current, ...body }));
   }
 
-  async function saveForm(event: React.FormEvent<HTMLFormElement>) {
+  async function saveForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true); setError(""); setNotice("");
     try {
