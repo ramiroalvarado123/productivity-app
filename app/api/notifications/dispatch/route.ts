@@ -317,7 +317,7 @@ export async function POST(request: Request) {
     let expired = 0;
     let failed = 0;
     const errors: string[] = [];
-    const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; candidates: number }> = [];
+    const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; configuredCalendarDaysBefore: number; candidates: number }> = [];
     for (const preference of preferenceRows) {
       const email = stringValue(preference, "user_email");
       const userSubscriptions = subscriptionsByEmail.get(email) ?? [];
@@ -327,15 +327,6 @@ export async function POST(request: Request) {
       const timezone = stringValue(preference, "timezone", DEFAULT_TIMEZONE);
       const clock = localClock(now, timezone);
       const candidates = summaryCandidates(email, profile, preference, clock);
-      candidatesFound += candidates.length;
-      diagnostics.push({
-        timezone,
-        date: clock.date,
-        time: clock.time,
-        weekday: clock.weekday,
-        configuredDailyTime: stringValue(preference, "daily_balance_time", "21:00"),
-        candidates: candidates.length,
-      });
 
       if (booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
         const daysBefore = Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1))));
@@ -356,6 +347,17 @@ export async function POST(request: Request) {
           });
         }
       }
+
+      candidatesFound += candidates.length;
+      diagnostics.push({
+        timezone,
+        date: clock.date,
+        time: clock.time,
+        weekday: clock.weekday,
+        configuredDailyTime: stringValue(preference, "daily_balance_time", "21:00"),
+        configuredCalendarDaysBefore: Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1)))),
+        candidates: candidates.length,
+      });
 
       for (const candidate of candidates) {
         const result = await sendCandidate(candidate, userSubscriptions);
