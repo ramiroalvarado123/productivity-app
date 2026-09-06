@@ -1,46 +1,71 @@
-import { chatGPTSignInPath, getChatGPTUser } from "./chatgpt-auth";
+import { getChatGPTUser } from "./chatgpt-auth";
+import AuthPanel from "./auth-panel";
 import NewUserPreview from "./new-user-preview";
 import ProgressClient from "./progress-client";
+import { selectRows } from "./lib/supabase-db";
+import { readPendingInvite } from "./lib/auth-cookies";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home({ searchParams }: { searchParams?: Promise<{ demo?: string }> }) {
+type ProfileRow = Record<string, unknown> & {
+  displayName: string;
+  username: string | null;
+  avatarUrl: string | null;
+  onboardingCompleted: boolean;
+  mainGoalsJson: string;
+  usagePreferencesJson: string;
+  proSince: string | null;
+};
+
+function stringArray(value: unknown) {
+  try {
+    const parsed = JSON.parse(String(value ?? "[]"));
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+const onboardingErrors: Record<string, string> = {
+  invalid: "Revisá tu nombre, tu nombre de usuario y elegí entre 1 y 3 prioridades.",
+  session: "Tu sesión venció. Volvé a iniciar sesión.",
+  save: "No pudimos guardar tus prioridades. Intentá nuevamente.",
+  username_taken: "Ese nombre de usuario ya está en uso. Elegí otro.",
+};
+
+const inviteNotices: Record<string, string> = {
+  pending: "Iniciá sesión o creá tu cuenta y sumamos a tu amigo apenas entres.",
+  ok: "",
+  error: "",
+};
+
+export default async function Home({ searchParams }: { searchParams?: Promise<{ demo?: string; onboarding_error?: string; invite?: string; tour?: string }> }) {
   const params = searchParams ? await searchParams : {};
   if (params.demo === "new-user") return <NewUserPreview />;
 
   const user = await getChatGPTUser();
-
   if (user) {
-    return <ProgressClient initialUser={{ displayName: user.displayName, email: user.email, onboardingCompleted: false, mainGoals: [], usagePreferences: [], isPro: false, proSince: "" }} />;
+    let profile: ProfileRow | undefined;
+    try {
+      profile = (await selectRows<ProfileRow>("profiles", { where: { email: user.email }, limit: 1 }))[0];
+    } catch (error) {
+      console.error("home profile", error);
+    }
+    const persistedOnboarding = profile?.onboardingCompleted === true;
+    // Un link de invitación abierto sin sesión deja el código esperando en una
+    // cookie: el cliente lo canjea apenas monta y la ruta lo borra.
+    const pendingInvite = await readPendingInvite();
+    return <ProgressClient pendingInviteCode={pendingInvite} inviteResult={params.invite === "ok" ? "ok" : params.invite === "error" ? "error" : ""} showTutorial={params.tour === "1"} initialUser={{
+      displayName: profile?.displayName || user.displayName,
+      username: profile?.username || "",
+      avatarUrl: profile?.avatarUrl || "",
+      email: user.email,
+      onboardingCompleted: persistedOnboarding || user.onboardingCompleted,
+      mainGoals: persistedOnboarding ? stringArray(profile?.mainGoalsJson) : user.mainGoals,
+      usagePreferences: persistedOnboarding ? stringArray(profile?.usagePreferencesJson) : user.usagePreferences,
+      isPro: Boolean(profile?.proSince),
+      proSince: profile?.proSince ?? "",
+    }} initialError={params.onboarding_error ? onboardingErrors[params.onboarding_error] : undefined} />;
   }
-
-  const signInPath = chatGPTSignInPath("/");
-
-  return (
-    <main className="lifetrack-access">
-      <header className="lifetrack-access-header">
-        <div className="lifetrack-brand"><span className="brand-mark">A</span><b>AVORA</b></div>
-        <span>ACCESO SEGURO</span>
-      </header>
-      <section className="lifetrack-access-body">
-        <div className="lifetrack-access-story">
-          <span className="lifetrack-ghost-number">00</span>
-          <p className="step-label">TU VIDA, CON MÁS CLARIDAD</p>
-          <h1>Todo tu progreso<br />en un solo lugar.</h1>
-          <p>Organizá tus objetivos, registrá tus hábitos y entendé qué acciones te acercan a la vida que querés construir.</p>
-        </div>
-        <div className="lifetrack-access-form">
-          <p className="step-label">EMPECEMOS</p>
-          <h2>Ingresá a AVORA.</h2>
-          <p>Accedé o creá tu cuenta. Tus registros quedan separados y protegidos para cada usuario.</p>
-          <div className="lifetrack-auth-options">
-            <a className="lifetrack-google-button" href={signInPath}><span>G</span>Continuar con Google <b>→</b></a>
-            <div className="lifetrack-auth-divider"><span>O</span></div>
-            <a className="lifetrack-email-button" href={signInPath}><span>@</span>Continuar con correo electrónico <b>→</b></a>
-          </div>
-          <small>La opción de acceso se confirma en el siguiente paso seguro. AVORA no almacena tu contraseña.</small>
-        </div>
-      </section>
-    </main>
-  );
+  return <AuthPanel notice={params.invite ? inviteNotices[params.invite] ?? "" : ""} />;
 }
