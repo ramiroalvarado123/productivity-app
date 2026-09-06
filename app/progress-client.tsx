@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { NotificationSettings } from "./notification-settings";
 import { CSSProperties, FormEvent, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BrandMark } from "./brand-mark";
 import { DatePicker } from "./date-picker";
@@ -2406,14 +2407,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <button type="button" className="settings-choice" disabled><span>EN</span><div><b>English</b><small>Disponible próximamente</small></div><i>Próximamente</i></button>
       </div>}
 
-      {settingsView === "notifications" && <form className="settings-subpanel" onSubmit={saveNotifications}>
-        <p className="settings-copy">Elegí qué comunicaciones querés recibir asociadas a tu cuenta.</p>
-        <label className="settings-toggle"><input type="checkbox" checked={weeklySummary} onChange={(event) => setWeeklySummary(event.target.checked)} /><span><b>Resumen semanal</b><small>Guardamos tu preferencia para recibir un resumen de tu progreso.</small></span></label>
-        <div className="settings-disabled-row"><span><b>Recordatorios push</b><small>Avisos en el celular para tareas y cierres del día.</small></span><i>Próximamente</i></div>
-        {error && <div className="error-banner">{error}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
-        <button className="checkout-pay settings-save" disabled={saving}><SaveButtonContent label="Guardar notificaciones" phase={savePhase("notification_settings")} /></button>
-        <small className="field-note">La preferencia queda guardada. El envío automático se conectará cuando definamos el proveedor de notificaciones.</small>
-      </form>}
+      {settingsView === "notifications" && <NotificationSettings isPro={data.profile.isPro} />}
     </section>
   </div>;
 
