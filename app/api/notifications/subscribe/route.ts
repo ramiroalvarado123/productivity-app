@@ -1,0 +1,58 @@
+import { deleteRows, insertRows } from "../../../lib/supabase-db";
+import { getChatGPTUser } from "../../../chatgpt-auth";
+
+function fail(message: string, status = 400) {
+  return Response.json({ error: message }, { status });
+}
+
+function isValidEndpoint(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("https://") && value.length <= 2000;
+}
+
+export async function POST(request: Request) {
+  try {
+    const user = await getChatGPTUser();
+    if (!user) return fail("Necesitás iniciar sesión.", 401);
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    const subscription = body?.subscription;
+    if (!subscription || typeof subscription !== "object" || Array.isArray(subscription)) return fail("Suscripción inválida.");
+    const value = subscription as Record<string, unknown>;
+    const endpoint = value.endpoint;
+    const keys = value.keys;
+    if (!isValidEndpoint(endpoint) || !keys || typeof keys !== "object" || Array.isArray(keys)) return fail("Suscripción inválida.");
+    const keyValues = keys as Record<string, unknown>;
+    const p256dh = keyValues.p256dh;
+    const auth = keyValues.auth;
+    if (typeof p256dh !== "string" || !p256dh || p256dh.length > 500 || typeof auth !== "string" || !auth || auth.length > 500) return fail("Claves de suscripción inválidas.");
+
+    await insertRows("profiles", { email: user.email, displayName: user.displayName }, { upsert: true, onConflict: ["email"], ignoreDuplicates: true });
+    await insertRows("push_subscriptions", {
+      userEmail: user.email,
+      endpoint,
+      p256dh,
+      auth,
+      userAgent: String(body?.userAgent ?? "").slice(0, 500),
+      updatedAt: new Date().toISOString(),
+    }, { upsert: true, onConflict: ["endpoint"] });
+
+    return Response.json({ ok: true });
+  } catch (error) {
+    console.error("notifications subscribe failed", error);
+    return fail("No pudimos activar las notificaciones.", 500);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const user = await getChatGPTUser();
+    if (!user) return fail("Necesitás iniciar sesión.", 401);
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    const endpoint = body?.endpoint;
+    if (!isValidEndpoint(endpoint)) return fail("Endpoint inválido.");
+    await deleteRows("push_subscriptions", { userEmail: user.email, endpoint });
+    return Response.json({ ok: true });
+  } catch (error) {
+    console.error("notifications unsubscribe failed", error);
+    return fail("No pudimos desactivar las notificaciones.", 500);
+  }
+}
