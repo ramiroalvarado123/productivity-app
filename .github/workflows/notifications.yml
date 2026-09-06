@@ -1,0 +1,28 @@
+name: AVORA notifications
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Ejecuta cada 5 minutos para cubrir la ventana de 15 minutos de cada aviso.
+    - cron: "*/5 * * * *"
+
+concurrency:
+  group: avora-notifications
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Procesar avisos pendientes
+        env:
+          CRON_SECRET: ${{ secrets.AVORA_CRON_SECRET }}
+          APP_URL: ${{ secrets.AVORA_APP_URL }}
+        run: |
+          set -euo pipefail
+          test -n "${CRON_SECRET}" || { echo "Falta configurar AVORA_CRON_SECRET"; exit 1; }
+          test -n "${APP_URL}" || { echo "Falta configurar AVORA_APP_URL"; exit 1; }
+          curl --fail-with-body --silent --show-error --retry 2 --retry-delay 5 \
+            --request POST "${APP_URL%/}/api/notifications/dispatch" \
+            --header "Authorization: Bearer ${CRON_SECRET}"
