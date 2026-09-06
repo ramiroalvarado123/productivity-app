@@ -193,6 +193,12 @@ async function sendCandidate(candidate: Candidate, subscriptions: Row[]) {
       );
       sent += 1;
     } catch (error) {
+      console.error("notifications push send failed", {
+        email: candidate.email,
+        kind: candidate.kind,
+        statusCode: Number((error as { statusCode?: unknown })?.statusCode) || undefined,
+        message: error instanceof Error ? error.message : String(error),
+      });
       if (isExpiredPushError(error)) {
         expired += 1;
         const id = numberValue(row, "id");
