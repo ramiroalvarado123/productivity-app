@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import { SUPABASE_URL } from "../../lib/supabase-auth";
+import { SUPABASE_URL } from "../../../lib/supabase-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
