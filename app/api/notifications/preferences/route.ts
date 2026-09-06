@@ -10,6 +10,7 @@ const DEFAULTS = {
   monthlySummaryEnabled: true,
   annualSummaryEnabled: true,
   calendarReminderTime: "18:00",
+  calendarReminderDaysBefore: 1,
   dailyBalanceTime: "21:00",
   weeklySummaryTime: "20:00",
   monthlySummaryTime: "20:00",
@@ -36,6 +37,7 @@ function normalize(row: Record<string, unknown> | undefined) {
     monthlySummaryEnabled: Boolean(row?.monthlySummaryEnabled ?? DEFAULTS.monthlySummaryEnabled),
     annualSummaryEnabled: Boolean(row?.annualSummaryEnabled ?? DEFAULTS.annualSummaryEnabled),
     calendarReminderTime: String(row?.calendarReminderTime ?? DEFAULTS.calendarReminderTime),
+    calendarReminderDaysBefore: Math.max(1, Math.min(30, Math.round(Number(row?.calendarReminderDaysBefore ?? DEFAULTS.calendarReminderDaysBefore)) || DEFAULTS.calendarReminderDaysBefore)),
     dailyBalanceTime: String(row?.dailyBalanceTime ?? DEFAULTS.dailyBalanceTime),
     weeklySummaryTime: String(row?.weeklySummaryTime ?? DEFAULTS.weeklySummaryTime),
     monthlySummaryTime: String(row?.monthlySummaryTime ?? DEFAULTS.monthlySummaryTime),
@@ -64,17 +66,21 @@ export async function POST(request: Request) {
     if (!body) return fail("Datos inválidos.");
     const current = normalize((await selectRows("notification_preferences", { where: { userEmail: user.email }, limit: 1 }))[0] as Record<string, unknown> | undefined);
     const next = {
+      // El usuario solo puede elegir el permiso general, los dos horarios
+      // editables y la anticipación del calendario. Los demás avisos quedan
+      // con la configuración que ya tenían y no aceptan cambios del cliente.
       pushEnabled: typeof body.pushEnabled === "boolean" ? body.pushEnabled : current.pushEnabled,
-      calendarEnabled: typeof body.calendarEnabled === "boolean" ? body.calendarEnabled : current.calendarEnabled,
-      dailyBalanceEnabled: typeof body.dailyBalanceEnabled === "boolean" ? body.dailyBalanceEnabled : current.dailyBalanceEnabled,
-      weeklySummaryEnabled: typeof body.weeklySummaryEnabled === "boolean" ? body.weeklySummaryEnabled : current.weeklySummaryEnabled,
-      monthlySummaryEnabled: typeof body.monthlySummaryEnabled === "boolean" ? body.monthlySummaryEnabled : current.monthlySummaryEnabled,
-      annualSummaryEnabled: typeof body.annualSummaryEnabled === "boolean" ? body.annualSummaryEnabled : current.annualSummaryEnabled,
+      calendarEnabled: current.calendarEnabled,
+      dailyBalanceEnabled: current.dailyBalanceEnabled,
+      weeklySummaryEnabled: current.weeklySummaryEnabled,
+      monthlySummaryEnabled: current.monthlySummaryEnabled,
+      annualSummaryEnabled: current.annualSummaryEnabled,
       calendarReminderTime: typeof body.calendarReminderTime === "string" && TIME.test(body.calendarReminderTime) ? body.calendarReminderTime : current.calendarReminderTime,
+      calendarReminderDaysBefore: typeof body.calendarReminderDaysBefore === "number" && Number.isInteger(body.calendarReminderDaysBefore) && body.calendarReminderDaysBefore >= 1 && body.calendarReminderDaysBefore <= 30 ? body.calendarReminderDaysBefore : current.calendarReminderDaysBefore,
       dailyBalanceTime: typeof body.dailyBalanceTime === "string" && TIME.test(body.dailyBalanceTime) ? body.dailyBalanceTime : current.dailyBalanceTime,
-      weeklySummaryTime: typeof body.weeklySummaryTime === "string" && TIME.test(body.weeklySummaryTime) ? body.weeklySummaryTime : current.weeklySummaryTime,
-      monthlySummaryTime: typeof body.monthlySummaryTime === "string" && TIME.test(body.monthlySummaryTime) ? body.monthlySummaryTime : current.monthlySummaryTime,
-      annualSummaryTime: typeof body.annualSummaryTime === "string" && TIME.test(body.annualSummaryTime) ? body.annualSummaryTime : current.annualSummaryTime,
+      weeklySummaryTime: current.weeklySummaryTime,
+      monthlySummaryTime: current.monthlySummaryTime,
+      annualSummaryTime: current.annualSummaryTime,
       timezone: typeof body.timezone === "string" && body.timezone.length <= 80 ? body.timezone : current.timezone,
       updatedAt: new Date().toISOString(),
     };
