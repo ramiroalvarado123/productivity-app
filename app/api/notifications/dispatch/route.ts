@@ -26,12 +26,15 @@ function serviceRoleKey() {
 
 function adminHeaders(extra: Record<string, string> = {}) {
   const key = serviceRoleKey();
-  return {
+  const headers: Record<string, string> = {
     apikey: key,
-    Authorization: "Bearer " + key,
     "Content-Type": "application/json",
     ...extra,
   };
+  // Las claves nuevas sb_secret_* sólo deben viajar como apikey.
+  // La clave legacy service_role (JWT) necesita también Authorization.
+  if (key.startsWith("eyJ")) headers.Authorization = "Bearer " + key;
+  return headers;
 }
 
 async function adminRequest(table: string, query = "", init: RequestInit = {}): Promise<Row[]> {
