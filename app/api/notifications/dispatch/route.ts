@@ -70,7 +70,7 @@ function numberValue(row: Row, key: string, fallback = 0) {
 }
 
 function validTime(value: string) {
-  return /^([01]\\d|2[0-3]):[0-5]\\d$/.test(value) ? value : null;
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
 }
 
 function safeTimezone(value: string) {
