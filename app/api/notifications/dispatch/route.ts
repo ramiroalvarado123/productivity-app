@@ -338,18 +338,20 @@ export async function POST(request: Request) {
       });
 
       if (booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
-        const tomorrow = addDays(clock.date, 1);
+        const daysBefore = Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1))));
+        const targetDate = addDays(clock.date, daysBefore);
+        const dayLabel = daysBefore === 1 ? "mañana" : "en " + daysBefore + " días";
         for (const event of eventsByEmail.get(email) ?? []) {
-          if (stringValue(event, "event_date") !== tomorrow) continue;
+          if (stringValue(event, "event_date") !== targetDate) continue;
           const eventId = numberValue(event, "id");
           const title = stringValue(event, "title", "un evento");
           const eventTime = validTime(stringValue(event, "event_time"));
           candidates.push({
             email,
             kind: "calendar_reminder",
-            referenceKey: String(eventId) + ":" + tomorrow,
+            referenceKey: String(eventId) + ":" + targetDate,
             title: "Recordatorio de calendario",
-            body: "Recuerda: mañana tienes " + title + (eventTime ? " a las " + eventTime + "." : "."),
+            body: "Recuerda: " + dayLabel + " tienes " + title + (eventTime ? " a las " + eventTime + "." : "."),
             url: APP_URL + "/?section=plan",
           });
         }
