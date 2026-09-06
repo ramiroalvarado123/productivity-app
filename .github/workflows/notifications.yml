@@ -12,12 +12,12 @@ jobs:
     steps:
       - name: Procesar avisos pendientes
         env:
-          CRON_SECRET: \${{ secrets.AVORA_CRON_SECRET }}
-          APP_URL: \${{ secrets.AVORA_APP_URL }}
+          CRON_SECRET: ${{ secrets.AVORA_CRON_SECRET }}
+          APP_URL: ${{ secrets.AVORA_APP_URL }}
         run: |
           set -euo pipefail
-          test -n "\${CRON_SECRET}" || { echo "Falta configurar AVORA_CRON_SECRET"; exit 1; }
-          test -n "\${APP_URL}" || { echo "Falta configurar AVORA_APP_URL"; exit 1; }
-          curl --fail-with-body --silent --show-error \\
-            --request POST "\${APP_URL%/}/api/notifications/dispatch" \\
-            --header "Authorization: Bearer \${CRON_SECRET}"
+          test -n "${CRON_SECRET}" || { echo "Falta configurar AVORA_CRON_SECRET"; exit 1; }
+          test -n "${APP_URL}" || { echo "Falta configurar AVORA_APP_URL"; exit 1; }
+          curl --fail-with-body --silent --show-error \
+            --request POST "${APP_URL%/}/api/notifications/dispatch" \
+            --header "Authorization: Bearer ${CRON_SECRET}"
