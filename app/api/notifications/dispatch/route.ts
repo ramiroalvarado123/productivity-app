@@ -16,6 +16,7 @@ type Candidate = {
 
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://productivity-app-git-feat-avora-ui-polish-ralvarado-3362.vercel.app";
+const DEFAULT_VAPID_PUBLIC_KEY = "BFjo70YM_MZxUr28GKf0hneZBkUyvP-wP1SuyFJcpDXF8XphPUTruryDXucj0c1MlAPool4YiNLqeK8zImedOTQ";
 
 function serviceRoleKey() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -267,8 +268,8 @@ export async function POST(request: Request) {
 
   try {
     const privateKey = process.env.VAPID_PRIVATE_KEY;
-    const publicKey = process.env.VAPID_PUBLIC_KEY;
-    if (!privateKey || !publicKey) throw new Error("Faltan VAPID_PRIVATE_KEY y VAPID_PUBLIC_KEY en el entorno del servidor.");
+    const publicKey = process.env.VAPID_PUBLIC_KEY ?? DEFAULT_VAPID_PUBLIC_KEY;
+    if (!privateKey) throw new Error("Falta VAPID_PRIVATE_KEY en el entorno del servidor.");
     webpush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:notifications@avora.app", publicKey, privateKey);
 
     const now = new Date();
