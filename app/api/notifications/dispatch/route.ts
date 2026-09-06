@@ -175,11 +175,13 @@ function notificationFor(candidate: Candidate) {
 }
 
 async function sendCandidate(candidate: Candidate, subscriptions: Row[]) {
-  if (!subscriptions.length) return { sent: 0, expired: 0 };
-  if (!(await claimDelivery(candidate))) return { sent: 0, expired: 0 };
+  if (!subscriptions.length) return { sent: 0, expired: 0, failed: 0, errors: [] as string[] };
+  if (!(await claimDelivery(candidate))) return { sent: 0, expired: 0, failed: 0, errors: [] as string[] };
 
   let sent = 0;
   let expired = 0;
+  let failed = 0;
+  const errors: string[] = [];
   await Promise.all(subscriptions.map(async (row) => {
     const endpoint = stringValue(row, "endpoint");
     const p256dh = stringValue(row, "p256dh");
@@ -193,11 +195,15 @@ async function sendCandidate(candidate: Candidate, subscriptions: Row[]) {
       );
       sent += 1;
     } catch (error) {
+      const statusCode = Number((error as { statusCode?: unknown })?.statusCode) || undefined;
+      const message = error instanceof Error ? error.message : String(error);
+      failed += 1;
+      errors.push((statusCode ? statusCode + ": " : "") + message);
       console.error("notifications push send failed", {
         email: candidate.email,
         kind: candidate.kind,
-        statusCode: Number((error as { statusCode?: unknown })?.statusCode) || undefined,
-        message: error instanceof Error ? error.message : String(error),
+        statusCode,
+        message,
       });
       if (isExpiredPushError(error)) {
         expired += 1;
@@ -214,7 +220,7 @@ async function sendCandidate(candidate: Candidate, subscriptions: Row[]) {
   }));
 
   if (!sent) await releaseDelivery(candidate);
-  return { sent, expired };
+  return { sent, expired, failed, errors };
 }
 
 function summaryCandidates(email: string, profile: Row, preferences: Row, clock: ReturnType<typeof localClock>) {
@@ -306,8 +312,12 @@ export async function POST(request: Request) {
     }
 
     let usersChecked = 0;
+    let candidatesFound = 0;
     let sent = 0;
     let expired = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; candidates: number }> = [];
     for (const preference of preferenceRows) {
       const email = stringValue(preference, "user_email");
       const userSubscriptions = subscriptionsByEmail.get(email) ?? [];
@@ -317,6 +327,15 @@ export async function POST(request: Request) {
       const timezone = stringValue(preference, "timezone", DEFAULT_TIMEZONE);
       const clock = localClock(now, timezone);
       const candidates = summaryCandidates(email, profile, preference, clock);
+      candidatesFound += candidates.length;
+      diagnostics.push({
+        timezone,
+        date: clock.date,
+        time: clock.time,
+        weekday: clock.weekday,
+        configuredDailyTime: stringValue(preference, "daily_balance_time", "21:00"),
+        candidates: candidates.length,
+      });
 
       if (booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
         const tomorrow = addDays(clock.date, 1);
@@ -340,10 +359,22 @@ export async function POST(request: Request) {
         const result = await sendCandidate(candidate, userSubscriptions);
         sent += result.sent;
         expired += result.expired;
+        failed += result.failed;
+        errors.push(...result.errors);
       }
     }
 
-    return Response.json({ ok: true, checkedAt: now.toISOString(), usersChecked, sent, expired });
+    return Response.json({
+      ok: true,
+      checkedAt: now.toISOString(),
+      usersChecked,
+      candidatesFound,
+      sent,
+      expired,
+      failed,
+      errors: errors.slice(0, 3),
+      diagnostics,
+    });
   } catch (error) {
     console.error("notifications dispatch", error);
     return Response.json({ error: "No se pudieron procesar las notificaciones." }, { status: 500 });
