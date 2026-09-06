@@ -1860,3 +1860,20 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .mobile-profile-panel .profile-menu-signout{font-size:12px}
   .topbar .save-status{font-size:8px;padding:7px 9px;gap:5px}
 }
+
+
+/* Preferencias y estado del permiso de notificaciones push. */
+.notification-settings-panel{gap:12px}
+.notification-permission-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid #dfe7df;border-radius:14px;background:#f4f8f3}
+.notification-permission-card>div{display:grid;gap:4px;min-width:0}
+.notification-permission-card b{font-size:12px}
+.notification-permission-card small{font-size:10px;line-height:1.4;color:#7d887f}
+.notification-action{border:0;border-radius:10px;background:var(--green);color:#fff;padding:9px 13px;font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap}
+.notification-action.secondary{border:1px solid #cfdbd1;background:#fff;color:var(--green)}
+.notification-action:disabled{opacity:.55;cursor:default}
+.notification-section-label{margin:8px 0 0;font-size:9px;letter-spacing:.16em;font-weight:800;color:#919a94}
+.notification-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.notification-time-grid label{display:grid;gap:6px;font-size:10px;font-weight:700;color:#65706a}
+.notification-time-grid input{width:100%;border:1px solid #dce3dd;background:#fff;border-radius:10px;padding:10px 11px;font:inherit;color:var(--ink);outline:none}
+.notification-time-grid input:focus{border-color:#68a084;box-shadow:0 0 0 4px #3675561a}
+@media(max-width:760px){.notification-time-grid{grid-template-columns:1fr}.notification-permission-card{align-items:flex-start;flex-direction:column}.notification-action{width:100%}}
