@@ -17,6 +17,7 @@ export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: "AVORA",
   description: "Todo tu progreso en un solo lugar.",
+  manifest: "/manifest.webmanifest",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
   openGraph: {
     title: "AVORA",
