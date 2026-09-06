@@ -11,6 +11,7 @@ type NotificationPreferences = {
   monthlySummaryEnabled: boolean;
   annualSummaryEnabled: boolean;
   calendarReminderTime: string;
+  calendarReminderDaysBefore: number;
   dailyBalanceTime: string;
   weeklySummaryTime: string;
   monthlySummaryTime: string;
@@ -26,6 +27,7 @@ const DEFAULTS: NotificationPreferences = {
   monthlySummaryEnabled: true,
   annualSummaryEnabled: true,
   calendarReminderTime: "18:00",
+  calendarReminderDaysBefore: 1,
   dailyBalanceTime: "21:00",
   weeklySummaryTime: "20:00",
   monthlySummaryTime: "20:00",
@@ -169,10 +171,6 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
     } finally { setSaving(false); }
   }
 
-  function toggle(key: keyof NotificationPreferences) {
-    setPreferences((current) => ({ ...current, [key]: !current[key] }));
-  }
-
   if (loading) return <div className="settings-subpanel"><p className="settings-copy">Cargando preferencias…</p></div>;
 
   return <form className="settings-subpanel notification-settings-panel" onSubmit={saveForm}>
@@ -189,20 +187,23 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
     </div>
 
     <p className="notification-section-label">AVISOS</p>
-    <label className="settings-toggle"><input type="checkbox" checked={preferences.calendarEnabled} onChange={() => toggle("calendarEnabled")} /><span><b>Actividades del calendario</b><small>El día anterior a la hora elegida.</small></span></label>
-    <label className="settings-toggle"><input type="checkbox" checked={preferences.dailyBalanceEnabled} onChange={() => toggle("dailyBalanceEnabled")} /><span><b>Balance diario</b><small>{isPro ? "Recordatorio para grabar el balance en menos de un minuto." : "Recordatorio para hacer el balance de tu día."}</small></span></label>
-    <label className="settings-toggle"><input type="checkbox" checked={preferences.weeklySummaryEnabled} onChange={() => toggle("weeklySummaryEnabled")} /><span><b>Resumen semanal</b><small>Todos los domingos.</small></span></label>
-    <label className="settings-toggle"><input type="checkbox" checked={preferences.monthlySummaryEnabled} onChange={() => toggle("monthlySummaryEnabled")} /><span><b>Resumen mensual</b><small>El último día de cada mes.</small></span></label>
-    <label className="settings-toggle"><input type="checkbox" checked={preferences.annualSummaryEnabled} onChange={() => toggle("annualSummaryEnabled")} /><span><b>Resumen anual</b><small>El 31 de diciembre.</small></span></label>
+    <div className="settings-disabled-row"><span><b>Actividades del calendario</b><small>Se envía según el horario y la anticipación que elijas.</small></span><i>{preferences.calendarEnabled ? "Activado" : "Desactivado"}</i></div>
+    <div className="settings-disabled-row"><span><b>Balance diario</b><small>{isPro ? "Recordatorio para grabar el balance en menos de un minuto." : "Recordatorio para hacer el balance de tu día."}</small></span><i>{preferences.dailyBalanceEnabled ? "Activado" : "Desactivado"}</i></div>
+    <div className="settings-disabled-row"><span><b>Resumen semanal</b><small>Todos los domingos.</small></span><i>{preferences.weeklySummaryEnabled ? "Activado" : "Desactivado"}</i></div>
+    <div className="settings-disabled-row"><span><b>Resumen mensual</b><small>El último día de cada mes.</small></span><i>{preferences.monthlySummaryEnabled ? "Activado" : "Desactivado"}</i></div>
+    <div className="settings-disabled-row"><span><b>Resumen anual</b><small>El 31 de diciembre.</small></span><i>{preferences.annualSummaryEnabled ? "Activado" : "Desactivado"}</i></div>
 
-    <p className="notification-section-label">HORARIOS</p>
+    <p className="notification-section-label">HORARIOS EDITABLES</p>
     <div className="notification-time-grid">
       <label>Calendario<input type="time" value={preferences.calendarReminderTime} onChange={(event) => setPreferences((current) => ({ ...current, calendarReminderTime: event.target.value }))} /></label>
+      <label>Días antes<input type="number" min={1} max={30} inputMode="numeric" value={preferences.calendarReminderDaysBefore} onChange={(event) => setPreferences((current) => ({ ...current, calendarReminderDaysBefore: Math.max(1, Math.min(30, event.target.valueAsNumber || 1)) }))} /></label>
       <label>Balance diario<input type="time" value={preferences.dailyBalanceTime} onChange={(event) => setPreferences((current) => ({ ...current, dailyBalanceTime: event.target.value }))} /></label>
-      <label>Resumen semanal<input type="time" value={preferences.weeklySummaryTime} onChange={(event) => setPreferences((current) => ({ ...current, weeklySummaryTime: event.target.value }))} /></label>
-      <label>Resumen mensual<input type="time" value={preferences.monthlySummaryTime} onChange={(event) => setPreferences((current) => ({ ...current, monthlySummaryTime: event.target.value }))} /></label>
-      <label>Resumen anual<input type="time" value={preferences.annualSummaryTime} onChange={(event) => setPreferences((current) => ({ ...current, annualSummaryTime: event.target.value }))} /></label>
     </div>
+
+    <p className="notification-section-label">HORARIOS FIJOS</p>
+    <div className="settings-disabled-row"><span><b>Resumen semanal</b><small>Todos los domingos.</small></span><i>{preferences.weeklySummaryTime}</i></div>
+    <div className="settings-disabled-row"><span><b>Resumen mensual</b><small>Último día del mes.</small></span><i>{preferences.monthlySummaryTime}</i></div>
+    <div className="settings-disabled-row"><span><b>Resumen anual</b><small>31 de diciembre.</small></span><i>{preferences.annualSummaryTime}</i></div>
 
     {notice && <div className="success-banner">{notice}</div>}
     {error && <div className="error-banner">{error}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
