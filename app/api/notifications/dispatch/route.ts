@@ -173,7 +173,7 @@ async function releaseDelivery(candidate: Candidate) {
 
 function isExpiredPushError(error: unknown) {
   const statusCode = Number((error as { statusCode?: unknown })?.statusCode);
-  return statusCode === 404 || statusCode === 410;
+  return statusCode === 400 || statusCode === 404 || statusCode === 410;
 }
 
 function notificationFor(candidate: Candidate) {
