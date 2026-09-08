@@ -1,12 +1,13 @@
 import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
 import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
+import { dateInTimeZone } from "../../lib/format";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
 const USERNAME = /^[a-z0-9_]{3,20}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const now = () => new Date().toISOString();
-const today = () => now().slice(0, 10);
+const today = () => dateInTimeZone("America/Argentina/Buenos_Aires");
 const ok = (extra = {}) => Response.json({ ok: true, ...extra });
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
 
@@ -38,6 +39,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function cleanTime(value: unknown): string | null {
   const time = String(value ?? "").trim();
   return !time ? "" : TIME.test(time) ? time : null;
+}
+function numeric(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim().replace(",", ".") : value;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 function daysBefore(date: string, days: number) {
   const value = new Date(`${date}T12:00:00Z`); value.setUTCDate(value.getUTCDate() - days); return value.toISOString().slice(0, 10);
@@ -158,7 +164,7 @@ export async function POST(request: Request) {
     if (action === "save_training" || action === "add_exercise") {
       const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""); if (!disciplineId || !DATE.test(date) || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Elegí una disciplina y fecha válidas.");
       const logs = await insertRows<ProgressRow>("training_logs", { userEmail: email, disciplineId, trainingDate: date, durationMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))), distanceMeters: Math.max(0, Math.min(1e6, Math.round((Number(p.distanceKm) || 0) * 1000))), notes: String(p.notes ?? "").trim().slice(0, 1500) }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], returnRows: true });
-      if (action === "add_exercise") { const exercise = String(p.exercise ?? "").trim().slice(0, 80); if (!exercise) return fail("Completá el ejercicio."); await insertRows("exercise_logs", { userEmail: email, trainingLogId: logs[0].id, exercise, weightDeciKg: Math.max(0, Math.min(10000, Math.round((Number(p.weightKg) || 0) * 10))), sets: Math.max(0, Math.min(100, Math.round(Number(p.sets) || 0))), reps: Math.max(0, Math.min(1000, Math.round(Number(p.reps) || 0))), isRecord: Boolean(p.isRecord) }); } return ok();
+      if (action === "add_exercise") { const exercise = String(p.exercise ?? "").trim().slice(0, 80); if (!exercise) return fail("Completá el ejercicio."); await insertRows("exercise_logs", { userEmail: email, trainingLogId: logs[0].id, exercise, weightDeciKg: Math.max(0, Math.min(10000, Math.round(numeric(p.weightKg) * 10))), sets: Math.max(0, Math.min(100, Math.round(Number(p.sets) || 0))), reps: Math.max(0, Math.min(1000, Math.round(Number(p.reps) || 0))), isRecord: Boolean(p.isRecord) }); } return ok();
     }
     if (action === "delete_exercise") { await deleteRows("exercise_logs", { id: Number(p.id), userEmail: email }); return ok(); }
     if (action === "save_sleep") { const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); await upsert("daily_checkins", { userEmail: email, entryDate: date, sleepMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.sleepMinutes) || 0))), bedtime: String(p.bedtime ?? "").slice(0, 20), wakeTime: String(p.wakeTime ?? "").slice(0, 20) }, ["userEmail", "entryDate"]); return ok(); }

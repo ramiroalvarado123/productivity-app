@@ -1,5 +1,17 @@
 /** Helpers de texto y fecha compartidos por la interfaz. */
 
+/** Devuelve una fecha ISO (AAAA-MM-DD) en la zona horaria indicada. */
+export function dateInTimeZone(timeZone: string, date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 /** "1 día" / "3 días" — evita el clásico "faltan 1 días". */
 export function pluralize(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`;

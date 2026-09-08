@@ -8,7 +8,7 @@ import { DatePicker } from "./date-picker";
 import { Dropdown, type DropdownOption } from "./dropdown";
 import { FULL_DAY_HOUR_OPTIONS, TimeFieldPicker } from "./time-dropdown";
 import { TourOverlay, type TourStep } from "./tour-overlay";
-import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
+import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, dateInTimeZone, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
 import { quoteForDate } from "./lib/quotes";
 import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "./lib/streaks";
 import { dayBlocks, dayWindow, freeSlots, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
@@ -175,7 +175,7 @@ const bookLanguageOptions = [
 ] as const;
 
 function argentinaDate() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  return dateInTimeZone("America/Argentina/Buenos_Aires");
 }
 /** Hora actual en Buenos Aires, en minutos desde medianoche. */
 function argentinaMinutes() {
@@ -427,7 +427,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   /** Sólo viene en true en el primer redirect después de completar el onboarding (ver `?tour=1`). */
   showTutorial?: boolean;
 }) {
-  const [today] = useState(argentinaDate);
+  const [today, setToday] = useState(argentinaDate);
   const monthKey = today.slice(0, 7);
   const week = useMemo(() => weekFor(today), [today]);
   const [data, setData] = useState<ProgressData>(() => emptyData(initialUser, monthKey));
@@ -592,6 +592,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const dietStopTimerRef = useRef<number | null>(null);
   const dietHydratedRef = useRef(false);
   const sleepHydratedRef = useRef(false);
+  const previousTodayRef = useRef(today);
 
   // El menú de cuenta se comporta como un desplegable real: cualquier toque
   // exterior o Escape lo cierra, sin interferir con sus acciones internas.
@@ -660,6 +661,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     const timer = window.setInterval(() => setNowMinutes(argentinaMinutes()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+  // Detecta el cambio de fecha en Argentina aunque la app permanezca abierta.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const nextToday = argentinaDate();
+      setToday((current) => current === nextToday ? current : nextToday);
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     const title = bookDraft.title.trim();
     if (!bookForm || !bookSuggestionOpen || title.length < 2) {
@@ -694,6 +703,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     }), 1000);
     return () => window.clearInterval(timer);
   }, [recording]);
+
+  // Al empezar un día nuevo se muestran los controles del día nuevo; el historial queda intacto.
+  useEffect(() => {
+    const previous = previousTodayRef.current;
+    if (previous === today) return;
+    setTrainingDate((current) => current === previous ? today : current);
+    setTrainingWeekAnchor((current) => current === previous ? today : current);
+    setWeekAnchor((current) => current === previous ? today : current);
+    setCalendarCursor(today.slice(0, 7));
+    setDietCalendarCursor(today.slice(0, 7));
+    setSleepBedtime("23:00");
+    setSleepWaketime("07:00");
+    sleepHydratedRef.current = false;
+    previousTodayRef.current = today;
+  }, [today]);
 
   const beginSaveFeedback = useCallback((key: string) => {
     if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current);
@@ -1063,9 +1087,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     setSelectedBookId(booksInTab[nextPage * 3]?.id ?? null);
   }
   async function submitForm(event: FormEvent<HTMLFormElement>, payload: Record<string, unknown>) {
+    const form = event.currentTarget;
     event.preventDefault();
     const ok = await save(payload);
-    if (ok) event.currentTarget.reset();
+    if (ok) form.reset();
   }
   function openSettings() {
     setSettingsName(data.profile.displayName);
@@ -1654,9 +1679,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           </form>
           <div className="panel-divider" />
           <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
-          <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: form.get("weightKg"), sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
+          <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); const weight = String(form.get("weightKg") ?? "").trim().replace(",", "."); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: weight, sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
             <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
-            <div className="three-fields"><label>Kg<input name="weightKg" type="number" min="0" step=".1" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
+            <div className="three-fields"><label>Kg<input name="weightKg" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" placeholder="0,0" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
             <label className="check-label"><input name="isRecord" type="checkbox" /> Es un récord personal</label>
             <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar ejercicio" phase={savePhase("add_exercise")} /></button>
           </form>
