@@ -751,7 +751,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       return (scrollElement?.scrollTop ?? window.scrollY) <= 0;
     };
     const isBlockedTarget = (target: EventTarget | null) => (
-      target instanceof HTMLElement &&
+      target instanceof Element &&
       Boolean(target.closest("input, textarea, select, button, [contenteditable='true'], [role='dialog']"))
     );
     const resetPull = () => {
@@ -772,7 +772,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       pullTrackingRef.current = pullStartYRef.current !== null && pullStartXRef.current !== null;
     };
     const handleTouchMove = (event: TouchEvent) => {
-      if (!pullTrackingRef.current || pullRefreshingRef.current || event.touches.length !== 1) return;
+      if (!pullTrackingRef.current || pullRefreshingRef.current) return;
+      if (event.touches.length !== 1) {
+        resetPull();
+        return;
+      }
       const touch = event.touches[0];
       if (!touch || pullStartYRef.current === null || pullStartXRef.current === null) return;
       const deltaY = touch.clientY - pullStartYRef.current;
@@ -787,7 +791,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       if (deltaY > 6) event.preventDefault();
     };
     const handleTouchEnd = () => {
-      const shouldRefresh = pullTrackingRef.current && pullDistanceRef.current >= threshold;
+      const shouldRefresh = event.touches.length === 0 && pullTrackingRef.current && pullDistanceRef.current >= threshold;
       resetPull();
       if (!shouldRefresh || pullRefreshingRef.current) return;
       pullRefreshingRef.current = true;
