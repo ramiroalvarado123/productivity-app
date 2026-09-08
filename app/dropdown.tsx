@@ -96,7 +96,8 @@ export function Dropdown({ id, name, ariaLabel, options, value, onChange, defaul
           aria-selected={option.value === currentValue}
           data-selected={option.value === currentValue}
           className={"ui-dropdown-option " + (option.value === currentValue ? "selected" : "")}
-          onClick={() => selectOption(option.value)}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => { event.stopPropagation(); selectOption(option.value); }}
         >{option.label}</button>)}
       </div>}
     </div>
