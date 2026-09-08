@@ -1924,9 +1924,16 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 /* Entrenamiento: valoración de la sesión y prioridad de cada disciplina. */
 .discipline-card-heading{display:flex;align-items:flex-start;gap:8px;margin-bottom:11px}
 .discipline-card-heading .discipline-title{flex:1;width:auto;min-width:0;padding-bottom:0}
-.discipline-priority{width:92px;flex:0 0 92px;border:1px solid #dce5dd;border-radius:9px;background:#fff;color:#5d6c63;padding:7px 5px;font-size:8px;font-weight:700;outline:none}
-.discipline-priority:focus{border-color:#68a084;box-shadow:0 0 0 3px #3675561a}
-.discipline-priority:disabled{opacity:.55}
+.discipline-priority{width:140px;flex:0 0 140px;display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border:1px solid #dce5dd;border-radius:9px;background:#f1f3ef;color:#657269}
+.discipline-priority button{border:0;border-radius:7px;background:transparent;color:#7b8780;padding:6px 3px;font-size:8px;font-weight:800;white-space:nowrap;cursor:pointer}
+.discipline-priority button:hover{background:#e6eee8;color:var(--green)}
+.discipline-priority button.active{background:#fff;color:var(--green);box-shadow:0 2px 7px #173e2f12}
+.discipline-priority button:focus-visible{outline:2px solid #68a084;outline-offset:1px}
+.discipline-priority button:disabled{opacity:.55;cursor:progress}
+.discipline-delete{width:24px;height:24px;flex:0 0 24px;border:1px solid #efd7d0;border-radius:7px;background:#fff6f3;color:#a4503a;font-size:16px;line-height:1;display:grid;place-items:center;padding:0;cursor:pointer}
+.discipline-delete:hover{background:#fdeeea;border-color:#e8bfb4}
+.discipline-delete:focus-visible{outline:2px solid #d88e7c;outline-offset:2px}
+.discipline-delete:disabled{opacity:.45;cursor:progress}
 .training-quality{margin-top:8px;padding:8px;border:1px solid #e1e8e2;border-radius:10px;background:#f4f7f3;display:flex;align-items:center;gap:8px}
 .training-quality-label{font-size:8px;color:#78847c;font-weight:800;letter-spacing:.04em;white-space:nowrap}
 .training-quality-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;flex:1;min-width:0}
@@ -1936,7 +1943,9 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .training-quality-option:disabled{opacity:.55;cursor:progress}
 @media(max-width:760px){
   .discipline-card-heading{gap:6px}
-  .discipline-priority{width:84px;flex-basis:84px;font-size:8px;padding:7px 3px}
+  .discipline-priority{width:128px;flex-basis:128px}
+  .discipline-priority button{font-size:8px;padding:7px 2px}
+  .discipline-delete{width:22px;height:22px;flex-basis:22px;font-size:15px}
   .training-quality{display:grid;gap:6px}
   .training-quality-options{width:100%}
   .training-quality-option{padding:8px 2px;font-size:8px}
