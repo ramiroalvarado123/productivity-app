@@ -177,6 +177,15 @@ export async function POST(request: Request) {
       await updateRows("training_disciplines", { id: disciplineId, userEmail: email }, { priority });
       return ok();
     }
+    if (action === "delete_discipline") {
+      const disciplineId = Number(p.disciplineId);
+      const discipline = (await owned("training_disciplines", email, { id: disciplineId }))[0];
+      if (!discipline) return fail("Disciplina no encontrada.", 404);
+      const disciplines = await selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email } });
+      if (disciplines.length <= 1) return fail("Tiene que quedar al menos una disciplina.");
+      await deleteRows("training_disciplines", { id: disciplineId, userEmail: email });
+      return ok();
+    }
     if (action === "set_training_quality") {
       const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""), quality = trainingQuality(p.quality);
       if (!disciplineId || !DATE.test(date) || quality === undefined || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Valoración inválida.");
