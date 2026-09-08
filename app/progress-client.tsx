@@ -790,7 +790,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       setPullDistance(nextDistance);
       if (deltaY > 6) event.preventDefault();
     };
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (event: TouchEvent) => {
       const shouldRefresh = event.touches.length === 0 && pullTrackingRef.current && pullDistanceRef.current >= threshold;
       resetPull();
       if (!shouldRefresh || pullRefreshingRef.current) return;
