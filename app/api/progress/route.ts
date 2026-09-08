@@ -189,7 +189,35 @@ export async function POST(request: Request) {
     if (action === "add_goal") { const title = String(p.title ?? "").trim(), period = String(p.period), category = String(p.category), targetDate = String(p.targetDate ?? ""); if (!title || !["weekly", "monthly", "annual", "custom"].includes(period) || !DATE.test(targetDate)) return fail("Completá un objetivo válido."); await insertRows("goals", { userEmail: email, title: title.slice(0, 180), period, category, targetDate }); return ok(); }
     if (action === "toggle_goal") { await updateRows("goals", { id: Number(p.id), userEmail: email }, { completedAt: p.completed ? now() : null }); return ok(); }
     if (action === "delete_goal") { await deleteRows("goals", { id: Number(p.id), userEmail: email }); return ok(); }
-    if (action === "apply_voice_checkin") { const date = String(p.date ?? ""), c = p.checkin; if (!DATE.test(date) || !isRecord(c)) return fail("El cierre diario no es válido."); const clamp = (v: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(v) || 0))), sleep = isRecord(c.sleep) ? c.sleep : {}, study = isRecord(c.study) ? c.study : {}, gym = isRecord(c.gym) ? c.gym : {}; await upsert("daily_checkins", { userEmail: email, entryDate: date, habitsJson: JSON.stringify(Array.isArray(c.habits) ? c.habits.slice(0, 12) : []), workoutDetail: String(gym.detail ?? "").slice(0, 1500), studyMinutes: clamp(study.minutes, 1440), studyDetail: String(study.detail ?? "").slice(0, 1500), sleepMinutes: clamp(sleep.minutes, 1440), bedtime: String(sleep.bedtime ?? "").slice(0, 20), wakeTime: String(sleep.wakeTime ?? "").slice(0, 20), waterMl: clamp(c.waterMl, 20000), journal: String(c.journal ?? "").slice(0, 4000), transcript: String(c.transcript ?? "").slice(0, 8000), voiceSummary: String(c.summary ?? "").slice(0, 1000) }, ["userEmail", "entryDate"]); for (const meal of Array.isArray(c.meals) ? c.meals.filter(isRecord).slice(0, 8) : []) if (meal.name) await insertRows("meals", { userEmail: email, mealDate: date, name: String(meal.name).slice(0, 80), detail: String(meal.detail ?? "").slice(0, 300), calories: clamp(meal.calories, 10000), protein: clamp(meal.protein, 1000), carbs: clamp(meal.carbs, 2000), fat: clamp(meal.fat, 1000) }); return ok(); }
+    // El audio sólo trae lo que el usuario mencionó esta vez: las categorías
+    // que no nombra vienen en cero/vacío desde la IA (ver prompt en
+    // voice-checkin/route.ts), así que se conserva el valor ya guardado para
+    // esas y sólo se pisa lo que sí llegó nuevo, en vez de machacar el día.
+    if (action === "apply_voice_checkin") {
+      const date = String(p.date ?? ""), c = p.checkin; if (!DATE.test(date) || !isRecord(c)) return fail("El cierre diario no es válido.");
+      const clamp = (v: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(v) || 0))), sleep = isRecord(c.sleep) ? c.sleep : {}, study = isRecord(c.study) ? c.study : {}, gym = isRecord(c.gym) ? c.gym : {};
+      const existing = (await owned("daily_checkins", email, { entryDate: date }))[0];
+      const existingHabits = stringArray(existing?.habitsJson), newHabits = Array.isArray(c.habits) ? c.habits.filter((h): h is string => typeof h === "string") : [];
+      const habits = [...existingHabits, ...newHabits.filter((h) => !existingHabits.includes(h))].slice(0, 12);
+      const pickText = (value: unknown, fallback: unknown, max: number) => (String(value ?? "").trim() || String(fallback ?? "")).slice(0, max);
+      const pickNumber = (value: number, fallback: unknown) => value || clamp(fallback, Number.MAX_SAFE_INTEGER);
+      await upsert("daily_checkins", {
+        userEmail: email, entryDate: date,
+        habitsJson: JSON.stringify(habits),
+        workoutDetail: pickText(gym.detail, existing?.workoutDetail, 1500),
+        studyMinutes: pickNumber(clamp(study.minutes, 1440), existing?.studyMinutes),
+        studyDetail: pickText(study.detail, existing?.studyDetail, 1500),
+        sleepMinutes: pickNumber(clamp(sleep.minutes, 1440), existing?.sleepMinutes),
+        bedtime: pickText(sleep.bedtime, existing?.bedtime, 20),
+        wakeTime: pickText(sleep.wakeTime, existing?.wakeTime, 20),
+        waterMl: pickNumber(clamp(c.waterMl, 20000), existing?.waterMl),
+        journal: pickText(c.journal, existing?.journal, 4000),
+        transcript: String(c.transcript ?? "").slice(0, 8000),
+        voiceSummary: String(c.summary ?? "").slice(0, 1000),
+      }, ["userEmail", "entryDate"]);
+      for (const meal of Array.isArray(c.meals) ? c.meals.filter(isRecord).slice(0, 8) : []) if (meal.name) await insertRows("meals", { userEmail: email, mealDate: date, name: String(meal.name).slice(0, 80), detail: String(meal.detail ?? "").slice(0, 300), calories: clamp(meal.calories, 10000), protein: clamp(meal.protein, 1000), carbs: clamp(meal.carbs, 2000), fat: clamp(meal.fat, 1000) });
+      return ok();
+    }
     return fail("Acción desconocida.");
   } catch (cause) { console.error("progress POST", cause); return fail("No se pudo guardar. Verificá Supabase.", 500); }
 }
