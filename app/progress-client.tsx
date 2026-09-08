@@ -199,6 +199,10 @@ const TRAINING_QUALITY_OPTIONS = [
   { value: 3, label: "Bueno" },
   { value: 4, label: "Muy bueno" },
 ] as const;
+const DISCIPLINE_PRIORITY_OPTIONS = [
+  { value: "secondary", label: "Secundaria" },
+  { value: "important", label: "Importante" },
+] as const;
 const bookLanguageOptions = [
   ["es", "Español"], ["en", "Inglés"], ["pt", "Portugués"], ["fr", "Francés"], ["it", "Italiano"], ["de", "Alemán"],
 ] as const;
@@ -1869,10 +1873,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         return <div className={"discipline-card " + (selectedDiscipline?.id === discipline.id ? "selected" : "")} key={discipline.id}>
           <div className="discipline-card-heading">
             <button type="button" className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
-            {data.disciplines.length > 1 && <select className="discipline-priority" aria-label={"Importancia de " + discipline.name} value={discipline.priority ?? "important"} disabled={saving} onChange={(event) => void save({ action: "set_discipline_priority", disciplineId: discipline.id, priority: event.target.value })}>
-              <option value="important">Importante</option>
-              <option value="secondary">Secundaria</option>
-            </select>}
+            {data.disciplines.length > 1 && <div className="discipline-priority" role="group" aria-label={"Importancia de " + discipline.name}>
+              {DISCIPLINE_PRIORITY_OPTIONS.map((option) => <button key={option.value} type="button" className={discipline.priority === option.value ? "active" : ""} aria-pressed={discipline.priority === option.value} disabled={saving} onClick={() => void save({ action: "set_discipline_priority", disciplineId: discipline.id, priority: option.value })}>{option.label}</button>)}
+            </div>}
+            {data.disciplines.length > 1 && <button type="button" className="discipline-delete" aria-label={"Eliminar " + discipline.name} title="Eliminar disciplina" disabled={saving} onClick={(event) => { event.stopPropagation(); if (window.confirm("¿Eliminar " + discipline.name + "? También se borrará su historial de entrenamiento.")) void save({ action: "delete_discipline", disciplineId: discipline.id }); }}>×</button>}
           </div>
           <div className="week-row">{trainingWeek.map((day) => {
             const done = dates.includes(day.iso);
