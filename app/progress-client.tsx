@@ -387,11 +387,10 @@ function SaveButtonContent({ label, phase }: { label: ReactNode; phase: SavePhas
  * escribe; `key={disciplineId-date}` en el padre lo remonta al cambiar de
  * disciplina o de día, así vuelve a partir de lo que ya había ese día.
  */
-function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving, savePhase, onSave }: {
+function DistanceSessionForm({ disciplineId, date, log, saving, savePhase, onSave }: {
   disciplineId: number;
   date: string;
   log: TrainingLog | undefined;
-  notePlaceholder: string;
   saving: boolean;
   savePhase: SavePhase;
   onSave: (payload: Record<string, unknown>) => void;
@@ -399,13 +398,12 @@ function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving,
   const [durationDraft, setDurationDraft] = useState(log?.durationMinutes ? formatDecimalInput(log.durationMinutes) : "");
   const [distanceDraft, setDistanceDraft] = useState(log?.distanceMeters ? formatDecimalInput(log.distanceMeters / 1000) : "");
   const pace = paceLabel(parseDecimalInput(durationDraft), parseDecimalInput(distanceDraft));
-  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); onSave({ action: "save_training", disciplineId, date, durationMinutes: durationDraft, distanceKm: distanceDraft, notes: form.get("notes") }); }}>
+  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); onSave({ action: "save_training", disciplineId, date, durationMinutes: durationDraft, distanceKm: distanceDraft }); }}>
     <div className="two-fields">
       <label>Distancia (km)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={distanceDraft} onChange={(event) => setDistanceDraft(event.target.value)} /></label>
       <label>Tiempo (min)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={durationDraft} onChange={(event) => setDurationDraft(event.target.value)} /></label>
     </div>
     <div className="pace-preview"><span>◷</span><p><small>RITMO</small><b>{pace ?? "Cargá distancia y tiempo"}</b></p></div>
-    <label>Notas<textarea name="notes" defaultValue={log?.notes || ""} placeholder={notePlaceholder} /></label>
     <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase} /></button>
   </form>;
 }
@@ -1895,11 +1893,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <article className="panel">
         <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><span className="week-pill">{trainingDate === today ? "Hoy" : formatDate(trainingDate)}</span></div>
         {selectedDiscipline.kind === "strength" ? <>
-          <form key={`${selectedDiscipline.id}-${trainingDate}-notes`} className="data-form strength-notes-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: selectedTrainingLog?.durationMinutes || 0, distanceKm: 0, notes: form.get("notes") }); }}>
-            <label>Notas de la sesión<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Rutina, sensaciones, técnica…" /></label>
-            <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar notas" phase={savePhase("save_training")} /></button>
-          </form>
-          <div className="panel-divider" />
           <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
           <form key={`${selectedDiscipline.id}-${trainingDate}-${editingExercise?.id ?? "new"}`} className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); const weight = String(form.get("weightKg") ?? "").trim().replace(",", "."); void submitForm(event, { action: editingExercise ? "update_exercise" : "add_exercise", id: editingExercise?.id, disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: weight, sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
             <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" defaultValue={editingExercise?.exercise ?? ""} />
@@ -1914,13 +1907,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           disciplineId={selectedDiscipline.id}
           date={trainingDate}
           log={selectedTrainingLog}
-          notePlaceholder="Ritmo, sensaciones, recorrido…"
           saving={saving}
           savePhase={savePhase("save_training")}
           onSave={(payload) => void save(payload)}
-        /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0, notes: form.get("notes") }); }}>
+        /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0 }); }}>
           <label>Duración (min)<input name="durationMinutes" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" defaultValue={selectedTrainingLog?.durationMinutes ? formatDecimalInput(selectedTrainingLog.durationMinutes) : ""} /></label>
-          <label>Descripción<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Qué hiciste, sensaciones, detalle de la sesión…" /></label>
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase("save_training")} /></button>
         </form>}
       </article>
