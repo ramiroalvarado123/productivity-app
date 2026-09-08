@@ -59,6 +59,29 @@ type DietForm = {
   age: number; sex: DietPlanRecord["sex"]; heightCm: number; currentWeightKg: number; targetWeightKg: number;
   activityLevel: DietPlanRecord["activityLevel"]; goalPace: DietPlanRecord["goalPace"]; preferences: string; details: string;
 };
+type DietNumberKey = "age" | "heightCm" | "currentWeightKg" | "targetWeightKg";
+type DietNumberDrafts = Record<DietNumberKey, string>;
+const DIET_NUMBER_LIMITS: Record<DietNumberKey, { min: number; max: number }> = {
+  age: { min: 18, max: 100 },
+  heightCm: { min: 120, max: 230 },
+  currentWeightKg: { min: 35, max: 300 },
+  targetWeightKg: { min: 35, max: 300 },
+};
+function dietNumberDraftsFrom(form: DietForm): DietNumberDrafts {
+  return {
+    age: String(form.age),
+    heightCm: String(form.heightCm),
+    currentWeightKg: String(form.currentWeightKg),
+    targetWeightKg: String(form.targetWeightKg),
+  };
+}
+function isDietNumberKey(key: keyof DietForm): key is DietNumberKey {
+  return key === "age" || key === "heightCm" || key === "currentWeightKg" || key === "targetWeightKg";
+}
+function parseDietNumber(value: string) {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
 type ProgressData = {
   profile: User; gymDates: string[]; disciplines: Discipline[]; trainingLogs: TrainingLog[]; exerciseLogs: ExerciseLog[];
   meals: Meal[]; mealHistory: Meal[]; books: Book[]; readingLogs: ReadingLog[]; readingHistory: ReadingLog[]; notes: Note[];
@@ -561,12 +584,67 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [photoPreview, setPhotoPreview] = useState("");
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
-  const [dietForm, setDietForm] = useState<DietForm>({ age: 25, sex: "unspecified", heightCm: 175, currentWeightKg: 75, targetWeightKg: 70, activityLevel: "light", goalPace: "gentle", preferences: "", details: "" });
+  const initialDietForm: DietForm = { age: 25, sex: "unspecified", heightCm: 175, currentWeightKg: 75, targetWeightKg: 70, activityLevel: "light", goalPace: "gentle", preferences: "", details: "" };
+  const [dietForm, setDietForm] = useState<DietForm>(initialDietForm);
+  const [dietNumberDrafts, setDietNumberDrafts] = useState<DietNumberDrafts>(() => dietNumberDraftsFrom(initialDietForm));
+  const dietNumberFocusRef = useRef<Partial<Record<DietNumberKey, number>>>({});
   // Calculadora rápida (sin IA): null = seguir la sugerencia calculada en vivo; un número = lo que el usuario aceptó o modificó a mano.
   const [dietQuickCalories, setDietQuickCalories] = useState<number | null>(null);
+  const [dietQuickCaloriesDraft, setDietQuickCaloriesDraft] = useState<string | null>(null);
+  const dietQuickCaloriesFocusRef = useRef<number | null>(null);
   function setDietQuickField<K extends keyof DietForm>(key: K, value: DietForm[K]) {
     setDietForm((current) => ({ ...current, [key]: value }));
+    if (isDietNumberKey(key)) setDietNumberDrafts((current) => ({ ...current, [key]: String(value) }));
     setDietQuickCalories(null);
+    setDietQuickCaloriesDraft(null);
+  }
+  function beginDietNumberInput(key: DietNumberKey) {
+    if (dietNumberFocusRef.current[key] === undefined) dietNumberFocusRef.current[key] = dietForm[key];
+  }
+  function updateDietNumberInput(key: DietNumberKey, raw: string) {
+    setDietNumberDrafts((current) => ({ ...current, [key]: raw }));
+    const parsed = parseDietNumber(raw);
+    if (parsed !== null) setDietForm((current) => ({ ...current, [key]: parsed }));
+    setDietQuickCalories(null);
+    setDietQuickCaloriesDraft(null);
+  }
+  function finishDietNumberInput(key: DietNumberKey) {
+    const raw = dietNumberDrafts[key].trim();
+    const original = dietNumberFocusRef.current[key];
+    const fallback = original ?? dietForm[key];
+    const parsed = parseDietNumber(raw);
+    const limits = DIET_NUMBER_LIMITS[key];
+    if (raw === "" || parsed === null || parsed < limits.min || parsed > limits.max) {
+      setDietForm((current) => ({ ...current, [key]: fallback }));
+      setDietNumberDrafts((current) => ({ ...current, [key]: String(fallback) }));
+    } else {
+      setDietForm((current) => ({ ...current, [key]: parsed }));
+      setDietNumberDrafts((current) => ({ ...current, [key]: String(parsed) }));
+    }
+    delete dietNumberFocusRef.current[key];
+  }
+  function beginDietQuickCaloriesInput() {
+    const current = dietQuickCalories ?? estimateTargetCalories(dietForm)?.targetCalories ?? 0;
+    dietQuickCaloriesFocusRef.current = current || null;
+    setDietQuickCaloriesDraft(current ? String(current) : "");
+  }
+  function updateDietQuickCaloriesInput(raw: string) {
+    setDietQuickCaloriesDraft(raw);
+    const parsed = parseDietNumber(raw);
+    if (parsed !== null) setDietQuickCalories(parsed);
+  }
+  function finishDietQuickCaloriesInput() {
+    const raw = (dietQuickCaloriesDraft ?? "").trim();
+    const fallback = dietQuickCaloriesFocusRef.current ?? dietQuickCalories ?? estimateTargetCalories(dietForm)?.targetCalories ?? 0;
+    const parsed = parseDietNumber(raw);
+    if (raw === "" || parsed === null || parsed < 1000 || parsed > 6000) {
+      setDietQuickCalories(fallback || null);
+      setDietQuickCaloriesDraft(fallback ? String(fallback) : "");
+    } else {
+      setDietQuickCalories(parsed);
+      setDietQuickCaloriesDraft(String(parsed));
+    }
+    dietQuickCaloriesFocusRef.current = null;
   }
   const [dietGenerating, setDietGenerating] = useState(false);
   const [generatedDietPlan, setGeneratedDietPlan] = useState<DietPlanContent | null>(null);
@@ -625,7 +703,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       setPriorityDraft(next.priorities);
       setSelectedDisciplineId((current) => current ?? next.disciplines[0]?.id ?? null);
       if (next.dietPlan && !dietHydratedRef.current) {
-        setDietForm({
+        const hydratedDietForm: DietForm = {
           age: next.dietPlan.age,
           sex: next.dietPlan.sex,
           heightCm: next.dietPlan.heightCm,
@@ -635,8 +713,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           goalPace: next.dietPlan.goalPace,
           preferences: next.dietPlan.preferences,
           details: next.dietPlan.details,
-        });
+        };
+        setDietForm(hydratedDietForm);
+        setDietNumberDrafts(dietNumberDraftsFrom(hydratedDietForm));
         setDietQuickCalories(next.dietPlan.targetCalories || null);
+        setDietQuickCaloriesDraft(null);
         dietHydratedRef.current = true;
       }
       if (next.dailyCheckin && !sleepHydratedRef.current) {
@@ -2245,16 +2326,16 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <div className="panel-heading"><div><p>CALCULADORA RÁPIDA</p><h2>Calorías objetivo, sin IA</h2></div></div>
     <p className="diet-intro">Completá tus datos y te proponemos una cifra diaria de referencia. Podés aceptarla o modificarla antes de guardarla.</p>
     <div className="diet-fields">
-      <label>Peso actual (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.currentWeightKg} onChange={(event) => setDietQuickField("currentWeightKg", Number(event.target.value))} /></label>
-      <label>Peso objetivo (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.targetWeightKg} onChange={(event) => setDietQuickField("targetWeightKg", Number(event.target.value))} /></label>
-      <label>Altura (cm)<input type="number" min="120" max="230" value={dietForm.heightCm} onChange={(event) => setDietQuickField("heightCm", Number(event.target.value))} /></label>
-      <label>Edad<input type="number" min="18" max="100" value={dietForm.age} onChange={(event) => setDietQuickField("age", Number(event.target.value))} /></label>
+      <label>Peso actual (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.currentWeightKg} onFocus={() => beginDietNumberInput("currentWeightKg")} onChange={(event) => updateDietNumberInput("currentWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("currentWeightKg")} /></label>
+      <label>Peso objetivo (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.targetWeightKg} onFocus={() => beginDietNumberInput("targetWeightKg")} onChange={(event) => updateDietNumberInput("targetWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("targetWeightKg")} /></label>
+      <label>Altura (cm)<input type="text" inputMode="numeric" min="120" max="230" value={dietNumberDrafts.heightCm} onFocus={() => beginDietNumberInput("heightCm")} onChange={(event) => updateDietNumberInput("heightCm", event.target.value)} onBlur={() => finishDietNumberInput("heightCm")} /></label>
+      <label>Edad<input type="text" inputMode="numeric" min="18" max="100" value={dietNumberDrafts.age} onFocus={() => beginDietNumberInput("age")} onChange={(event) => updateDietNumberInput("age", event.target.value)} onBlur={() => finishDietNumberInput("age")} /></label>
       <label>Género<Dropdown ariaLabel="Género para la estimación" value={dietForm.sex} onChange={(value) => setDietQuickField("sex", value as DietForm["sex"])} options={[{ value: "unspecified", label: "Prefiero no indicar" }, { value: "male", label: "Masculino" }, { value: "female", label: "Femenino" }]} /></label>
       <label>Actividad<Dropdown ariaLabel="Actividad habitual" value={dietForm.activityLevel} onChange={(value) => setDietQuickField("activityLevel", value as DietForm["activityLevel"])} options={[{ value: "sedentary", label: "Baja / sedentaria" }, { value: "light", label: "Ligera · 1–3 días" }, { value: "moderate", label: "Moderada · 3–5 días" }, { value: "high", label: "Alta · 6–7 días" }]} /></label>
       <label>Intensidad<Dropdown ariaLabel="Intensidad del objetivo" value={dietForm.goalPace} onChange={(value) => setDietQuickField("goalPace", value as DietForm["goalPace"])} options={[{ value: "gentle", label: "Gradual" }, { value: "moderate", label: "Moderado" }]} /></label>
     </div>
     <div className="diet-quick-result">
-      <label><span>CALORÍAS OBJETIVO</span><input type="number" min="1000" max="6000" step="10" value={dietQuickCaloriesValue || ""} onChange={(event) => setDietQuickCalories(Number(event.target.value) || 0)} /><small>{dietEstimate ? `Sugerencia: ${dietEstimate.targetCalories.toLocaleString("es-AR")} kcal · mantenimiento ${dietEstimate.maintenanceCalories.toLocaleString("es-AR")} kcal` : "Completá tus datos para calcular una sugerencia."}</small></label>
+      <label><span>CALORÍAS OBJETIVO</span><input type="text" inputMode="numeric" min="1000" max="6000" value={dietQuickCaloriesDraft ?? (dietQuickCaloriesValue ? String(dietQuickCaloriesValue) : "")} onFocus={beginDietQuickCaloriesInput} onChange={(event) => updateDietQuickCaloriesInput(event.target.value)} onBlur={finishDietQuickCaloriesInput} /><small>{dietEstimate ? `Sugerencia: ${dietEstimate.targetCalories.toLocaleString("es-AR")} kcal · mantenimiento ${dietEstimate.maintenanceCalories.toLocaleString("es-AR")} kcal` : "Completá tus datos para calcular una sugerencia."}</small></label>
       <button className="primary-action" type="button" disabled={saving || !dietQuickCaloriesValue} onClick={() => void saveDietTarget(dietQuickCaloriesValue)}><SaveButtonContent label="Guardar objetivo" phase={savePhase("set_diet_target")} /></button>
     </div>
   </article>;
@@ -2264,10 +2345,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <p className="diet-intro">Completá tus datos y contanos qué necesitás. La aplicación calcula una referencia energética y la IA propone opciones intercambiables; no reemplaza la evaluación de un nutricionista.</p>
     <div className="diet-builder-grid">
       <div className="diet-fields">
-        <label>Edad<input type="number" min="18" max="100" value={dietForm.age} onChange={(event) => setDietForm({ ...dietForm, age: Number(event.target.value) })} /></label>
-        <label>Altura (cm)<input type="number" min="120" max="230" value={dietForm.heightCm} onChange={(event) => setDietForm({ ...dietForm, heightCm: Number(event.target.value) })} /></label>
-        <label>Peso actual (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.currentWeightKg} onChange={(event) => setDietForm({ ...dietForm, currentWeightKg: Number(event.target.value) })} /></label>
-        <label>Peso objetivo (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.targetWeightKg} onChange={(event) => setDietForm({ ...dietForm, targetWeightKg: Number(event.target.value) })} /></label>
+        <label>Edad<input type="text" inputMode="numeric" min="18" max="100" value={dietNumberDrafts.age} onFocus={() => beginDietNumberInput("age")} onChange={(event) => updateDietNumberInput("age", event.target.value)} onBlur={() => finishDietNumberInput("age")} /></label>
+        <label>Altura (cm)<input type="text" inputMode="numeric" min="120" max="230" value={dietNumberDrafts.heightCm} onFocus={() => beginDietNumberInput("heightCm")} onChange={(event) => updateDietNumberInput("heightCm", event.target.value)} onBlur={() => finishDietNumberInput("heightCm")} /></label>
+        <label>Peso actual (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.currentWeightKg} onFocus={() => beginDietNumberInput("currentWeightKg")} onChange={(event) => updateDietNumberInput("currentWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("currentWeightKg")} /></label>
+        <label>Peso objetivo (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.targetWeightKg} onFocus={() => beginDietNumberInput("targetWeightKg")} onChange={(event) => updateDietNumberInput("targetWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("targetWeightKg")} /></label>
         <label>Sexo para la estimación<Dropdown ariaLabel="Sexo para la estimación" value={dietForm.sex} onChange={(value) => setDietForm({ ...dietForm, sex: value as DietForm["sex"] })} options={[{ value: "unspecified", label: "Prefiero no indicar" }, { value: "male", label: "Masculino" }, { value: "female", label: "Femenino" }]} /></label>
         <label>Actividad habitual<Dropdown ariaLabel="Actividad habitual" value={dietForm.activityLevel} onChange={(value) => setDietForm({ ...dietForm, activityLevel: value as DietForm["activityLevel"] })} options={[{ value: "sedentary", label: "Baja / sedentaria" }, { value: "light", label: "Ligera · 1–3 días" }, { value: "moderate", label: "Moderada · 3–5 días" }, { value: "high", label: "Alta · 6–7 días" }]} /></label>
         <label>Ritmo del objetivo<Dropdown ariaLabel="Ritmo del objetivo" value={dietForm.goalPace} onChange={(value) => setDietForm({ ...dietForm, goalPace: value as DietForm["goalPace"] })} options={[{ value: "gentle", label: "Gradual" }, { value: "moderate", label: "Moderado" }]} /></label>
