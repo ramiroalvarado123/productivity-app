@@ -34,8 +34,8 @@ type GoalCategory = "general" | "gym" | "training" | "nutrition" | "reading" | "
 type Goal = { id: number; title: string; period: GoalPeriod; category: GoalCategory; targetDate: string; completedAt: string | null; createdAt: string };
 type Priorities = { monthKey: string; gymWeight: number; nutritionWeight: number; readingWeight: number; sleepWeight: number; focusWeight: number; goalsWeight: number };
 type DailyCheckin = { id: number; entryDate: string; habitsJson: string; workoutDetail: string; studyMinutes: number; studyDetail: string; sleepMinutes: number; bedtime: string; wakeTime: string; waterMl: number; journal: string; transcript: string; voiceSummary: string };
-type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other" };
-type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string };
+type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other"; priority?: "important" | "secondary" };
+type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string; quality?: number | null };
 type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean };
 type FocusProject = { id: number; name: string; kind: "study" | "work" };
 type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
@@ -193,6 +193,12 @@ const FRIEND_NUDGE_MESSAGES = [
   "¡Gran racha! Seguí así 🔥",
 ];
 const disciplineKindOptions: DropdownOption[] = Object.entries(kindLabels).map(([value, label]) => ({ value, label }));
+const TRAINING_QUALITY_OPTIONS = [
+  { value: 1, label: "Malo" },
+  { value: 2, label: "Regular" },
+  { value: 3, label: "Bueno" },
+  { value: 4, label: "Muy bueno" },
+] as const;
 const bookLanguageOptions = [
   ["es", "Español"], ["en", "Inglés"], ["pt", "Portugués"], ["fr", "Francés"], ["it", "Italiano"], ["de", "Alemán"],
 ] as const;
@@ -353,6 +359,14 @@ function paceLabel(durationMinutes: number, distanceKm: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")} min/km`;
 }
 
+function parseDecimalInput(value: string) {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function formatDecimalInput(value: number) {
+  return value > 0 ? String(value).replace(".", ",") : "";
+}
+
 /** Mantiene el ancho original del botón mientras muestra carga y confirmación. */
 function SaveButtonContent({ label, phase }: { label: ReactNode; phase: SavePhase }) {
   return <span className="save-button-content">
@@ -378,18 +392,35 @@ function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving,
   savePhase: SavePhase;
   onSave: (payload: Record<string, unknown>) => void;
 }) {
-  const [durationMinutes, setDurationMinutes] = useState(log?.durationMinutes ?? 0);
-  const [distanceKm, setDistanceKm] = useState(log ? log.distanceMeters / 1000 : 0);
-  const pace = paceLabel(durationMinutes, distanceKm);
-  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); onSave({ action: "save_training", disciplineId, date, durationMinutes, distanceKm, notes: form.get("notes") }); }}>
+  const [durationDraft, setDurationDraft] = useState(log?.durationMinutes ? formatDecimalInput(log.durationMinutes) : "");
+  const [distanceDraft, setDistanceDraft] = useState(log?.distanceMeters ? formatDecimalInput(log.distanceMeters / 1000) : "");
+  const pace = paceLabel(parseDecimalInput(durationDraft), parseDecimalInput(distanceDraft));
+  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); onSave({ action: "save_training", disciplineId, date, durationMinutes: durationDraft, distanceKm: distanceDraft, notes: form.get("notes") }); }}>
     <div className="two-fields">
-      <label>Distancia (km)<input type="number" min="0" step=".01" value={distanceKm || ""} onChange={(event) => setDistanceKm(Number(event.target.value) || 0)} /></label>
-      <label>Tiempo (min)<input type="number" min="0" value={durationMinutes || ""} onChange={(event) => setDurationMinutes(Number(event.target.value) || 0)} /></label>
+      <label>Distancia (km)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={distanceDraft} onChange={(event) => setDistanceDraft(event.target.value)} /></label>
+      <label>Tiempo (min)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={durationDraft} onChange={(event) => setDurationDraft(event.target.value)} /></label>
     </div>
     <div className="pace-preview"><span>◷</span><p><small>RITMO</small><b>{pace ?? "Cargá distancia y tiempo"}</b></p></div>
     <label>Notas<textarea name="notes" defaultValue={log?.notes || ""} placeholder={notePlaceholder} /></label>
     <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase} /></button>
   </form>;
+}
+
+function TrainingQualityBar({ disciplineName, quality, saving, onSelect }: {
+  disciplineName: string;
+  quality: number | null | undefined;
+  saving: boolean;
+  onSelect: (quality: number) => void;
+}) {
+  return <div className="training-quality" aria-label={"Valoración del entrenamiento de " + disciplineName}>
+    <span className="training-quality-label">¿Cómo estuvo?</span>
+    <div className="training-quality-options" role="radiogroup">
+      {TRAINING_QUALITY_OPTIONS.map((option) => {
+        const selected = quality === option.value;
+        return <button key={option.value} type="button" role="radio" aria-checked={selected} className={"training-quality-option" + (selected ? " selected" : "")} disabled={saving} onClick={() => onSelect(option.value)}>{option.label}</button>;
+      })}
+    </div>
+  </div>;
 }
 
 function LockedFeature({ title, note, onOpen, children }: { title: string; note: string; onOpen: () => void; children: React.ReactNode }) {
@@ -1834,8 +1865,15 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </div>
       <div className="discipline-list">{data.disciplines.map((discipline) => {
         const dates = data.trainingLogs.filter((log) => log.disciplineId === discipline.id && log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).map((log) => log.trainingDate);
+        const focusedLog = selectedDiscipline?.id === discipline.id ? data.trainingLogs.find((log) => log.disciplineId === discipline.id && log.trainingDate === trainingDate) : undefined;
         return <div className={"discipline-card " + (selectedDiscipline?.id === discipline.id ? "selected" : "")} key={discipline.id}>
-          <button className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
+          <div className="discipline-card-heading">
+            <button type="button" className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
+            {data.disciplines.length > 1 && <select className="discipline-priority" aria-label={"Importancia de " + discipline.name} value={discipline.priority ?? "important"} disabled={saving} onChange={(event) => void save({ action: "set_discipline_priority", disciplineId: discipline.id, priority: event.target.value })}>
+              <option value="important">Importante</option>
+              <option value="secondary">Secundaria</option>
+            </select>}
+          </div>
           <div className="week-row">{trainingWeek.map((day) => {
             const done = dates.includes(day.iso);
             // Primer click en un día: solo lo abre en el detalle de abajo (ver
@@ -1845,6 +1883,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             const focused = selectedDiscipline?.id === discipline.id && trainingDate === day.iso;
             return <button key={day.iso} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (focused ? " active" : "")} disabled={saving} onClick={() => { setSelectedDisciplineId(discipline.id); setTrainingDate(day.iso); if (focused) void save({ action: "toggle_training", disciplineId: discipline.id, date: day.iso }); }}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
           })}</div>
+          {focusedLog && <TrainingQualityBar disciplineName={discipline.name} quality={focusedLog.quality} saving={saving} onSelect={(quality) => void save({ action: "set_training_quality", disciplineId: discipline.id, date: trainingDate, quality })} />}
         </div>;
       })}</div>
     </article>
@@ -1876,7 +1915,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           savePhase={savePhase("save_training")}
           onSave={(payload) => void save(payload)}
         /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0, notes: form.get("notes") }); }}>
-          <label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label>
+          <label>Duración (min)<input name="durationMinutes" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" defaultValue={selectedTrainingLog?.durationMinutes ? formatDecimalInput(selectedTrainingLog.durationMinutes) : ""} /></label>
           <label>Descripción<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Qué hiciste, sensaciones, detalle de la sesión…" /></label>
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase("save_training")} /></button>
         </form>}
