@@ -122,7 +122,8 @@ export function DatePicker({ id, name, ariaLabel, value, onChange, defaultValue,
               key={date}
               disabled={disabled}
               className={(date === currentValue ? "selected " : "") + (date === today ? "today" : "")}
-              onClick={() => pick(date)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => { event.stopPropagation(); pick(date); }}
             >{day}</button>;
           })}
         </div>
