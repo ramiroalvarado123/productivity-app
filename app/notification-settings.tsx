@@ -147,7 +147,8 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
       });
       const body = await responseJson(response);
       if (!response.ok) throw new Error(failMessage(body, "No pudimos registrar este dispositivo."));
-      await save({ ...preferences, pushEnabled: true });
+      // El endpoint ya guarda push_enabled junto con la suscripción.
+      setPreferences((current) => ({ ...current, pushEnabled: true }));
       setNotice("Notificaciones activadas en este dispositivo.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No pudimos activar las notificaciones.");
