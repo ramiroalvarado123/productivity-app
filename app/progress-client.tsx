@@ -478,6 +478,15 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [loading, setLoading] = useState(initialUser.onboardingCompleted);
   const [saving, setSaving] = useState(false);
+  // Estado del gesto móvil "tirar para actualizar". Los refs mantienen el
+  // seguimiento del dedo sin recrear listeners en cada movimiento.
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullStartXRef = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const pullTrackingRef = useRef(false);
+  const pullRefreshingRef = useRef(false);
   const [saveFeedback, setSaveFeedback] = useState<{ key: string; phase: Exclude<SavePhase, null> } | null>(null);
   const saveFeedbackTimerRef = useRef<number | null>(null);
   const [error, setError] = useState(initialError);
@@ -732,6 +741,75 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       setLoading(false);
     }
   }, [today, week, monthKey]);
+  // En celulares, tirar hacia abajo desde el inicio actualiza los datos
+  // sin sacar al usuario de la sección en la que estaba.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("ontouchstart" in window)) return;
+    const threshold = 72;
+    const isAtTop = () => {
+      const scrollElement = document.scrollingElement;
+      return (scrollElement?.scrollTop ?? window.scrollY) <= 0;
+    };
+    const isBlockedTarget = (target: EventTarget | null) => (
+      target instanceof HTMLElement &&
+      Boolean(target.closest("input, textarea, select, button, [contenteditable='true'], [role='dialog']"))
+    );
+    const resetPull = () => {
+      pullTrackingRef.current = false;
+      pullStartYRef.current = null;
+      pullStartXRef.current = null;
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      if (pullRefreshingRef.current || event.touches.length !== 1 || !isAtTop() || isBlockedTarget(event.target)) {
+        resetPull();
+        return;
+      }
+      const touch = event.touches[0];
+      pullStartYRef.current = touch?.clientY ?? null;
+      pullStartXRef.current = touch?.clientX ?? null;
+      pullTrackingRef.current = pullStartYRef.current !== null && pullStartXRef.current !== null;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!pullTrackingRef.current || pullRefreshingRef.current || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      if (!touch || pullStartYRef.current === null || pullStartXRef.current === null) return;
+      const deltaY = touch.clientY - pullStartYRef.current;
+      const deltaX = touch.clientX - pullStartXRef.current;
+      if (deltaY <= 0 || !isAtTop() || Math.abs(deltaX) > Math.abs(deltaY)) {
+        resetPull();
+        return;
+      }
+      const nextDistance = Math.min(threshold * 1.35, deltaY * 0.55);
+      pullDistanceRef.current = nextDistance;
+      setPullDistance(nextDistance);
+      if (deltaY > 6) event.preventDefault();
+    };
+    const handleTouchEnd = () => {
+      const shouldRefresh = pullTrackingRef.current && pullDistanceRef.current >= threshold;
+      resetPull();
+      if (!shouldRefresh || pullRefreshingRef.current) return;
+      pullRefreshingRef.current = true;
+      setPullRefreshing(true);
+      void loadData().finally(() => {
+        pullRefreshingRef.current = false;
+        setPullRefreshing(false);
+      });
+    };
+    const handleTouchCancel = () => resetPull();
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", handleTouchCancel, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchCancel);
+    };
+  }, [loadData]);
   // Initial synchronization with the signed-in user's persisted workspace.
   useEffect(() => {
     if (!initialUser.onboardingCompleted) return;
@@ -3081,7 +3159,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </a>
   </>;
 
-  return <main className="app-shell">
+  const pullProgress = pullRefreshing ? 1 : Math.min(1, pullDistance / 72);
+  return <>
+    <div
+      className={"pull-refresh-indicator " + ((pullDistance > 0 || pullRefreshing) ? "is-visible" : "")}
+      style={{
+        opacity: pullRefreshing ? 1 : Math.min(1, pullProgress * 1.3),
+        transform: `translate(-50%, ${-44 + pullProgress * 52}px)`,
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <span aria-hidden="true">{pullRefreshing ? "↻" : pullProgress >= 1 ? "↑" : "↓"}</span>
+      <small>{pullRefreshing ? "Actualizando…" : pullProgress >= 1 ? "Soltá para actualizar" : "Deslizá para actualizar"}</small>
+    </div>
+    <main className="app-shell">
     <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav data-tour="nav">{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu" ref={profileMenuRef}>
           {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}
           <button
@@ -3182,5 +3274,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </section>
     </div>}
     {bookToDelete && <div className="delete-book-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookToDelete(null); }}><section className="delete-book-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-book-title"><span className="delete-book-icon" aria-hidden="true">⌫</span><p>ELIMINAR DE TU BIBLIOTECA</p><h2 id="delete-book-title">¿Eliminar “{bookToDelete.title}”?</h2><small>También se eliminarán sus páginas registradas y sus notas. Esta acción no se puede deshacer.</small><div><button type="button" className="delete-book-cancel" disabled={saving} onClick={() => setBookToDelete(null)}>Cancelar</button><button type="button" className="delete-book-confirm" disabled={saving} onClick={() => { const bookId = bookToDelete.id; void save({ action: "delete_book", bookId }).then((ok) => { if (ok) { setBookToDelete(null); setSelectedBookId(null); setBookShelfPage(0); setPagesInput(0); setNote(""); } }); }}>{saving ? "Eliminando…" : "Sí, eliminar libro"}</button></div></section></div>}
-  </main>;
+    </main>
+  </>;
 }
