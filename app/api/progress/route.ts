@@ -166,6 +166,21 @@ export async function POST(request: Request) {
       const logs = await insertRows<ProgressRow>("training_logs", { userEmail: email, disciplineId, trainingDate: date, durationMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))), distanceMeters: Math.max(0, Math.min(1e6, Math.round((Number(p.distanceKm) || 0) * 1000))), notes: String(p.notes ?? "").trim().slice(0, 1500) }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], returnRows: true });
       if (action === "add_exercise") { const exercise = String(p.exercise ?? "").trim().slice(0, 80); if (!exercise) return fail("Completá el ejercicio."); await insertRows("exercise_logs", { userEmail: email, trainingLogId: logs[0].id, exercise, weightDeciKg: Math.max(0, Math.min(10000, Math.round(numeric(p.weightKg) * 10))), sets: Math.max(0, Math.min(100, Math.round(Number(p.sets) || 0))), reps: Math.max(0, Math.min(1000, Math.round(Number(p.reps) || 0))), isRecord: Boolean(p.isRecord) }); } return ok();
     }
+    if (action === "update_exercise") {
+      const id = Number(p.id);
+      const existing = await selectRows("exercise_logs", { where: { id, userEmail: email }, limit: 1 });
+      if (!existing[0]) return fail("Ejercicio no encontrado.", 404);
+      const exercise = String(p.exercise ?? "").trim().slice(0, 80);
+      if (!exercise) return fail("Completá el ejercicio.");
+      await updateRows("exercise_logs", { id, userEmail: email }, {
+        exercise,
+        weightDeciKg: Math.max(0, Math.min(10000, Math.round(numeric(p.weightKg) * 10))),
+        sets: Math.max(0, Math.min(100, Math.round(Number(p.sets) || 0))),
+        reps: Math.max(0, Math.min(1000, Math.round(Number(p.reps) || 0))),
+        isRecord: Boolean(p.isRecord),
+      });
+      return ok();
+    }
     if (action === "delete_exercise") { await deleteRows("exercise_logs", { id: Number(p.id), userEmail: email }); return ok(); }
     if (action === "save_sleep") { const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); await upsert("daily_checkins", { userEmail: email, entryDate: date, sleepMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.sleepMinutes) || 0))), bedtime: String(p.bedtime ?? "").slice(0, 20), wakeTime: String(p.wakeTime ?? "").slice(0, 20) }, ["userEmail", "entryDate"]); return ok(); }
     if (action === "add_focus_project") { const name = String(p.name ?? "").trim().slice(0, 80), kind = String(p.kind ?? "study"); if (!name || !["study", "work"].includes(kind)) return fail("Completá el nombre y el tipo."); await insertRows("focus_projects", { userEmail: email, name, kind }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }

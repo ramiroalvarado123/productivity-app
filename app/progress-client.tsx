@@ -489,6 +489,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [priorityDraft, setPriorityDraft] = useState<Priorities>({ monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 });
   const [selectedDisciplineId, setSelectedDisciplineId] = useState<number | null>(null);
   const [trainingDate, setTrainingDate] = useState(today);
+  const [editingExerciseId, setEditingExerciseId] = useState<number | null>(null);
   const [trainingWeekAnchor, setTrainingWeekAnchor] = useState(today);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
   // Meta de entrenamientos por semana, para la racha de constancia. Vive en
@@ -747,6 +748,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       const result = await readJson<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo guardar.");
       await loadData();
+      if (payload.action === "update_exercise" || payload.action === "delete_exercise") setEditingExerciseId(null);
       finishSaveFeedback(feedbackKey, true);
       return true;
     } catch (caught) {
@@ -863,6 +865,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const selectedDiscipline = data.disciplines.find((item) => item.id === selectedDisciplineId) ?? data.disciplines[0] ?? null;
   const selectedTrainingLog = selectedDiscipline ? data.trainingLogs.find((item) => item.disciplineId === selectedDiscipline.id && item.trainingDate === trainingDate) : undefined;
   const selectedExercises = selectedTrainingLog ? data.exerciseLogs.filter((item) => item.trainingLogId === selectedTrainingLog.id) : [];
+  const editingExercise = selectedExercises.find((item) => item.id === editingExerciseId) ?? null;
   // Cada disciplina tiene un único detalle de sesión posible: nunca conviven
   // el de pesas, el de distancia y el genérico para la misma disciplina.
   const isDistanceDiscipline = selectedDiscipline?.kind === "running" || selectedDiscipline?.kind === "cycling" || selectedDiscipline?.kind === "swimming";
@@ -1679,13 +1682,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           </form>
           <div className="panel-divider" />
           <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
-          <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); const weight = String(form.get("weightKg") ?? "").trim().replace(",", "."); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: weight, sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
-            <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
-            <div className="three-fields"><label>Kg<input name="weightKg" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" placeholder="0,0" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
-            <label className="check-label"><input name="isRecord" type="checkbox" /> Es un récord personal</label>
-            <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar ejercicio" phase={savePhase("add_exercise")} /></button>
+          <form key={`${selectedDiscipline.id}-${trainingDate}-${editingExercise?.id ?? "new"}`} className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); const weight = String(form.get("weightKg") ?? "").trim().replace(",", "."); void submitForm(event, { action: editingExercise ? "update_exercise" : "add_exercise", id: editingExercise?.id, disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: weight, sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
+            <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" defaultValue={editingExercise?.exercise ?? ""} />
+            <div className="three-fields"><label>Kg<input name="weightKg" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" placeholder="0,0" defaultValue={editingExercise ? String(editingExercise.weightDeciKg / 10).replace(".", ",") : ""} /></label><label>Series<input name="sets" type="number" min="0" defaultValue={editingExercise ? editingExercise.sets : ""} /></label><label>Reps<input name="reps" type="number" min="0" defaultValue={editingExercise ? editingExercise.reps : ""} /></label></div>
+            <label className="check-label"><input name="isRecord" type="checkbox" defaultChecked={editingExercise?.isRecord ?? false} /> Es un récord personal</label>
+            <button className="primary-action" disabled={saving}><SaveButtonContent label={editingExercise ? "Guardar cambios" : "Agregar ejercicio"} phase={savePhase(editingExercise ? "update_exercise" : "add_exercise")} /></button>
+            {editingExercise ? <button type="button" className="secondary-action" onClick={() => setEditingExerciseId(null)}>Cancelar</button> : null}
           </form>
-          <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
+          <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button type="button" onClick={() => setEditingExerciseId(item.id)}>Editar</button><button type="button" onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
         </> : isDistanceDiscipline ? <DistanceSessionForm
           key={`${selectedDiscipline.id}-${trainingDate}`}
           disciplineId={selectedDiscipline.id}
