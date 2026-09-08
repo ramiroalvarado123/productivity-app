@@ -131,7 +131,10 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
 
       const registration = await navigator.serviceWorker.register("/sw.js");
       const existing = await registration.pushManager.getSubscription();
-      const subscription = existing || await registration.pushManager.subscribe({
+      // Al volver a activar, renovamos la suscripción para recuperar dispositivos
+      // que quedaron asociados a una clave VAPID anterior o a un endpoint inválido.
+      if (existing) await existing.unsubscribe();
+      const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
