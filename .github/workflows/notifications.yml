@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     # Ejecuta cada 5 minutos para cubrir la ventana de 15 minutos de cada aviso.
-    - cron: "*/5 * * * *"
+    # Evita el minuto 00, donde GitHub concentra la mayor carga de schedules.
+    - cron: "3-58/5 * * * *"
 
 concurrency:
   group: avora-notifications
