@@ -1923,7 +1923,7 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 
 /* Entrenamiento: valoración de la sesión y prioridad de cada disciplina. */
 .discipline-card-heading{display:flex;align-items:flex-start;gap:8px;margin-bottom:11px}
-.discipline-card-heading .discipline-title{flex:1;min-width:0;padding-bottom:0}
+.discipline-card-heading .discipline-title{flex:1;width:auto;min-width:0;padding-bottom:0}
 .discipline-priority{width:92px;flex:0 0 92px;border:1px solid #dce5dd;border-radius:9px;background:#fff;color:#5d6c63;padding:7px 5px;font-size:8px;font-weight:700;outline:none}
 .discipline-priority:focus{border-color:#68a084;box-shadow:0 0 0 3px #3675561a}
 .discipline-priority:disabled{opacity:.55}
