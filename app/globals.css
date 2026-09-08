@@ -1919,3 +1919,25 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
     font-size:9px;
   }
 }
+
+
+/* Entrenamiento: valoración de la sesión y prioridad de cada disciplina. */
+.discipline-card-heading{display:flex;align-items:flex-start;gap:8px;margin-bottom:11px}
+.discipline-card-heading .discipline-title{flex:1;min-width:0;padding-bottom:0}
+.discipline-priority{width:92px;flex:0 0 92px;border:1px solid #dce5dd;border-radius:9px;background:#fff;color:#5d6c63;padding:7px 5px;font-size:8px;font-weight:700;outline:none}
+.discipline-priority:focus{border-color:#68a084;box-shadow:0 0 0 3px #3675561a}
+.discipline-priority:disabled{opacity:.55}
+.training-quality{margin-top:8px;padding:8px;border:1px solid #e1e8e2;border-radius:10px;background:#f4f7f3;display:flex;align-items:center;gap:8px}
+.training-quality-label{font-size:8px;color:#78847c;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+.training-quality-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;flex:1;min-width:0}
+.training-quality-option{border:1px solid #d6e2d9;border-radius:7px;background:#fff;color:#647269;padding:6px 4px;font-size:8px;font-weight:800;white-space:nowrap;cursor:pointer}
+.training-quality-option:hover{border-color:#82aa91}
+.training-quality-option.selected{border-color:var(--green);background:var(--green);color:#fff}
+.training-quality-option:disabled{opacity:.55;cursor:progress}
+@media(max-width:760px){
+  .discipline-card-heading{gap:6px}
+  .discipline-priority{width:84px;flex-basis:84px;font-size:8px;padding:7px 3px}
+  .training-quality{display:grid;gap:6px}
+  .training-quality-options{width:100%}
+  .training-quality-option{padding:8px 2px;font-size:8px}
+}
