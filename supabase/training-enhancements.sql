@@ -8,7 +8,8 @@ alter table public.training_logs
 alter table public.training_logs
   add column if not exists quality smallint;
 
-drop constraint if exists training_logs_quality_check;
+alter table public.training_logs
+  drop constraint if exists training_logs_quality_check;
 
 alter table public.training_logs
   add constraint training_logs_quality_check
@@ -17,7 +18,8 @@ alter table public.training_logs
 alter table public.training_disciplines
   add column if not exists priority text not null default 'important';
 
-drop constraint if exists training_disciplines_priority_check;
+alter table public.training_disciplines
+  drop constraint if exists training_disciplines_priority_check;
 
 alter table public.training_disciplines
   add constraint training_disciplines_priority_check
