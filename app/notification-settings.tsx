@@ -121,6 +121,7 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
       return;
     }
 
+    setSaving(true);
     try {
       const nextPermission = await Notification.requestPermission();
       setPermission(nextPermission);
@@ -150,6 +151,8 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
       setNotice("Notificaciones activadas en este dispositivo.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No pudimos activar las notificaciones.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -186,7 +189,7 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
       </div>
       {preferences.pushEnabled
         ? <button type="button" className="notification-action secondary" onClick={() => void disablePush()} disabled={saving}>Desactivar</button>
-        : <button type="button" className="notification-action" onClick={() => void enablePush()}>Activar</button>}
+        : <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : "Activar"}</button>}
     </div>
 
     <p className="notification-section-label">AVISOS</p>
