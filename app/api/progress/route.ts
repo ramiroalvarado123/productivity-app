@@ -24,6 +24,8 @@ type ProgressRow = Record<string, unknown> & {
   durationMinutes: number;
   distanceMeters: number;
   notes: string;
+  quality: number | null;
+  priority: "important" | "secondary";
   entryDate: string;
   dueDate: string | null;
   totalPages: number;
@@ -44,6 +46,19 @@ function numeric(value: unknown) {
   const normalized = typeof value === "string" ? value.trim().replace(",", ".") : value;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+function decimal(value: unknown, maximum: number, places = 2) {
+  const factor = 10 ** places;
+  return Math.max(0, Math.min(maximum, Math.round(numeric(value) * factor) / factor));
+}
+function trainingQuality(value: unknown): number | null | undefined {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 4 ? parsed : undefined;
+}
+function trainingPriority(value: unknown): "important" | "secondary" | null {
+  const parsed = String(value ?? "");
+  return parsed === "important" || parsed === "secondary" ? parsed : null;
 }
 function daysBefore(date: string, days: number) {
   const value = new Date(`${date}T12:00:00Z`); value.setUTCDate(value.getUTCDate() - days); return value.toISOString().slice(0, 10);
@@ -155,7 +170,21 @@ export async function POST(request: Request) {
       if (!strength) strength = (await insertRows<ProgressRow>("training_disciplines", { userEmail: email, name: "Gimnasio", kind: "strength" }, { upsert: true, onConflict: ["userEmail", "name"], returnRows: true }))[0];
       const row = (await owned("training_logs", email, { disciplineId: strength.id, trainingDate: date }))[0]; if (row) await deleteRows("training_logs", { id: row.id, userEmail: email }); else await insertRows("training_logs", { userEmail: email, disciplineId: strength.id, trainingDate: date }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], ignoreDuplicates: true }); return ok();
     }
-    if (action === "add_discipline") { const name = String(p.name ?? "").trim().slice(0, 50), kind = String(p.kind ?? "other"); if (!name || !["strength", "running", "cycling", "swimming", "sport", "other"].includes(kind)) return fail("Disciplina inválida."); await insertRows("training_disciplines", { userEmail: email, name, kind }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }
+    if (action === "add_discipline") { const name = String(p.name ?? "").trim().slice(0, 50), kind = String(p.kind ?? "other"); if (!name || !["strength", "running", "cycling", "swimming", "sport", "other"].includes(kind)) return fail("Disciplina inválida."); await insertRows("training_disciplines", { userEmail: email, name, kind, priority: "important" }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }
+    if (action === "set_discipline_priority") {
+      const disciplineId = Number(p.disciplineId), priority = trainingPriority(p.priority);
+      if (!disciplineId || !priority || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Preferencia de disciplina inválida.");
+      await updateRows("training_disciplines", { id: disciplineId, userEmail: email }, { priority });
+      return ok();
+    }
+    if (action === "set_training_quality") {
+      const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""), quality = trainingQuality(p.quality);
+      if (!disciplineId || !DATE.test(date) || quality === undefined || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Valoración inválida.");
+      const row = (await owned("training_logs", email, { disciplineId, trainingDate: date }))[0];
+      if (!row) return fail("Marcá el entrenamiento primero.");
+      await updateRows("training_logs", { id: row.id, userEmail: email }, { quality });
+      return ok();
+    }
     if (action === "toggle_training") {
       const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""); if (!disciplineId || !DATE.test(date) || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Entrenamiento inválido."); const row = (await owned("training_logs", email, { disciplineId, trainingDate: date }))[0];
       if (row) { if (row.durationMinutes || row.distanceMeters || row.notes || (await owned("exercise_logs", email, { trainingLogId: row.id }))[0]) return fail("Este día tiene detalles cargados. Borrá sus registros antes de desmarcarlo.", 409); await deleteRows("training_logs", { id: row.id, userEmail: email }); }
@@ -163,7 +192,7 @@ export async function POST(request: Request) {
     }
     if (action === "save_training" || action === "add_exercise") {
       const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""); if (!disciplineId || !DATE.test(date) || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Elegí una disciplina y fecha válidas.");
-      const logs = await insertRows<ProgressRow>("training_logs", { userEmail: email, disciplineId, trainingDate: date, durationMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))), distanceMeters: Math.max(0, Math.min(1e6, Math.round((Number(p.distanceKm) || 0) * 1000))), notes: String(p.notes ?? "").trim().slice(0, 1500) }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], returnRows: true });
+      const logs = await insertRows<ProgressRow>("training_logs", { userEmail: email, disciplineId, trainingDate: date, durationMinutes: decimal(p.durationMinutes, 1440), distanceMeters: Math.max(0, Math.min(1e6, Math.round(numeric(p.distanceKm) * 1000))), notes: String(p.notes ?? "").trim().slice(0, 1500) }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], returnRows: true });
       if (action === "add_exercise") { const exercise = String(p.exercise ?? "").trim().slice(0, 80); if (!exercise) return fail("Completá el ejercicio."); await insertRows("exercise_logs", { userEmail: email, trainingLogId: logs[0].id, exercise, weightDeciKg: Math.max(0, Math.min(10000, Math.round(numeric(p.weightKg) * 10))), sets: Math.max(0, Math.min(100, Math.round(Number(p.sets) || 0))), reps: Math.max(0, Math.min(1000, Math.round(Number(p.reps) || 0))), isRecord: Boolean(p.isRecord) }); } return ok();
     }
     if (action === "update_exercise") {
