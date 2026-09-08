@@ -663,13 +663,26 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     return () => window.clearInterval(timer);
   }, []);
   // Detecta el cambio de fecha en Argentina aunque la app permanezca abierta.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    const syncToday = () => {
       const nextToday = argentinaDate();
       setToday((current) => current === nextToday ? current : nextToday);
-    }, 30000);
-    return () => window.clearInterval(timer);
+      setNowMinutes(argentinaMinutes());
+    };
+    syncToday();
+    const timer = window.setInterval(syncToday, 30000);
+    window.addEventListener("focus", syncToday);
+    window.addEventListener("pageshow", syncToday);
+    document.addEventListener("visibilitychange", syncToday);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", syncToday);
+      window.removeEventListener("pageshow", syncToday);
+      document.removeEventListener("visibilitychange", syncToday);
+    };
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(() => {
     const title = bookDraft.title.trim();
     if (!bookForm || !bookSuggestionOpen || title.length < 2) {
