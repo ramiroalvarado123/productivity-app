@@ -1015,6 +1015,22 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Daily Score, para que el puntaje de hoy y el del histórico salgan del
   // mismo lugar y nunca se contradigan entre pantallas.
   const trainingByDate = useMemo(() => sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1), [data.trainingLogs]);
+  // El entrenamiento del Daily Score se pondera por disciplina: una actividad
+  // importante completa el factor, mientras que una secundaria suma la mitad.
+  // Varias secundarias pueden combinarse, pero el factor nunca supera 100.
+  const trainingScoreByDate = useMemo(() => {
+    const weighted: Record<string, number> = {};
+    const seen = new Set<string>();
+    for (const log of data.trainingLogs) {
+      const key = log.trainingDate + ":" + log.disciplineId;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const discipline = data.disciplines.find((item) => item.id === log.disciplineId);
+      const contribution = discipline?.priority === "secondary" ? 0.5 : 1;
+      weighted[log.trainingDate] = Math.min(1, (weighted[log.trainingDate] ?? 0) + contribution);
+    }
+    return weighted;
+  }, [data.trainingLogs, data.disciplines]);
   const focusByDate = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
   const readingByDate = sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages);
   const caloriesByDay = sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories);
@@ -1031,6 +1047,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   /** Lo que registraste un día cualquiera, tal cual, sin interpretar. */
   const dayRecordFor = (date: string): DayRecord => ({
     trainingSessions: trainingByDate[date] ?? 0,
+    trainingScore: (trainingScoreByDate[date] ?? 0) * 100,
     meals: mealCountByDate[date] ?? 0,
     sleepMinutes: sleepMinutesByDate[date] ?? 0,
     focusMinutes: focusByDate[date] ?? 0,
