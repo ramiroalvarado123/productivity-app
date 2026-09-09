@@ -11,9 +11,11 @@
 -- Vault mantiene estos valores cifrados y evita dejar el secreto en el repositorio
 -- o dentro del SQL del job.
 
+create schema if not exists vault;
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
-create extension if not exists vault;
+-- El nombre técnico de la extensión Vault es supabase_vault.
+create extension if not exists supabase_vault with schema vault;
 
 do $check$
 begin
