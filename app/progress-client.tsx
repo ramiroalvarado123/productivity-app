@@ -1307,13 +1307,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const activeCategories = useMemo(() => {
     const since = dateMinus(today, 5);
     const categories = new Set<string>();
-    if (data.trainingLogs.some((item) => item.trainingDate >= since)) { categories.add("training"); categories.add("gym"); }
+    if (Object.keys(trainingByDate).some((date) => date >= since && date <= today)) { categories.add("training"); categories.add("gym"); }
     if (data.mealHistory.some((item) => item.mealDate >= since)) categories.add("nutrition");
     if (data.readingHistory.some((item) => item.logDate >= since && item.pages > 0)) categories.add("reading");
-    if (uniqueFocusSessions.some((item) => item.sessionDate >= since)) { categories.add("study"); categories.add("work"); }
+    if (Object.keys(focusByDate).some((date) => date >= since && date <= today)) { categories.add("study"); categories.add("work"); }
     if (data.dailyCheckins.some((item) => item.entryDate >= since && item.sleepMinutes > 0)) categories.add("sleep");
     return categories;
-  }, [data.trainingLogs, data.mealHistory, data.readingHistory, data.dailyCheckins, uniqueFocusSessions, today]);
+  }, [trainingByDate, data.mealHistory, data.readingHistory, data.dailyCheckins, focusByDate, today]);
 
   // Los tres días siguientes con sus huecos: es lo que permite que un aviso
   // diga "pasalo al miércoles" en vez de "mirá si algo puede pasar a mañana".
@@ -2368,6 +2368,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const statsStart = dateMinus(today, periodDays - 1);
   const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart);
   const periodFocus = uniqueFocusSessions.filter((item) => item.sessionDate >= statsStart);
+  const periodTaskFocusMinutes = Object.entries(completedTaskFocusByDate)
+    .filter(([date]) => date >= statsStart && date <= today)
+    .reduce((sum, [, minutes]) => sum + minutes, 0);
+  const periodTaskFocusBlocks = completedPlanTasks.filter((task) => Boolean(task.dueDate && task.dueDate >= statsStart && task.dueDate <= today && task.projectId));
+  const periodTaskTrainingCount = Object.entries(completedTrainingTasksByDate)
+    .filter(([date]) => date >= statsStart && date <= today)
+    .reduce((sum, [, count]) => sum + count, 0);
   const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.sleepMinutes > 0);
   const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart);
   const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart);
@@ -2496,9 +2503,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </article>
 
     <div className="metrics-grid">
-      <article><span>↗</span><p>ENTRENAMIENTOS<b>{periodTraining.length}</b><small>{(periodTraining.reduce((sum, item) => sum + item.distanceMeters, 0) / 1000).toFixed(1)} km recorridos</small></p></article>
+      <article><span>↗</span><p>ENTRENAMIENTOS<b>{periodTraining.length + periodTaskTrainingCount}</b><small>{(periodTraining.reduce((sum, item) => sum + item.distanceMeters, 0) / 1000).toFixed(1)} km recorridos</small></p></article>
       <article><span>☾</span><p>SUEÑO PROMEDIO<b>{periodSleep.length ? (periodSleep.reduce((sum, item) => sum + item.sleepMinutes, 0) / periodSleep.length / 60).toFixed(1) : "0"} h</b><small>{periodSleep.length} noches registradas</small></p></article>
-      <article><span>⌁</span><p>TRABAJO PROFUNDO<b>{(periodFocus.reduce((sum, item) => sum + item.minutes, 0) / 60).toFixed(1)} h</b><small>{periodFocus.length} bloques de foco</small></p></article>
+      <article><span>⌁</span><p>TRABAJO PROFUNDO<b>{((periodFocus.reduce((sum, item) => sum + item.minutes, 0) + periodTaskFocusMinutes) / 60).toFixed(1)} h</b><small>{periodFocus.length + periodTaskFocusBlocks.length} bloques de foco</small></p></article>
       <article><span>▱</span><p>PÁGINAS LEÍDAS<b>{periodReading.reduce((sum, item) => sum + item.pages, 0)}</b><small>{periodReading.reduce((sum, item) => sum + item.minutes, 0)} min de lectura</small></p></article>
       <article><span>◇</span><p>CALORÍAS REGISTRADAS<b>{periodMeals.reduce((sum, item) => sum + item.calories, 0).toLocaleString("es-AR")}</b><small>estimación del período</small></p></article>
     </div>
