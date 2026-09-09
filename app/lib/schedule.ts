@@ -29,12 +29,28 @@ export type ScheduleInput = {
   tasks: Array<{ id: number; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null; projectId: number | null }>;
   events: Array<{ id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: string; notes: string }>;
   projectNames: Record<number, string>;
+  projectKinds?: Record<number, "study" | "work">;
 };
 
 export const DEFAULT_DAY_START = 7 * 60;
 export const DEFAULT_DAY_END = 23 * 60;
 /** Un bloque más corto que esto no se ofrece como hueco útil. */
 export const MIN_USEFUL_SLOT = 30;
+
+/**
+ * Clasifica una tarea sin proyecto para que un bloque del plan pueda impactar
+ * el área correcta al completarse. Las tareas con proyecto usan su tipo
+ * (estudio/trabajo); estas palabras clave cubren entrenamientos y hábitos que
+ * se suelen agendar como tarea rápida.
+ */
+export function inferTaskCategory(title: string) {
+  const normalized = title.toLocaleLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+  if (/(entren|gimnas|\\bgym\\b|correr|running|futbol|deporte|pesas|natacion|nadar|biciclet|ciclismo|yoga|pilates)/.test(normalized)) return "training";
+  if (/(desayun|almorz|cenar|comer|cocinar|nutric|aliment)/.test(normalized)) return "nutrition";
+  if (/(leer|lectura|libro|pagina)/.test(normalized)) return "reading";
+  if (/(dormir|sueno|descansar|acostar)/.test(normalized)) return "sleep";
+  return "task";
+}
 
 /** Bloques con horario asignado para una fecha, ordenados por hora de inicio. */
 export function dayBlocks(input: ScheduleInput, date: string): Block[] {
@@ -48,7 +64,7 @@ export function dayBlocks(input: ScheduleInput, date: string): Block[] {
     blocks.push({
       key: `t${task.id}`,
       kind: "task",
-      category: task.projectId ? "study" : "task",
+      category: task.projectId ? input.projectKinds?.[task.projectId] ?? "study" : inferTaskCategory(task.title),
       title: task.title,
       detail: task.projectId ? input.projectNames[task.projectId] ?? "" : "",
       start,
