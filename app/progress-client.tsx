@@ -11,7 +11,7 @@ import { TourOverlay, type TourStep } from "./tour-overlay";
 import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, dateInTimeZone, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
 import { quoteForDate } from "./lib/quotes";
 import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "./lib/streaks";
-import { dayBlocks, dayWindow, freeSlots, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
+import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
 import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, type DayRecord, type ScoreWeights } from "./lib/score";
@@ -1022,10 +1022,40 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Series por fecha. Alimentan las tendencias de Estadísticas y también el
   // Daily Score, para que el puntaje de hoy y el del histórico salgan del
   // mismo lugar y nunca se contradigan entre pantallas.
-  const trainingByDate = useMemo(() => sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1), [data.trainingLogs]);
+  // Un bloque de foco agendado queda contabilizado en su fecha cuando se
+  // completa la tarea. Como el origen es `completedAt`, desmarcarla lo quita
+  // automáticamente y nunca se duplican sesiones en la base.
+  const completedPlanTasks = useMemo(
+    () => data.tasks.filter((task) => Boolean(task.completedAt && task.dueDate && task.durationMinutes > 0)),
+    [data.tasks],
+  );
+  const completedTaskFocusByDate = useMemo(
+    () => sumByDate(
+      completedPlanTasks.filter((task) => task.projectId !== null && task.dueDate),
+      (task) => task.dueDate as string,
+      (task) => Math.max(0, task.durationMinutes || 0),
+    ),
+    [completedPlanTasks],
+  );
+  const completedTrainingTasksByDate = useMemo(
+    () => sumByDate(
+      completedPlanTasks.filter((task) => !task.projectId && task.dueDate && inferTaskCategory(task.title) === "training"),
+      (task) => task.dueDate as string,
+      () => 1,
+    ),
+    [completedPlanTasks],
+  );
+  const trainingByDate = useMemo(() => {
+    const totals = sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1);
+    for (const [date, count] of Object.entries(completedTrainingTasksByDate)) {
+      totals[date] = (totals[date] ?? 0) + count;
+    }
+    return totals;
+  }, [data.trainingLogs, completedTrainingTasksByDate]);
   // El entrenamiento del Daily Score se pondera por disciplina: una actividad
   // importante completa el factor, mientras que una secundaria suma la mitad.
-  // Varias secundarias pueden combinarse, pero el factor nunca supera 100.
+  // Un bloque agendado como "Entrenar", "Gimnasio" o similar completa el factor
+  // al marcarse y se deshace al volver a marcarlo como pendiente.
   const trainingScoreByDate = useMemo(() => {
     const weighted: Record<string, number> = {};
     const seen = new Set<string>();
@@ -1037,9 +1067,18 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       const contribution = discipline?.priority === "secondary" ? 0.5 : 1;
       weighted[log.trainingDate] = Math.min(1, (weighted[log.trainingDate] ?? 0) + contribution);
     }
+    for (const [date, count] of Object.entries(completedTrainingTasksByDate)) {
+      weighted[date] = Math.min(1, (weighted[date] ?? 0) + count);
+    }
     return weighted;
-  }, [data.trainingLogs, data.disciplines]);
-  const focusByDate = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
+  }, [data.trainingLogs, data.disciplines, completedTrainingTasksByDate]);
+  const focusByDate = useMemo(() => {
+    const totals = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
+    for (const [date, minutes] of Object.entries(completedTaskFocusByDate)) {
+      totals[date] = (totals[date] ?? 0) + minutes;
+    }
+    return totals;
+  }, [uniqueFocusSessions, completedTaskFocusByDate]);
   const readingByDate = sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages);
   const caloriesByDay = sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories);
   const mealCountByDate = sumByDate(data.mealHistory, (row) => row.mealDate, () => 1);
@@ -1067,12 +1106,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     hasOpenGoals: data.goals.some((goal) => goal.createdAt.slice(0, 10) <= date && (!goal.completedAt || goal.completedAt.slice(0, 10) >= date)),
   });
 
-  const trainingToday = data.trainingLogs.filter((log) => log.trainingDate === today);
-  const trainedToday = trainingToday.length > 0;
+  const trainedToday = (trainingByDate[today] ?? 0) > 0;
   const calories = data.meals.reduce((sum, meal) => sum + meal.calories, 0);
   const pagesToday = data.readingLogs.reduce((sum, log) => sum + log.pages, 0);
   const sleepToday = data.dailyCheckins.find((item) => item.entryDate === today)?.sleepMinutes ?? 0;
-  const focusToday = uniqueFocusSessions.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0);
+  const focusToday = focusByDate[today] ?? 0;
   const scoreWeights: ScoreWeights = priorityDraft;
   const factors = dayFactors(dayRecordFor(today));
   const score = scoreFrom(factors, scoreWeights);
@@ -1127,9 +1165,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     () => Object.fromEntries(data.focusProjects.map((project) => [project.id, project.name])) as Record<number, string>,
     [data.focusProjects],
   );
+  const projectKinds = useMemo(
+    () => Object.fromEntries(data.focusProjects.map((project) => [project.id, project.kind])) as Record<number, "study" | "work">,
+    [data.focusProjects],
+  );
   const scheduleInput = useMemo(
-    () => ({ tasks: data.tasks, events: data.events, projectNames }),
-    [data.tasks, data.events, projectNames],
+    () => ({ tasks: data.tasks, events: data.events, projectNames, projectKinds }),
+    [data.tasks, data.events, projectNames, projectKinds],
   );
   const todayBlocks = useMemo(() => dayBlocks(scheduleInput, today), [scheduleInput, today]);
   const todayUnscheduled = useMemo(() => unscheduledTasks(scheduleInput, today), [scheduleInput, today]);
@@ -1147,7 +1189,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // excepción: nadie entrena todos los días, así que su racha es semanal
   // (semanas seguidas cumpliendo la meta de entrenamientos por semana).
   const readingDates = useMemo(() => new Set(data.readingHistory.filter((item) => item.pages > 0).map((item) => item.logDate)), [data.readingHistory]);
-  const focusDates = useMemo(() => new Set(uniqueFocusSessions.map((item) => item.sessionDate)), [uniqueFocusSessions]);
+  const focusDates = useMemo(
+    () => new Set([
+      ...uniqueFocusSessions.map((item) => item.sessionDate),
+      ...Object.keys(completedTaskFocusByDate),
+    ]),
+    [uniqueFocusSessions, completedTaskFocusByDate],
+  );
   const goodSleepDates = useMemo(() => new Set(data.dailyCheckins.filter((item) => item.sleepMinutes >= 420).map((item) => item.entryDate)), [data.dailyCheckins]);
   const loggingDates = useMemo(() => new Set([...data.mealHistory.map((item) => item.mealDate), ...data.dailyCheckins.map((item) => item.entryDate)]), [data.mealHistory, data.dailyCheckins]);
   const streaks = useMemo(() => ({
@@ -1202,11 +1250,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // siendo un número, nunca el registro que lo produjo.
   // ---------------------------------------------------------------------------
   const autoSeries = useMemo(() => ({
-    training: sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1),
-    focus: sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes),
+    training: trainingByDate,
+    focus: focusByDate,
     reading: sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages),
     sleep: sumByDate(data.dailyCheckins.filter((row) => row.sleepMinutes >= 420), (row) => row.entryDate, () => 1),
-  }), [data.trainingLogs, uniqueFocusSessions, data.readingHistory, data.dailyCheckins]);
+  }), [trainingByDate, focusByDate, data.readingHistory, data.dailyCheckins]);
 
   const autoGoalValue = useCallback((goal: GroupGoal) => {
     if (goal.source === "manual") return 0;
@@ -1807,7 +1855,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const areaMetrics: Record<string, { icon: string; tone: string; label: string; value: string; unit: string; caption: string; area: string }> = {
     gymWeight: {
       icon: "↗", tone: "violet", label: "ENTRENAMIENTOS", area: "training",
-      value: String(data.trainingLogs.filter((item) => item.trainingDate >= week[0].iso).length), unit: "esta semana",
+      value: String(Object.entries(trainingByDate).filter(([date]) => date >= week[0].iso && date <= today).reduce((sum, [, count]) => sum + count, 0)), unit: "esta semana",
       caption: streaks.training.current ? pluralize(streaks.training.current, "semana seguida", "semanas seguidas") : `${data.disciplines.length} disciplinas`,
     },
     focusWeight: {
@@ -1976,13 +2024,18 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Las tareas sin proyecto se muestran en las dos vistas: no pertenecen a
   // ninguna de las dos y esconderlas en ambas sería peor.
   const tasksInTab = data.tasks.filter((task) => !task.projectId || focusProjectIds.has(task.projectId));
-  const focusTodayInTab = focusSessionsInTab.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0);
-  const focusWeekInTab = focusSessionsInTab.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0);
+  const taskFocusMinutesFor = (projectId: number, matches: (date: string) => boolean) => completedPlanTasks
+    .filter((task) => task.projectId === projectId && Boolean(task.dueDate) && matches(task.dueDate as string))
+    .reduce((sum, task) => sum + Math.max(0, task.durationMinutes || 0), 0);
+  const focusTodayInTab = focusSessionsInTab.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0)
+    + [...focusProjectIds].reduce((sum, projectId) => sum + taskFocusMinutesFor(projectId, (date) => date === today), 0);
+  const focusWeekInTab = focusSessionsInTab.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0)
+    + [...focusProjectIds].reduce((sum, projectId) => sum + taskFocusMinutesFor(projectId, (date) => date >= week[0].iso), 0);
 
   const focusPanel = <section className="module-stack">
       <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div>
         <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_focus_project")} /></button></form>
-        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
+        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0) + taskFocusMinutesFor(project.id, (date) => date === today); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0) + taskFocusMinutesFor(project.id, (date) => date >= week[0].iso); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
         {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = Math.round(focusHours * 60); if (minutes <= 0) return; void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
           <label>{focusTab === "study" ? "Materia" : "Proyecto"}<Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia" : "Proyecto"} options={focusProjectsInTab.map((project) => ({ value: String(project.id), label: project.name }))} /></label>
           <label>Horas de foco<div className="focus-duration-control"><input aria-label="Horas de foco" type="number" min="0" max="24" step="0.25" inputMode="decimal" value={focusHours || ""} onChange={(event) => setFocusHours(Number(event.target.value) || 0)} placeholder="Ej. 1,5" /><span>h</span></div></label>
