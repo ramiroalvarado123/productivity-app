@@ -1,40 +1,99 @@
-# Notificaciones push de AVORA
+# Notificaciones automáticas de AVORA
 
-## Estado
+## Qué estaba fallando
 
-1. Ejecutar \`supabase/notifications.sql\` una sola vez en Supabase > SQL Editor.
-2. Si ya habías ejecutado ese archivo, ejecutar también \`supabase/notifications-calendar-days.sql\` para agregar la anticipación del calendario.
-3. Abrir AVORA > perfil > Configuración > Notificaciones.
-3. En iPhone, abrir AVORA desde un ícono agregado a la pantalla de inicio antes de activar las notificaciones.
+El workflow de GitHub estaba definido cada 5 minutos, pero GitHub Actions retrasó ejecuciones varias horas. El envío manual funcionaba, aunque el programador no era puntual.
 
-## Variables privadas de Vercel
+Ahora el envío automático queda a cargo de **Supabase Cron + pg_net**, que llama al endpoint de Vercel cada 5 minutos. El endpoint convierte la hora a la zona horaria de cada usuario y evita duplicados.
 
-En el proyecto de Vercel, en **Settings > Environment Variables**, agregar para Preview y Production:
+El workflow de GitHub queda únicamente para pruebas manuales.
 
-- \`SUPABASE_SERVICE_ROLE_KEY\`: la clave \`service_role\` de Supabase > Settings > API. Es secreta y nunca debe ir al repositorio.
-- \`VAPID_PRIVATE_KEY\`: generar un par VAPID con \`npx web-push generate-vapid-keys\` y guardar sólo la clave privada.
-- \`CRON_SECRET\`: una cadena aleatoria larga.
-- \`NEXT_PUBLIC_APP_URL\`: la URL pública de AVORA que usará el aviso al abrirse. Para esta rama: \`https://productivity-app-git-feat-avora-ui-polish-ralvarado-3362.vercel.app\`.
-- \`VAPID_SUBJECT\` (opcional): por ejemplo \`mailto:notifications@avora.app\`.
+## Configuración inicial (una sola vez)
 
-La clave pública VAPID de esta versión ya está incluida en el cliente y el dispatcher. Si se reemplaza por otra, hay que configurar la misma pública en \`NEXT_PUBLIC_VAPID_PUBLIC_KEY\` y \`VAPID_PUBLIC_KEY\`.
+### 1. Variables de Vercel
 
-## Secrets de GitHub Actions
+En **Vercel > Settings > Environment Variables > Production** deben existir:
 
-En GitHub, **Settings > Secrets and variables > Actions**, agregar:
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_PUBLIC_KEY`
+- `VAPID_SUBJECT` (opcional, por ejemplo `mailto:notifications@avora.app`)
+- `CRON_SECRET`
+- `NEXT_PUBLIC_APP_URL=https://productivity-app-six-pearl.vercel.app`
 
-- \`AVORA_CRON_SECRET\`: exactamente el mismo valor de \`CRON_SECRET\`.
-- \`AVORA_APP_URL\`: exactamente la URL de Vercel de la aplicación.
+Nunca publiques los valores de las claves.
 
-El workflow \`.github/workflows/notifications.yml\` llama al dispatcher cada 5 minutos y la aplicación evita duplicados. GitHub ejecuta los workflows programados desde la rama predeterminada; mientras esta rama sea de prueba, usar **Actions > AVORA notifications > Run workflow** para probarlo manualmente o configurar estos cambios en la rama predeterminada antes de lanzar.
+### 2. Supabase Vault
 
-## Prueba
+En **Supabase > Vault**, crear estos dos secretos:
 
-1. Activar las notificaciones desde Configuración y aceptar el permiso del navegador.
-2. Crear un evento para mañana en Plan.
-3. Elegir el horario del calendario, cuántos días antes avisar y el horario del balance diario. Los resúmenes semanal, mensual y anual quedan fijos.
-4. Ejecutar manualmente el workflow o esperar la ventana configurada (por defecto, 18:00 para calendario).
-5. Revisar que llegue “Recuerda: mañana tienes …” o “Recuerda: en X días tienes …”.
-5. Verificar también el balance diario (21:00), el resumen semanal del domingo (20:00), el mensual del último día del mes y el anual del 31 de diciembre.
+- Nombre: `avora_app_url`
+  Valor: `https://productivity-app-six-pearl.vercel.app`
+- Nombre: `avora_cron_secret`
+  Valor: exactamente el mismo valor que `CRON_SECRET` en Vercel Production
 
-Si el permiso está activo pero no llega nada, revisar primero que existan las cinco variables de Vercel, que los dos secrets de GitHub coincidan y que la suscripción aparezca en la tabla \`push_subscriptions\`.
+Vault guarda los valores cifrados y el job los lee sin exponerlos en el repositorio.
+
+### 3. Activar las extensiones
+
+En **Supabase > Database > Extensions**, activar:
+
+- `pg_cron`
+- `pg_net`
+- `vault`
+
+Si están disponibles, el archivo SQL también intenta activarlas automáticamente.
+
+### 4. Crear el programador
+
+Abrir el archivo `supabase/notifications-cron.sql` del repositorio, copiarlo completo en **Supabase > SQL Editor** y ejecutar.
+
+La última consulta debe devolver una fila con:
+
+- `jobname = avora-notifications`
+- `schedule = */5 * * * *`
+- `active = true`
+
+No hace falta volver a agregar la app a la pantalla de inicio ni cambiar el enlace.
+
+## Comprobar ejecuciones
+
+En SQL Editor:
+
+```sql
+select jobid, jobname, schedule, active
+from cron.job
+where jobname = 'avora-notifications';
+
+select jobid, status, start_time, end_time, return_message
+from cron.job_run_details
+where jobid = (
+  select jobid from cron.job where jobname = 'avora-notifications'
+)
+order by start_time desc
+limit 10;
+
+select id, status_code, error_msg, created
+from net._http_response
+order by created desc
+limit 10;
+```
+
+- `status = succeeded` confirma que Supabase ejecutó el job.
+- `status_code = 200` confirma que Vercel procesó el envío.
+- Si `sent = 0`, el usuario no tiene una suscripción push válida o no hay ningún aviso vencido en esa ventana.
+
+## Prueba recomendada
+
+1. En AVORA, activar las notificaciones desde un dispositivo compatible.
+2. Confirmar que el permiso del navegador esté en “permitido”.
+3. Crear un evento para mañana y elegir “1 día antes”.
+4. En Notificaciones, elegir un horario de calendario unos minutos adelante y guardar.
+5. Esperar la siguiente ejecución de Supabase Cron (máximo unos minutos).
+6. Revisar la notificación y la tabla `net._http_response`.
+
+Para una prueba inmediata también se puede usar **GitHub > Actions > AVORA notifications > Run workflow**. Ese botón es solo manual; el funcionamiento diario depende de Supabase Cron.
+
+## Si ya existían tablas
+
+El archivo `supabase/notifications.sql` fue corregido y ahora es idempotente. Se puede ejecutar una vez sin borrar datos. Si la columna de anticipación del calendario todavía no existe, ejecutar también `supabase/notifications-calendar-days.sql`.
