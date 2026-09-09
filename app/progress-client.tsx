@@ -602,6 +602,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [agendaView, setAgendaView] = useState<"week" | "month">("week");
   const [weekAnchor, setWeekAnchor] = useState(today);
   const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string } | null>(null);
+  const [slotDuration, setSlotDuration] = useState("60");
+  const [slotCustomHours, setSlotCustomHours] = useState("");
   const [nowMinutes, setNowMinutes] = useState(argentinaMinutes);
   const [dietCalendarCursor, setDietCalendarCursor] = useState(today.slice(0, 7));
   const [bookTab, setBookTab] = useState<BookStatus>("reading");
@@ -622,6 +624,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [discoverSearched, setDiscoverSearched] = useState(false);
   const [aiDescription, setAiDescription] = useState("");
+  const [mealEntryDate, setMealEntryDate] = useState(today);
   const [mealPhoto, setMealPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [estimating, setEstimating] = useState(false);
@@ -714,6 +717,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const dietHydratedRef = useRef(false);
   const sleepHydratedRef = useRef(false);
   const previousTodayRef = useRef(today);
+
+  // Al cambiar el día, la carga rápida de comidas vuelve a apuntar a hoy.
+  useEffect(() => {
+    setMealEntryDate(today);
+  }, [today]);
 
   // El menú de cuenta se comporta como un desplegable real: cualquier toque
   // exterior o Escape lo cierra, sin interferir con sus acciones internas.
@@ -1598,7 +1606,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }
   async function saveEstimate() {
     if (!estimate) return;
-    const ok = await save({ action: "add_meal", date: today, name: estimate.mealName, detail: estimate.detail, calories: estimate.estimatedCalories, protein: estimate.protein, carbs: estimate.carbs, fat: estimate.fat });
+    const ok = await save({ action: "add_meal", date: mealEntryDate, name: estimate.mealName, detail: estimate.detail, calories: estimate.estimatedCalories, protein: estimate.protein, carbs: estimate.carbs, fat: estimate.fat });
     if (ok) {
       setEstimate(null);
       setAiDescription("");
@@ -2184,6 +2192,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const agendaEndHour = Math.ceil(Math.max(todayWindow.end, ...agendaAllBlocks.map((block) => block.end), 21 * 60) / 60);
   const agendaHours = Array.from({ length: Math.max(1, agendaEndHour - agendaStartHour) }, (_, index) => agendaStartHour + index);
   const shiftWeek = (amount: number) => setWeekAnchor((current) => dateMinus(current, -amount * 7));
+  const openSlotDraft = (date: string, startTime: string) => {
+    setSlotDraft({ date, startTime });
+    setSlotDuration("60");
+    setSlotCustomHours("");
+  };
 
   const weekAgendaPanel = <article className="panel week-agenda">
     <div className="agenda-head">
@@ -2207,7 +2220,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
               key={hour}
               className="agenda-slot"
               aria-label={`Agregar un bloque el ${formatDate(day.iso)} a las ${String(hour).padStart(2, "0")}:00`}
-              onClick={() => setSlotDraft({ date: day.iso, startTime: `${String(hour).padStart(2, "0")}:00` })}
+              onClick={() => openSlotDraft(day.iso, `${String(hour).padStart(2, "0")}:00`)}
             />)}
             {blocks.map((block) => {
               const top = (block.start - agendaStartHour * 60) / 60;
@@ -2234,20 +2247,41 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {slotDraft && <form className="slot-form" onSubmit={(event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
+      const customHours = parseDecimalInput(slotCustomHours);
+      const durationMinutes = slotDuration === "custom" ? Math.round(customHours * 60) : Number(slotDuration) || 60;
+      if (durationMinutes < 15 || durationMinutes > 1440) {
+        setError("Indicá una duración válida (entre 15 minutos y 24 horas).");
+        return;
+      }
       void save({
         action: "add_task",
         title: form.get("title"),
         projectId: form.get("projectId"),
         dueDate: slotDraft.date,
         startTime: slotDraft.startTime,
-        durationMinutes: Number(form.get("durationMinutes")) || 60,
+        durationMinutes,
       }).then((ok) => { if (ok) setSlotDraft(null); });
     }}>
       <p>Nuevo bloque · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
       <div className="slot-fields">
         <input name="title" required autoFocus placeholder="Ej. Estudiar capítulo 2" />
         <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />
-        <Dropdown name="durationMinutes" ariaLabel="Duración del bloque" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120, 180])} />
+        <Dropdown ariaLabel="Duración del bloque" value={slotDuration} onChange={setSlotDuration} options={[...durationOptions([30, 45, 60, 90, 120, 180]), { value: "custom", label: "Personalizado" }]} />
+        {slotDuration === "custom" && <label className="slot-custom-duration">Duración personalizada
+          <div className="slot-custom-duration-input">
+            <input
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]+([.,][0-9]+)?"
+              value={slotCustomHours}
+              onChange={(event) => setSlotCustomHours(event.target.value)}
+              placeholder="Ej. 4,5"
+              autoFocus
+              required
+            />
+            <span>h</span>
+          </div>
+        </label>}
       </div>
       <div className="slot-actions">
         <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
@@ -2436,7 +2470,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     return difference <= .1 ? "on-target" : difference <= .2 ? "near-target" : "off-target";
   };
 
-  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE HOY</p><h2>Comidas</h2></div></div>
+  const mealEntryMeals = data.mealHistory.filter((meal) => meal.mealDate === mealEntryDate);
+  const mealEntryCalories = mealEntryMeals.reduce((sum, meal) => sum + meal.calories, 0);
+  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE {mealEntryDate === today ? "HOY" : "AYER"}</p><h2>Comidas</h2></div><div className="meal-panel-actions"><span className="week-pill">{mealEntryDate === today ? "Hoy" : "Ayer"}</span><button type="button" className="meal-backfill-toggle" onClick={() => { setMealEntryDate((current) => current === today ? dateMinus(today, 1) : today); setEstimate(null); }}>{mealEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
     {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><Image src={photoPreview} alt="Comida a analizar" width={38} height={38} unoptimized /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
       {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" disabled={saving} onClick={() => void saveEstimate()}><SaveButtonContent label="Confirmar y guardar" phase={savePhase("add_meal")} /></button></div>}
     </div> : <LockedFeature
@@ -2444,13 +2480,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       note="Escribí qué comiste o sacale una foto al plato: la app estima calorías y macros."
       onOpen={openPro}
     ><div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea readOnly value="" placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><span className="photo-button">📷 Sacar o subir foto</span><span className="analyze-button">Analizar comida</span></div></div></LockedFeature>}
-    <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: today, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}>
+    <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: mealEntryDate, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}>
       <label>Comida<input name="name" required placeholder="Ej. Milanesa con puré" /></label>
       <label>Detalle<input name="detail" required placeholder="Porción mediana, con ensalada…" /></label>
       <label>Calorías<input name="calories" type="number" min="0" placeholder="kcal" /></label>
       <button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_meal")} /></button>
     </form>
-    <div className="meal-list">{data.meals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!data.meals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{calories.toLocaleString("es-AR")} kcal</b></div>
+    <div className="meal-list">{mealEntryMeals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!mealEntryMeals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas {mealEntryDate === today ? "hoy" : "ayer"}</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{mealEntryCalories.toLocaleString("es-AR")} kcal</b></div>
   </article>;
 
   const dietEstimate = estimateTargetCalories(dietForm);
