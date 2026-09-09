@@ -36,17 +36,14 @@ Vault guarda los valores cifrados y el job los lee sin exponerlos en el reposito
 
 ### 3. Activar las extensiones
 
-En **Supabase > Database > Extensions**, activar:
+- En **Supabase > Integrations > Cron**, activar el módulo `pg_cron`.
+- En **Supabase > Database > Extensions**, activar `pg_net` y `vault`.
 
-- `pg_cron`
-- `pg_net`
-- `vault`
-
-Si están disponibles, el archivo SQL también intenta activarlas automáticamente.
+Si alguna ya figura como habilitada, dejala así.
 
 ### 4. Crear el programador
 
-Abrir el archivo `supabase/notifications-cron.sql` del repositorio, copiarlo completo en **Supabase > SQL Editor** y ejecutar.
+Abrir el archivo [`supabase/notifications-cron.sql`](https://github.com/ramiroalvarado123/productivity-app/blob/main/supabase/notifications-cron.sql) del repositorio, copiarlo completo en **Supabase > SQL Editor** y ejecutar.
 
 La última consulta debe devolver una fila con:
 
