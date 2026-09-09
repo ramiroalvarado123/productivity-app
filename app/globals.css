@@ -491,6 +491,10 @@
 .slot-form > p { margin: 0; font-size:10px; font-weight:600; letter-spacing:.074em; text-transform: uppercase; color: #89918c; }
 .slot-fields { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; }
 .slot-fields input, .slot-fields select { border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px; font-size:13px; background: #fff; }
+.slot-custom-duration { display: grid; gap: 5px; font-size: 10px; font-weight: 600; color: #65706a; }
+.slot-custom-duration-input { display: flex; align-items: center; gap: 7px; }
+.slot-custom-duration-input input { flex: 1; min-width: 0; }
+.slot-custom-duration-input span { color: #7c8780; font-size: 12px; font-weight: 700; }
 .slot-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .slot-actions button { border: 1px solid var(--line); background: #fff; border-radius: 11px; padding: 10px 16px; font-size:12px; font-weight:600; cursor: pointer; }
 .slot-actions .primary-action { border-color: var(--green); background: var(--green); color: #fff; }
@@ -1949,4 +1953,13 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .training-quality{display:grid;gap:6px}
   .training-quality-options{width:100%}
   .training-quality-option{padding:8px 2px;font-size:8px}
+}
+
+/* Carga rápida de comidas de un día anterior */
+.meal-panel-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+.meal-backfill-toggle { border: 1px solid #d7e4da; border-radius: 9px; background: #f4f8f4; color: var(--green); padding: 7px 9px; font-size: 8px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.meal-backfill-toggle:hover { background: #e9f3eb; border-color: #a9c6b2; }
+@media (max-width: 760px) {
+  .meal-panel-actions { align-items: flex-end; flex-direction: column; gap: 5px; }
+  .meal-backfill-toggle { font-size: 8px; padding: 7px 8px; }
 }
