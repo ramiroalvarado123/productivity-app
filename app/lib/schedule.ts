@@ -44,8 +44,8 @@ export const MIN_USEFUL_SLOT = 30;
  * se suelen agendar como tarea rápida.
  */
 export function inferTaskCategory(title: string) {
-  const normalized = title.toLocaleLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
-  if (/(entren|gimnas|\\bgym\\b|correr|running|futbol|deporte|pesas|natacion|nadar|biciclet|ciclismo|yoga|pilates)/.test(normalized)) return "training";
+  const normalized = title.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/(entren|gimnas|\bgym\b|correr|running|futbol|deporte|pesas|natacion|nadar|biciclet|ciclismo|yoga|pilates)/.test(normalized)) return "training";
   if (/(desayun|almorz|cenar|comer|cocinar|nutric|aliment)/.test(normalized)) return "nutrition";
   if (/(leer|lectura|libro|pagina)/.test(normalized)) return "reading";
   if (/(dormir|sueno|descansar|acostar)/.test(normalized)) return "sleep";
