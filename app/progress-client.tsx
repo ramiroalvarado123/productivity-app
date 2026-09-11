@@ -826,80 +826,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       setLoading(false);
     }
   }, [today, week, monthKey]);
-  // En celulares, tirar hacia abajo desde el inicio actualiza todo el espacio de trabajo
-  // sin sacar al usuario de la sección en la que estaba.
-  useEffect(() => {
-    if (typeof window === "undefined" || !("ontouchstart" in window)) return;
-    const threshold = 72;
-    const pointerIsTouch = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
-    if (!pointerIsTouch) return;
-    const isAtTop = () => {
-      const scrollElement = document.scrollingElement;
-      return (scrollElement?.scrollTop ?? window.scrollY) <= 0;
-    };
-    const isBlockedTarget = (target: EventTarget | null) => (
-      target instanceof Element &&
-      Boolean(target.closest("input, textarea, select, button, [contenteditable='true'], [role='dialog']"))
-    );
-    const resetPull = () => {
-      pullTrackingRef.current = false;
-      pullStartYRef.current = null;
-      pullStartXRef.current = null;
-      pullDistanceRef.current = 0;
-      setPullDistance(0);
-    };
-    const handleTouchStart = (event: TouchEvent) => {
-      if (pullRefreshingRef.current || event.touches.length !== 1 || !isAtTop() || isBlockedTarget(event.target)) {
-        resetPull();
-        return;
-      }
-      const touch = event.touches[0];
-      pullStartYRef.current = touch?.clientY ?? null;
-      pullStartXRef.current = touch?.clientX ?? null;
-      pullTrackingRef.current = pullStartYRef.current !== null && pullStartXRef.current !== null;
-    };
-    const handleTouchMove = (event: TouchEvent) => {
-      if (!pullTrackingRef.current || pullRefreshingRef.current) return;
-      if (event.touches.length !== 1) {
-        resetPull();
-        return;
-      }
-      const touch = event.touches[0];
-      if (!touch || pullStartYRef.current === null || pullStartXRef.current === null) return;
-      const deltaY = touch.clientY - pullStartYRef.current;
-      const deltaX = touch.clientX - pullStartXRef.current;
-      if (deltaY <= 0 || !isAtTop() || Math.abs(deltaX) > Math.abs(deltaY)) {
-        resetPull();
-        return;
-      }
-      pullDistanceRef.current = Math.min(threshold * 1.35, deltaY);
-      setPullDistance(pullDistanceRef.current);
-      if (event.cancelable && deltaY > 4) event.preventDefault();
-    };
-    const handleTouchEnd = () => {
-      const shouldRefresh = pullTrackingRef.current && pullDistanceRef.current >= threshold;
-      resetPull();
-      if (!shouldRefresh || pullRefreshingRef.current) return;
-      pullRefreshingRef.current = true;
-      setPullRefreshing(true);
-      void refreshAll().finally(() => {
-        pullRefreshingRef.current = false;
-        setPullRefreshing(false);
-      });
-    };
-    const handleTouchCancel = () => resetPull();
-
-    window.addEventListener("touchstart", handleTouchStart, { passive: true });
-    window.addEventListener("touchmove", handleTouchMove, { passive: false });
-    window.addEventListener("touchend", handleTouchEnd, { passive: true });
-    window.addEventListener("touchcancel", handleTouchCancel, { passive: true });
-    return () => {
-      window.removeEventListener("touchstart", handleTouchStart);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", handleTouchEnd);
-      window.removeEventListener("touchcancel", handleTouchCancel);
-    };
-  }, [refreshAll]);
   // Initial synchronization with the signed-in user's persisted workspace.
   useEffect(() => {
     if (!initialUser.onboardingCompleted) return;
@@ -1042,6 +968,80 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     await Promise.allSettled([loadData(), loadSocial()]);
   }, [loadData, loadSocial]);
 
+  // En celulares, tirar hacia abajo desde el inicio actualiza todo el espacio de trabajo
+  // sin sacar al usuario de la sección en la que estaba.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("ontouchstart" in window)) return;
+    const threshold = 72;
+    const pointerIsTouch = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+    if (!pointerIsTouch) return;
+    const isAtTop = () => {
+      const scrollElement = document.scrollingElement;
+      return (scrollElement?.scrollTop ?? window.scrollY) <= 0;
+    };
+    const isBlockedTarget = (target: EventTarget | null) => (
+      target instanceof Element &&
+      Boolean(target.closest("input, textarea, select, button, [contenteditable='true'], [role='dialog']"))
+    );
+    const resetPull = () => {
+      pullTrackingRef.current = false;
+      pullStartYRef.current = null;
+      pullStartXRef.current = null;
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      if (pullRefreshingRef.current || event.touches.length !== 1 || !isAtTop() || isBlockedTarget(event.target)) {
+        resetPull();
+        return;
+      }
+      const touch = event.touches[0];
+      pullStartYRef.current = touch?.clientY ?? null;
+      pullStartXRef.current = touch?.clientX ?? null;
+      pullTrackingRef.current = pullStartYRef.current !== null && pullStartXRef.current !== null;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!pullTrackingRef.current || pullRefreshingRef.current) return;
+      if (event.touches.length !== 1) {
+        resetPull();
+        return;
+      }
+      const touch = event.touches[0];
+      if (!touch || pullStartYRef.current === null || pullStartXRef.current === null) return;
+      const deltaY = touch.clientY - pullStartYRef.current;
+      const deltaX = touch.clientX - pullStartXRef.current;
+      if (deltaY <= 0 || !isAtTop() || Math.abs(deltaX) > Math.abs(deltaY)) {
+        resetPull();
+        return;
+      }
+      pullDistanceRef.current = Math.min(threshold * 1.35, deltaY);
+      setPullDistance(pullDistanceRef.current);
+      if (event.cancelable && deltaY > 4) event.preventDefault();
+    };
+    const handleTouchEnd = () => {
+      const shouldRefresh = pullTrackingRef.current && pullDistanceRef.current >= threshold;
+      resetPull();
+      if (!shouldRefresh || pullRefreshingRef.current) return;
+      pullRefreshingRef.current = true;
+      setPullRefreshing(true);
+      void refreshAll().finally(() => {
+        pullRefreshingRef.current = false;
+        setPullRefreshing(false);
+      });
+    };
+    const handleTouchCancel = () => resetPull();
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", handleTouchCancel, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchCancel);
+    };
+  }, [refreshAll]);
   const sendSocial = useCallback(async (payload: Record<string, unknown>, feedbackKey = String(payload.action ?? "social")) => {
     beginSaveFeedback(feedbackKey);
     setSaving(true);
