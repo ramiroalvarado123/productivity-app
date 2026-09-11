@@ -121,7 +121,7 @@ const navItems: NavItem[] = [
   { id: "focus", icon: focusIcon, label: "Foco", mobile: "Foco" },
   { id: "sleep", icon: "☾", label: "Sueño", mobile: "Sueño" },
   { id: "plan", icon: "◎", label: "Plan", mobile: "Plan" },
-  { id: "stats", icon: statsIcon, label: "Estadísticas", mobile: "Datos" },
+  { id: "stats", icon: statsIcon, label: "Progreso", mobile: "Progreso" },
 ];
 const mobileNavItems: NavItem[] = [
   navItems.find((item) => item.id === "physical")!,
@@ -152,17 +152,17 @@ const FEEDBACK_TYPES: Array<[FeedbackType, string, string, string]> = [
   ["bug", "!", "Encontré un problema", "Algo no funciona como debería."],
   ["dislike", "−", "Hay algo que no me gusta", "Funciona, pero lo cambiarías."],
 ];
-const FEEDBACK_SECTIONS = ["Inicio", "Daily Score", "Físico", "Foco", "Sueño", "Plan", "Estadísticas", "Amigos", "Cuenta / configuración", "Otra"];
+const FEEDBACK_SECTIONS = ["Inicio", "Daily Score", "Físico", "Foco", "Sueño", "Plan", "Progreso", "Amigos", "Cuenta / configuración", "Otra"];
 const MAX_VOICE_UPLOAD_BYTES = 900 * 1024;
 const VOICE_AUTO_STOP_BYTES = 800 * 1024;
 // Safari puede rechazar rutas relativas dentro de previews embebidos. Construir
 // la URL desde el origen evita el DOMException "expected pattern" antes de que
 // la solicitud llegue al servidor.
-const categoryLabels: Record<GoalCategory, string> = { general: "Personal", gym: "Gimnasio", training: "Entrenamiento", nutrition: "Alimentación", reading: "Lectura", study: "Estudio", work: "Trabajo", sleep: "Sueño", score: "Daily Score", calendar: "Calendario", stats: "Estadísticas", goals: "Objetivos" };
+const categoryLabels: Record<GoalCategory, string> = { general: "Personal", gym: "Gimnasio", training: "Entrenamiento", nutrition: "Alimentación", reading: "Lectura", study: "Estudio", work: "Trabajo", sleep: "Sueño", score: "Daily Score", calendar: "Calendario", stats: "Progreso", goals: "Objetivos" };
 const goalAreaOptions: Array<{ value: GoalCategory; label: string }> = [
   { value: "general", label: "Personal / Inicio" }, { value: "score", label: "Daily Score" }, { value: "training", label: "Entrenamiento" },
   { value: "nutrition", label: "Alimentación" }, { value: "sleep", label: "Sueño" }, { value: "study", label: "Estudio" },
-  { value: "work", label: "Trabajo" }, { value: "calendar", label: "Calendario / planificación" }, { value: "stats", label: "Estadísticas" },
+  { value: "work", label: "Trabajo" }, { value: "calendar", label: "Calendario / planificación" }, { value: "stats", label: "Progreso" },
   { value: "reading", label: "Biblioteca / lectura" }, { value: "goals", label: "Objetivos" },
 ];
 const periodLabels: Record<GoalPeriod, string> = { weekly: "Esta semana", monthly: "Este mes", annual: "Este año", custom: "Plazo personal" };
@@ -179,7 +179,7 @@ const kindLabels: Record<Discipline["kind"], string> = { strength: "Fuerza / gim
 // Recorrido guiado de la primera vez: sólo elementos de Inicio, para no tener
 // que navegar entre secciones mientras el tour está abierto.
 const TOUR_STEPS: TourStep[] = [
-  { selector: "[data-tour='nav']", title: "Tus áreas, siempre a mano", body: "Entrenamiento, Alimentación, Sueño, Estudio o Trabajo, Plan, Estadísticas y Amigos. Todo vive acá." },
+  { selector: "[data-tour='nav']", title: "Tus áreas, siempre a mano", body: "Entrenamiento, Alimentación, Sueño, Estudio o Trabajo, Plan, Progreso y Amigos. Todo vive acá." },
   { selector: "[data-tour='score']", title: "Tu Daily Score", body: "Un puntaje diario armado con lo que registraste y el peso que le diste a cada prioridad." },
   { selector: "[data-tour='metrics']", title: "Lo que más te importa", body: "Estas tarjetas cambian según tus prioridades: acá vas a ver tu avance del día." },
   { selector: "[data-tour='voice']", title: "Cerrá tu día hablando", body: "Contá qué hiciste en 60 segundos en vez de cargar cada cosa a mano." },
@@ -550,6 +550,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [loading, setLoading] = useState(initialUser.onboardingCompleted);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [saving, setSaving] = useState(false);
   // Estado del gesto móvil "tirar para actualizar". Los refs mantienen el
   // seguimiento del dedo sin recrear listeners en cada movimiento.
@@ -825,11 +826,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       setLoading(false);
     }
   }, [today, week, monthKey]);
-  // En celulares, tirar hacia abajo desde el inicio actualiza los datos
+  // En celulares, tirar hacia abajo desde el inicio actualiza todo el espacio de trabajo
   // sin sacar al usuario de la sección en la que estaba.
   useEffect(() => {
     if (typeof window === "undefined" || !("ontouchstart" in window)) return;
     const threshold = 72;
+    const pointerIsTouch = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+    if (!pointerIsTouch) return;
     const isAtTop = () => {
       const scrollElement = document.scrollingElement;
       return (scrollElement?.scrollTop ?? window.scrollY) <= 0;
@@ -869,18 +872,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         resetPull();
         return;
       }
-      const nextDistance = Math.min(threshold * 1.35, deltaY * 0.55);
-      pullDistanceRef.current = nextDistance;
-      setPullDistance(nextDistance);
-      if (deltaY > 6) event.preventDefault();
+      pullDistanceRef.current = Math.min(threshold * 1.35, deltaY);
+      setPullDistance(pullDistanceRef.current);
+      if (event.cancelable && deltaY > 4) event.preventDefault();
     };
-    const handleTouchEnd = (event: TouchEvent) => {
-      const shouldRefresh = event.touches.length === 0 && pullTrackingRef.current && pullDistanceRef.current >= threshold;
+    const handleTouchEnd = () => {
+      const shouldRefresh = pullTrackingRef.current && pullDistanceRef.current >= threshold;
       resetPull();
       if (!shouldRefresh || pullRefreshingRef.current) return;
       pullRefreshingRef.current = true;
       setPullRefreshing(true);
-      void loadData().finally(() => {
+      void refreshAll().finally(() => {
         pullRefreshingRef.current = false;
         setPullRefreshing(false);
       });
@@ -897,7 +899,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       window.removeEventListener("touchend", handleTouchEnd);
       window.removeEventListener("touchcancel", handleTouchCancel);
     };
-  }, [loadData]);
+  }, [refreshAll]);
   // Initial synchronization with the signed-in user's persisted workspace.
   useEffect(() => {
     if (!initialUser.onboardingCompleted) return;
@@ -1035,6 +1037,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     }
   }, []);
 
+  const refreshAll = useCallback(async () => {
+    setRefreshVersion((version) => version + 1);
+    await Promise.allSettled([loadData(), loadSocial()]);
+  }, [loadData, loadSocial]);
+
   const sendSocial = useCallback(async (payload: Record<string, unknown>, feedbackKey = String(payload.action ?? "social")) => {
     beginSaveFeedback(feedbackKey);
     setSaving(true);
@@ -1062,7 +1069,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     [data.focusSessions],
   );
 
-  // Series por fecha. Alimentan las tendencias de Estadísticas y también el
+  // Series por fecha. Alimentan las tendencias de Progreso y también el
   // Daily Score, para que el puntaje de hoy y el del histórico salgan del
   // mismo lugar y nunca se contradigan entre pantallas.
   // Un bloque de foco agendado queda contabilizado en su fecha cuando se
@@ -2732,7 +2739,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     ["focusWeight", "Estudio / Trabajo", "⌁", "Trabajo profundo en materias y proyectos"],
     ["readingWeight", "Lectura", "▱", "Leer y avanzar en tus libros"],
     ["goalsWeight", "Objetivos y organización", "◎", "Completar metas y próximos pasos"],
-  ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Estadísticas reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" disabled={saving} onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}><SaveButtonContent label="Guardar prioridades" phase={savePhase("set_priorities")} /></button></article>;
+  ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Progreso reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" disabled={saving} onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}><SaveButtonContent label="Guardar prioridades" phase={savePhase("set_priorities")} /></button></article>;
   const goalTargetDate = goalPeriod === "custom" ? customDate : goalDeadline(today, goalPeriod);
   const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalTargetDate }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<Dropdown name="category" ariaLabel="Área del objetivo" options={goalAreaOptions.map((area) => ({ value: area.value, label: area.label }))} /></label><label>Plazo<Dropdown ariaLabel="Plazo del objetivo" value={goalPeriod} onChange={(value) => setGoalPeriod(value as GoalPeriod)} options={[{ value: "weekly", label: "Esta semana" }, { value: "monthly", label: "Este mes" }, { value: "annual", label: "Este año" }, { value: "custom", label: "Fecha exacta" }]} /></label>{goalPeriod === "custom" && <label>Fecha exacta<DatePicker ariaLabel="Fecha exacta del objetivo" value={customDate} onChange={setCustomDate} min={today} /></label>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalTargetDate)}</b></p></div><button className="primary-action" disabled={saving}><SaveButtonContent label="Crear objetivo" phase={savePhase("add_goal")} /></button></form></article>
     <article className="panel goal-list-panel"><div className="panel-heading"><div><p>TU CAMINO</p><h2>Objetivos guardados</h2></div><span className="week-pill">{activeGoals.length} activos</span></div><div className="goal-list">{data.goals.map((goal) => <div className={"goal-row " + (goal.completedAt ? "completed" : "")} key={goal.id}><button className="goal-check" onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: !goal.completedAt })}>{goal.completedAt ? "✓" : ""}</button><div><div className="goal-meta"><span className={"category-chip " + goal.category}>{categoryLabels[goal.category]}</span><span>{periodLabels[goal.period]}</span></div><b>{goal.title}</b><small>{goal.completedAt ? "Objetivo cumplido" : formatDate(goal.targetDate) + " · " + countdownLabel(Math.max(0, dayDistance(today, goal.targetDate)))}</small></div><button className="goal-delete" onClick={() => void save({ action: "delete_goal", id: goal.id })}>×</button></div>)}{!data.goals.length && <div className="inline-empty tall"><span>◎</span><p><b>Todavía no hay objetivos</b><small>Empezá con uno concreto.</small></p></div>}</div></article></div></section>;
@@ -3345,7 +3352,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     focus: [focusTab === "study" ? "Estudio" : "Trabajo", focusTab === "study" ? "Materias, foco, tareas y lecturas" : "Proyectos, foco profundo y entregas"],
     sleep: ["Sueño", "Horas de descanso y regularidad"],
     plan: ["Plan", "Lo que querés lograr y cuándo entra en el calendario"],
-    stats: ["Estadísticas", "Rachas, tendencias y comparaciones"],
+    stats: ["Progreso", "Rachas, tendencias y comparaciones"],
     friends: ["Amigos", "Daily Scores, objetivos compartidos y compromiso mutuo"],
     pro: [isPro ? "AVORA Pro" : "Pasate a Pro", isPro ? "Tu suscripción y todo lo que incluye" : "Lo que cambia cuando la app piensa con vos"],
   };
@@ -3470,7 +3477,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
       {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
-        <NotificationSettings isPro={data.profile.isPro} compact />
+        <NotificationSettings key={refreshVersion} isPro={data.profile.isPro} compact />
         {quotePanel}
         <section className={"hero-row " + (loading ? "is-loading" : "")}>
           <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
@@ -3507,7 +3514,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
           ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
           ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
-        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Inicio y Estadísticas muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
+        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Inicio y Progreso muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
         {priorityEditor}
       </section>}
       {section === "physical" && <>
