@@ -1,4 +1,4 @@
-/* AVORA push service worker v2026-09-11-stats. Mantenerlo en la raíz pública para actualizar la PWA sin reinstalarla. */
+/* AVORA push service worker v2026-09-11-auto-update. Mantenerlo en la raíz pública para actualizar la PWA sin reinstalarla. */
 self.addEventListener("install", () => {
   // La nueva versión queda activa sin esperar a que se cierren todas las pestañas.
   self.skipWaiting();
