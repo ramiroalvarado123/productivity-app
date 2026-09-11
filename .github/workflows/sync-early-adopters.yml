@@ -1,0 +1,31 @@
+name: Sync early adopters
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-early-adopters
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar las ramas
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feat/avora-ui-polish
+
+      - name: Sincronizar con main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main feat/avora-ui-polish
+          git merge origin/main --no-edit
+          git push origin HEAD:feat/avora-ui-polish
