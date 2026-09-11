@@ -2580,16 +2580,20 @@ export default function ProgressClient({ initialUser, initialError = "", pending
               >
                 <title>{point.label + " · " + point.value + "/100"}</title>
               </circle>
+              {selectedScorePointKey === point.key && <g
+                className="score-point-tooltip"
+                transform={"translate(" + Math.max(38, Math.min(scoreChartWidth - 38, point.x)) + "," + Math.max(24, point.y - 18) + ")"}
+              >
+                <rect x="-38" y="-21" width="76" height="19" rx="6" />
+                <text x="0" y="-8" textAnchor="middle">{point.value + (statsPeriod === "weekly" ? "/100" : " prom.")}</text>
+              </g>}
             </g>)}
           </svg>
 
           <div className="score-point-labels" style={{ "--score-points": scoreChartPoints.length } as CSSProperties} aria-label="Períodos del Daily Score">
             {scoreChartPoints.map((point) => <small key={point.key}>{point.label}</small>)}
           </div>
-          {selectedScorePoint && <div className="score-point-callout" role="status">
-            <b>{selectedScorePoint.label}</b>
-            <span>{statsPeriod === "weekly" ? "Daily Score: " : "Promedio: "}{selectedScorePoint.value}/100</span>
-          </div>}
+
         </div>
       </div>
       <p className="formula-note">Cada barra se reconstruye con lo que registraste ese día y las prioridades que tenés hoy. Los días sin registros valen 0.</p>
