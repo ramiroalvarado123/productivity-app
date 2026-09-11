@@ -2498,6 +2498,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     x: scoreTrendPoints.length > 1 ? (index / (scoreTrendPoints.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
     y: scoreYFor(point.value),
   }));
+  const selectedScorePoint = scoreTrendPoints.find((point) => point.key === selectedScorePointKey) ?? null;
   const scoreLinePath = scoreChartPoints.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(1) + "," + point.y.toFixed(1)).join(" ");
   const scoreAreaPath = scoreChartPoints.length
     ? scoreLinePath + " L" + scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1) + "," + scoreChartHeight + " L" + scoreChartPoints[0].x.toFixed(1) + "," + scoreChartHeight + " Z"
