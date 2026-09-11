@@ -55,7 +55,7 @@ async function responseJson(response: Response) {
   return response.json().catch(() => ({}));
 }
 
-export function NotificationSettings({ isPro }: { isPro: boolean }) {
+export function NotificationSettings({ isPro, compact = false }: { isPro: boolean; compact?: boolean }) {
   const [preferences, setPreferences] = useState(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -178,6 +178,14 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
     } finally { setSaving(false); }
   }
 
+  if (compact) {
+    if (loading || preferences.pushEnabled) return null;
+    return <div className="notification-activation-banner" role="status">
+      <div><span className="notification-activation-icon" aria-hidden="true">♧</span><p><b>Activá las notificaciones</b><small>Recibí avisos de tus actividades y el cierre del día.</small></p></div>
+      <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : "Activar ahora"}</button>
+      {error && <small className="notification-activation-error">{error}</small>}
+    </div>;
+  }
   if (loading) return <div className="settings-subpanel"><p className="settings-copy">Cargando preferencias…</p></div>;
 
   return <form className="settings-subpanel notification-settings-panel" onSubmit={saveForm}>

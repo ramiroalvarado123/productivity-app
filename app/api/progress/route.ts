@@ -115,11 +115,20 @@ export async function GET(request: Request) {
       selectRows<ProgressRow>("calendar_events", { where: { userEmail: email }, order: [["eventDate", "asc"], ["eventTime", "asc"]] }),
     ]);
     const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, goals, dailyCheckins, focusProjects, focusSessions, tasks, events] = result;
+    const completedBookIds = books
+      .filter((book) => String(book.status) === "reading" && Number(book.totalPages) > 0 && Number(book.currentPage) >= Number(book.totalPages))
+      .map((book) => book.id);
+    if (completedBookIds.length) {
+      await Promise.all(completedBookIds.map((id) => updateRows("books", { id, userEmail: email }, { status: "read" })));
+    }
+    const visibleBooks = books.map((book) =>
+      completedBookIds.includes(book.id) ? { ...book, status: "read" } : book
+    );
     const strength = disciplines.find((row) => row.kind === "strength");
     return Response.json({
       profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? stringArray(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "" },
       gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
-      disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books, readingLogs, readingHistory, notes,
+      disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books: visibleBooks, readingLogs, readingHistory, notes,
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
       goals, dailyCheckin: dailyCheckins.find((row) => row.entryDate === date) ?? null, dailyCheckins, focusProjects, focusSessions, tasks, events,
     });
@@ -230,7 +239,18 @@ export async function POST(request: Request) {
       const title = String(p.title ?? "").trim().slice(0, 180), projectId = Number(p.projectId) || null, dueDate = String(p.dueDate ?? ""), startTime = cleanTime(p.startTime), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))); if (!title || (dueDate && !DATE.test(dueDate))) return fail("Completá una tarea y fecha válida."); if (startTime === null) return fail("La hora no es válida."); if (startTime && !dueDate) return fail("Para darle un horario, la tarea necesita una fecha."); if (projectId && !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Proyecto no encontrado.", 404); await insertRows("tasks", { userEmail: email, projectId, title, dueDate: dueDate || null, startTime, durationMinutes: startTime ? duration || 60 : duration }); return ok();
     }
     if (action === "schedule_task") { const id = Number(p.id), startTime = cleanTime(p.startTime), dueDate = String(p.dueDate ?? ""), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))), row = (await owned("tasks", email, { id }))[0]; if (!row) return fail("Tarea no encontrada.", 404); if (startTime === null || (dueDate && !DATE.test(dueDate))) return fail("Fecha u hora inválida."); const nextDate = dueDate || row.dueDate; if (startTime && !nextDate) return fail("La tarea necesita una fecha."); await updateRows("tasks", { id, userEmail: email }, { startTime, dueDate: nextDate, durationMinutes: startTime ? duration || 60 : 0 }); return ok(); }
-    if (action === "toggle_task") { await updateRows("tasks", { id: Number(p.id), userEmail: email }, { completedAt: p.completed ? now() : null }); return ok(); }
+    if (action === "toggle_task") {
+      const id = Number(p.id);
+      if (!(await owned("tasks", email, { id }))[0]) return fail("Tarea no encontrada.", 404);
+      await updateRows("tasks", { id, userEmail: email }, { completedAt: p.completed ? now() : null });
+      return ok();
+    }
+    if (action === "toggle_event") {
+      const id = Number(p.id);
+      if (!(await owned("calendar_events", email, { id }))[0]) return fail("Evento no encontrado.", 404);
+      await updateRows("calendar_events", { id, userEmail: email }, { completedAt: p.completed ? now() : null });
+      return ok();
+    }
     if (action === "delete_task") { await deleteRows("tasks", { id: Number(p.id), userEmail: email }); return ok(); }
     if (action === "add_event") { const title = String(p.title ?? "").trim().slice(0, 180), eventDate = String(p.eventDate ?? ""), eventTime = cleanTime(p.eventTime), category = String(p.category ?? "personal"); if (!title || !DATE.test(eventDate) || eventTime === null || !["personal", "study", "work", "training", "health", "other"].includes(category)) return fail("Completá un evento válido."); await insertRows("calendar_events", { userEmail: email, title, eventDate, eventTime, durationMinutes: Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60))), category, notes: String(p.notes ?? "").slice(0, 1500) }); return ok(); }
     if (action === "delete_event") { await deleteRows("calendar_events", { id: Number(p.id), userEmail: email }); return ok(); }
@@ -241,14 +261,110 @@ export async function POST(request: Request) {
     if (action === "set_diet_target") { const age = Math.round(Number(p.age) || 0), heightCm = Math.round(Number(p.heightCm) || 0), currentWeightDeciKg = Math.round((Number(p.currentWeightKg) || 0) * 10), targetWeightDeciKg = Math.round((Number(p.targetWeightKg) || 0) * 10), targetCalories = Math.round(Number(p.targetCalories) || 0); if (age < 18 || age > 100 || heightCm < 120 || heightCm > 230 || currentWeightDeciKg < 350 || targetWeightDeciKg < 350 || targetCalories < 1000 || targetCalories > 6000) return fail("Revisá los datos."); const existing = (await owned("diet_plans", email))[0]; await upsert("diet_plans", { userEmail: email, age, sex: String(p.sex ?? "unspecified"), heightCm, currentWeightDeciKg, targetWeightDeciKg, activityLevel: String(p.activityLevel ?? "light"), goalPace: String(p.goalPace ?? "gentle"), preferences: String(existing?.preferences ?? ""), details: String(existing?.details ?? ""), targetCalories, planJson: String(existing?.planJson ?? "") }, ["userEmail"]); return ok(); }
     if (action === "add_book") { const title = String(p.title ?? "").trim(); if (!title) return fail("Ingresá el título del libro."); const status = ["reading", "read", "wishlist"].includes(String(p.status)) ? String(p.status) : "reading", totalPages = Math.max(0, Math.min(20000, Number(p.totalPages) || 0)); await insertRows("books", { userEmail: email, title, author: String(p.author ?? "").trim(), status, totalPages, currentPage: status === "read" ? totalPages : 0, coverUrl: String(p.coverUrl ?? "").slice(0, 1000), externalKey: String(p.externalKey ?? "").slice(0, 300) }); return ok(); }
     if (action === "delete_book") { const bookId = Number(p.bookId); if (!(await owned("books", email, { id: bookId }))[0]) return fail("Libro no encontrado.", 404); await deleteRows("reading_logs", { bookId, userEmail: email }); await deleteRows("book_notes", { bookId, userEmail: email }); await deleteRows("books", { id: bookId, userEmail: email }); return ok(); }
-    if (action === "set_pages") { const bookId = Number(p.bookId), date = String(p.date ?? ""), pages = Math.max(0, Math.min(5000, Number(p.pages) || 0)), book = (await owned("books", email, { id: bookId }))[0]; if (!book || !DATE.test(date)) return fail("Datos de lectura inválidos."); const previous = (await owned("reading_logs", email, { bookId, logDate: date }))[0], minutes = p.minutes === undefined ? previous?.minutes ?? 0 : Math.max(0, Math.min(1440, Number(p.minutes) || 0)), delta = pages - (previous?.pages ?? 0), currentPage = Math.max(0, book.totalPages ? Math.min(book.totalPages, book.currentPage + delta) : book.currentPage + delta); await upsert("reading_logs", { userEmail: email, bookId, logDate: date, pages, minutes }, ["userEmail", "bookId", "logDate"]); await updateRows("books", { id: bookId, userEmail: email }, { currentPage }); return ok(); }
+    if (action === "set_pages") {
+      const bookId = Number(p.bookId), date = String(p.date ?? ""), pages = Math.max(0, Math.min(5000, Number(p.pages) || 0)), book = (await owned("books", email, { id: bookId }))[0];
+      if (!book || !DATE.test(date)) return fail("Datos de lectura inválidos.");
+      const previous = (await owned("reading_logs", email, { bookId, logDate: date }))[0];
+      const minutes = p.minutes === undefined ? previous?.minutes ?? 0 : Math.max(0, Math.min(1440, Number(p.minutes) || 0));
+      const delta = pages - (previous?.pages ?? 0);
+      const currentPage = Math.max(0, book.totalPages ? Math.min(book.totalPages, book.currentPage + delta) : book.currentPage + delta);
+      const completed = Number(book.totalPages) > 0 && currentPage >= Number(book.totalPages);
+      const nextStatus = completed ? "read" : String(book.status) === "read" ? "reading" : book.status;
+      await upsert("reading_logs", { userEmail: email, bookId, logDate: date, pages, minutes }, ["userEmail", "bookId", "logDate"]);
+      await updateRows("books", { id: bookId, userEmail: email }, { currentPage, status: nextStatus });
+      return ok({ completed });
+    }
     if (action === "add_note") { const bookId = Number(p.bookId), content = String(p.content ?? "").trim(); if (!content || !(await owned("books", email, { id: bookId }))[0]) return fail("Elegí un libro y escribí una nota."); await insertRows("book_notes", { userEmail: email, bookId, content }); return ok(); }
     if (action === "update_book_status") { const status = String(p.status); if (!["reading", "read", "wishlist"].includes(status)) return fail("Estado inválido."); await updateRows("books", { id: Number(p.bookId), userEmail: email }, { status }); return ok(); }
     if (action === "set_priorities") { const monthKey = String(p.monthKey ?? ""), weight = (v: unknown) => Math.max(1, Math.min(3, Math.round(Number(v) || 2))); if (!MONTH.test(monthKey)) return fail("Mes inválido."); await upsert("monthly_priorities", { userEmail: email, monthKey, gymWeight: weight(p.gymWeight), nutritionWeight: weight(p.nutritionWeight), readingWeight: weight(p.readingWeight), sleepWeight: weight(p.sleepWeight), focusWeight: weight(p.focusWeight), goalsWeight: weight(p.goalsWeight) }, ["userEmail", "monthKey"]); return ok(); }
     if (action === "add_goal") { const title = String(p.title ?? "").trim(), period = String(p.period), category = String(p.category), targetDate = String(p.targetDate ?? ""); if (!title || !["weekly", "monthly", "annual", "custom"].includes(period) || !DATE.test(targetDate)) return fail("Completá un objetivo válido."); await insertRows("goals", { userEmail: email, title: title.slice(0, 180), period, category, targetDate }); return ok(); }
     if (action === "toggle_goal") { await updateRows("goals", { id: Number(p.id), userEmail: email }, { completedAt: p.completed ? now() : null }); return ok(); }
     if (action === "delete_goal") { await deleteRows("goals", { id: Number(p.id), userEmail: email }); return ok(); }
-    if (action === "apply_voice_checkin") { const date = String(p.date ?? ""), c = p.checkin; if (!DATE.test(date) || !isRecord(c)) return fail("El cierre diario no es válido."); const clamp = (v: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(v) || 0))), sleep = isRecord(c.sleep) ? c.sleep : {}, study = isRecord(c.study) ? c.study : {}, gym = isRecord(c.gym) ? c.gym : {}; await upsert("daily_checkins", { userEmail: email, entryDate: date, habitsJson: JSON.stringify(Array.isArray(c.habits) ? c.habits.slice(0, 12) : []), workoutDetail: String(gym.detail ?? "").slice(0, 1500), studyMinutes: clamp(study.minutes, 1440), studyDetail: String(study.detail ?? "").slice(0, 1500), sleepMinutes: clamp(sleep.minutes, 1440), bedtime: String(sleep.bedtime ?? "").slice(0, 20), wakeTime: String(sleep.wakeTime ?? "").slice(0, 20), waterMl: clamp(c.waterMl, 20000), journal: String(c.journal ?? "").slice(0, 4000), transcript: String(c.transcript ?? "").slice(0, 8000), voiceSummary: String(c.summary ?? "").slice(0, 1000) }, ["userEmail", "entryDate"]); for (const meal of Array.isArray(c.meals) ? c.meals.filter(isRecord).slice(0, 8) : []) if (meal.name) await insertRows("meals", { userEmail: email, mealDate: date, name: String(meal.name).slice(0, 80), detail: String(meal.detail ?? "").slice(0, 300), calories: clamp(meal.calories, 10000), protein: clamp(meal.protein, 1000), carbs: clamp(meal.carbs, 2000), fat: clamp(meal.fat, 1000) }); return ok(); }
+    if (action === "apply_voice_checkin") {
+      const date = String(p.date ?? ""), c = p.checkin;
+      if (!DATE.test(date) || !isRecord(c)) return fail("El cierre diario no es válido.");
+      const clamp = (v: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(v) || 0)));
+      const previous = (await owned("daily_checkins", email, { entryDate: date }))[0] ?? {};
+      const sleep = isRecord(c.sleep) ? c.sleep : {};
+      const study = isRecord(c.study) ? c.study : {};
+      const gym = isRecord(c.gym) ? c.gym : {};
+      const reading = isRecord(c.reading) ? c.reading : {};
+      const transcript = String(c.transcript ?? "");
+      const normalized = transcript.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const mentions = (patterns: string[]) => patterns.some((pattern) => normalized.includes(pattern));
+      const gymNo = mentions(["no fui al gimnasio", "no fui a entrenar", "no entrene", "no hice ejercicio", "no corri"]);
+      const gymMentioned = !gymNo && (gym.attended === true || Boolean(String(gym.detail ?? "").trim()) || mentions(["gimnasio", "gym", "entrene", "entrenamiento", "pesas", "corrí", "corri", "running", "biciclet", "ciclismo", "natacion", "nadar", "futbol", "yoga", "pilates"]));
+      const studyMentioned = Number(study.minutes) > 0 || Boolean(String(study.detail ?? "").trim()) || (Array.isArray(study.tasks) && study.tasks.length > 0) || mentions(["estudie", "estudié", "estudiar", "estudio", "trabaje", "trabajé", "trabajar", "trabajo"]);
+      const sleepMentioned = Number(sleep.minutes) > 0 || Boolean(String(sleep.bedtime ?? "").trim()) || Boolean(String(sleep.wakeTime ?? "").trim()) || mentions(["dormi", "dormí", "duermo", "acoste", "acosté", "me levante", "me levanté", "sueno", "sueño"]);
+      const waterMentioned = Number(c.waterMl) > 0 || mentions(["agua", "litro", "hidrat"]);
+      const habits = Array.isArray(c.habits) ? c.habits.filter((value): value is string => typeof value === "string").slice(0, 12) : [];
+      const habitsMentioned = habits.length > 0 || mentions(["habito", "hábito", "medite", "medité", "camine", "caminé", "stretch", "estir"]);
+      const journal = String(c.journal ?? "").trim();
+      const summary = String(c.summary ?? "").trim();
+      const previousHabits = stringArray(previous.habitsJson);
+      await upsert("daily_checkins", {
+        userEmail: email,
+        entryDate: date,
+        habitsJson: JSON.stringify(habitsMentioned ? habits : previousHabits),
+        workoutDetail: gymMentioned ? String(gym.detail ?? "").slice(0, 1500) : String(previous.workoutDetail ?? ""),
+        studyMinutes: studyMentioned ? clamp(study.minutes, 1440) : clamp(previous.studyMinutes, 1440),
+        studyDetail: studyMentioned ? String(study.detail ?? "").slice(0, 1500) : String(previous.studyDetail ?? ""),
+        sleepMinutes: sleepMentioned ? clamp(sleep.minutes, 1440) : clamp(previous.sleepMinutes, 1440),
+        bedtime: sleepMentioned ? String(sleep.bedtime ?? "").slice(0, 20) : String(previous.bedtime ?? ""),
+        wakeTime: sleepMentioned ? String(sleep.wakeTime ?? "").slice(0, 20) : String(previous.wakeTime ?? ""),
+        waterMl: waterMentioned ? clamp(c.waterMl, 20000) : clamp(previous.waterMl, 20000),
+        journal: journal || String(previous.journal ?? ""),
+        transcript,
+        voiceSummary: summary || String(previous.voiceSummary ?? ""),
+      }, ["userEmail", "entryDate"]);
+
+      for (const meal of Array.isArray(c.meals) ? c.meals.filter(isRecord).slice(0, 8) : []) {
+        if (String(meal.name ?? "").trim()) {
+          await insertRows("meals", {
+            userEmail: email,
+            mealDate: date,
+            name: String(meal.name).slice(0, 80),
+            detail: String(meal.detail ?? "").slice(0, 300),
+            calories: clamp(meal.calories, 10000),
+            protein: clamp(meal.protein, 1000),
+            carbs: clamp(meal.carbs, 2000),
+            fat: clamp(meal.fat, 1000),
+          });
+        }
+      }
+
+      if (gymMentioned) {
+        const disciplines = await selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] });
+        const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const matched = disciplines.filter((discipline) => normalized.includes(normalizeName(String(discipline.name))));
+        const strength = disciplines.find((discipline) => discipline.kind === "strength");
+        const selected = matched.length ? matched : strength ? [strength] : [];
+        for (const discipline of selected) {
+          await insertRows("training_logs", {
+            userEmail: email,
+            disciplineId: discipline.id,
+            trainingDate: date,
+            notes: String(gym.detail ?? "").slice(0, 1500),
+          }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], ignoreDuplicates: true });
+        }
+      }
+
+      const readingTitle = String(reading.bookTitle ?? "").trim();
+      const readingPages = Math.max(0, Math.min(5000, Math.round(Number(reading.pages) || 0)));
+      if (readingPages > 0) {
+        const books = await selectRows<ProgressRow>("books", { where: { userEmail: email }, order: [["createdAt", "desc"]] });
+        const normalizedTitle = readingTitle.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const book = books.find((candidate) => normalizedTitle && normalizedTitle.includes(String(candidate.title).toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) || books.find((candidate) => candidate.status === "reading");
+        if (book) {
+          const previousLog = (await owned("reading_logs", email, { bookId: book.id, logDate: date }))[0];
+          const currentPage = Math.max(0, book.totalPages ? Math.min(book.totalPages, book.currentPage + readingPages - (previousLog?.pages ?? 0)) : book.currentPage + readingPages);
+          const completed = Number(book.totalPages) > 0 && currentPage >= Number(book.totalPages);
+          await upsert("reading_logs", { userEmail: email, bookId: book.id, logDate: date, pages: readingPages, minutes: clamp(reading.minutes, 1440) }, ["userEmail", "bookId", "logDate"]);
+          await updateRows("books", { id: book.id, userEmail: email }, { currentPage, status: completed ? "read" : "reading" });
+        }
+      }
+      return ok();
+    }
     return fail("Acción desconocida.");
   } catch (cause) { console.error("progress POST", cause); return fail("No se pudo guardar. Verificá Supabase.", 500); }
 }

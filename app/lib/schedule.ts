@@ -27,7 +27,7 @@ export type Slot = { start: number; end: number; minutes: number };
 
 export type ScheduleInput = {
   tasks: Array<{ id: number; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null; projectId: number | null }>;
-  events: Array<{ id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: string; notes: string }>;
+  events: Array<{ id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: string; notes: string; completedAt: string | null }>;
   projectNames: Record<number, string>;
   projectKinds?: Record<number, "study" | "work">;
 };
@@ -90,7 +90,7 @@ export function dayBlocks(input: ScheduleInput, date: string): Block[] {
       minutes,
       end: start + minutes,
       eventId: event.id,
-      done: false,
+      done: Boolean(event.completedAt),
     });
   }
 

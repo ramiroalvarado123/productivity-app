@@ -40,7 +40,7 @@ type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weight
 type FocusProject = { id: number; name: string; kind: "study" | "work" };
 type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
 type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null };
-type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "other"; notes: string };
+type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "other"; notes: string; completedAt: string | null };
 type VoiceCheckin = { transcript: string; summary: string; gym: { attended: boolean | null; detail: string }; meals: Array<{ name: string; detail: string; calories: number; protein: number; carbs: number; fat: number }>; reading: { bookTitle: string; pages: number; minutes: number; note: string }; habits: string[]; study: { minutes: number; detail: string; tasks: string[] }; sleep: { minutes: number; bedtime: string; wakeTime: string }; waterMl: number; journal: string; goals: Array<{ title: string; period: GoalPeriod; category: GoalCategory; targetDate: string }>; confidence: "low" | "medium" | "high" };
 type MealEstimate = { mealName: string; detail: string; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
 type DietPlanContent = {
@@ -599,6 +599,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Tildado optimista: la fila responde al toque y recién después se confirma
   // contra el servidor, así no hay medio segundo de pantalla muerta.
   const [pendingTasks, setPendingTasks] = useState<Record<number, boolean>>({});
+  const [pendingEvents, setPendingEvents] = useState<Record<number, boolean>>({});
   const [agendaView, setAgendaView] = useState<"week" | "month">("week");
   const [weekAnchor, setWeekAnchor] = useState(today);
   const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string } | null>(null);
@@ -1809,6 +1810,19 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   /** Estado visible de una tarea: el optimista si lo hay, si no el guardado. */
   const taskDone = (id: number, savedDone: boolean) => pendingTasks[id] ?? savedDone;
 
+  async function toggleEvent(id: number, completed: boolean) {
+    setPendingEvents((current) => ({ ...current, [id]: completed }));
+    const ok = await save({ action: "toggle_event", id, completed });
+    setPendingEvents((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    return ok;
+  }
+
+  const eventDone = (id: number, savedDone: boolean) => pendingEvents[id] ?? savedDone;
+
   const scoreCard = <article className="score-card">
     <div><p>DAILY SCORE</p><h2>{score >= 75 ? <>Tu día va<br /><em>muy bien.</em></> : <>Cada acción<br /><em>suma.</em></>}</h2><span>{priorityCaption}</span></div>
     <div className="score-ring" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
@@ -2092,18 +2106,22 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </div>
       <ol className="day-timeline">
         {todayBlocks.map((block) => {
-          const done = block.taskId ? taskDone(block.taskId, block.done) : block.done;
+          const done = block.taskId
+            ? taskDone(block.taskId, block.done)
+            : block.eventId
+              ? eventDone(block.eventId, block.done)
+              : block.done;
           const past = block.end <= nowMinutes;
           const live = block.start <= nowMinutes && block.end > nowMinutes;
           const classes = ["day-block", done ? "done" : "", past ? "past" : "", live ? "live" : ""].filter(Boolean).join(" ");
-          // Para una tarea, toda la fila es el botón: en el celular apuntarle a
-          // un cuadradito de 26 px era la mitad de los toques fallados.
+          // Una tarea o evento se puede completar aunque su horario ya haya pasado:
+          // el día se registra cuando la persona realmente lo termina.
           return <li key={block.key} className={classes}>
             {block.taskId ? <button
               type="button"
               className="day-block-hit"
               aria-pressed={done}
-              aria-label={`${block.title}, ${clockFromMinutes(block.start)}. ${done ? "Marcar como pendiente" : "Marcar como hecha"}.`}
+              aria-label={block.title + ", " + clockFromMinutes(block.start) + ". " + (done ? "Marcar como pendiente" : "Marcar como hecha") + "."}
               onClick={() => void toggleTask(block.taskId as number, !done)}
             >
               <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
@@ -2112,15 +2130,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
                 <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
               </span>
               <span className="block-check" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg></span>
-            </button> : <div className="day-block-hit is-event">
+            </button> : block.eventId ? <button
+              type="button"
+              className="day-block-hit is-event"
+              aria-pressed={done}
+              aria-label={block.title + ", " + clockFromMinutes(block.start) + ". " + (done ? "Marcar como pendiente" : "Marcar como hecho") + "."}
+              onClick={() => void toggleEvent(block.eventId as number, !done)}
+            >
               <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
               <span className={"block-body " + block.category}>
                 <b>{block.title}</b>
-                <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
+                <small>{[blockCategoryLabel[block.category] ?? "Evento", block.detail].filter(Boolean).join(" · ")}</small>
               </span>
-              <span className="block-check block-check-event" aria-hidden="true" title="Evento del calendario">◇</span>
-            </div>}
-          </li>;
+              <span className={"block-check " + (done ? "" : "block-check-event")} aria-hidden="true" title="Evento del calendario">{done ? <svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg> : "◇"}</span>
+            </button> : null}
+          </li>
         })}
       </ol>
     </> : <div className="inline-empty tall">
@@ -2279,15 +2303,22 @@ export default function ProgressClient({ initialUser, initialError = "", pending
               const top = (block.start - agendaStartHour * 60) / 60;
               const height = block.minutes / 60;
               if (top + height <= 0 || top >= agendaHours.length) return null;
-              return <div
+              return <button
+                type="button"
                 key={block.key}
                 className={"agenda-block " + block.category + (block.done ? " done" : "")}
-                style={{ top: `calc(${Math.max(0, top)} * var(--hour-height))`, height: `calc(${Math.min(height, agendaHours.length - top)} * var(--hour-height) - 3px)` }}
-                title={`${block.title} · ${clockFromMinutes(block.start)}–${clockFromMinutes(block.end)}`}
+                style={{ top: "calc(" + Math.max(0, top) + " * var(--hour-height)", height: "calc(" + Math.min(height, agendaHours.length - top) + " * var(--hour-height) - 3px)" }}
+                title={block.title + " · " + clockFromMinutes(block.start) + "–" + clockFromMinutes(block.end)}
+                aria-pressed={block.done}
+                onClick={() => block.taskId
+                  ? void toggleTask(block.taskId, !block.done)
+                  : block.eventId
+                    ? void toggleEvent(block.eventId, !block.done)
+                    : undefined}
               >
                 <b>{block.title}</b>
                 <small>{clockFromMinutes(block.start)}</small>
-              </div>;
+              </button>;
             })}
             {day.iso === today && nowMinutes >= agendaStartHour * 60 && nowMinutes <= agendaEndHour * 60 && <i
               className="agenda-now"
@@ -2466,6 +2497,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <small>{formatDate(scoreTrend.points[0]?.date ?? today)}</small>
             <small>Promedio {scoreAverage}/100{scoreDelta === null ? "" : ` · ${scoreDelta > 0 ? "+" : ""}${scoreDelta} vs. período anterior`}</small>
             <small>Hoy</small>
+          </div>
+          <div className="score-point-labels" aria-label="Fechas del Daily Score">
+            {scoreChartPoints.map((point) => <small key={point.date} style={{ left: (point.x / scoreChartWidth * 100) + "%" }}>{point.date === today ? "Hoy" : formatDate(point.date)}</small>)}
           </div>
         </div>
       </div>
@@ -3343,6 +3377,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
       {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
+        <NotificationSettings isPro={data.profile.isPro} compact />
         {quotePanel}
         <section className={"hero-row " + (loading ? "is-loading" : "")}>
           <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>

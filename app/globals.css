@@ -750,7 +750,7 @@
   cursor: pointer;
   transition: transform .13s ease, border-color .16s ease, background .16s ease, opacity .2s ease;
 }
-.day-block-hit.is-event { cursor: default; }
+.day-block-hit.is-event { cursor: pointer; }
 button.day-block-hit:hover { border-color: #c2ccc5; background: #fafcf9; }
 button.day-block-hit:active { transform: scale(.985); }
 button.day-block-hit:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
@@ -867,6 +867,8 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .score-bars-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; }
 .score-bars-foot small { font-size:10px; color: #8d9590; }
 .score-bars-foot small:nth-child(2) { text-align: center; color: #6b746f; }
+.score-point-labels { position: relative; min-height: 18px; margin-top: 2px; }
+.score-point-labels small { position: absolute; transform: translateX(-50%); white-space: nowrap; font-size: 9px; color: #8d9590; }
 
 @media (max-width: 760px) {
   .score-history { grid-template-columns: 1fr; gap: 16px; }
@@ -1867,6 +1869,13 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 
 
 /* Preferencias y estado del permiso de notificaciones push. */
+.notification-activation-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:14px 18px;border:1px solid #d9e6dc;border-radius:16px;background:linear-gradient(105deg,#edf7ed,#fff)}
+.notification-activation-banner>div{display:flex;align-items:center;gap:11px;min-width:0}
+.notification-activation-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#dff0df;color:var(--green);font-size:18px}
+.notification-activation-banner p{display:grid;gap:3px;margin:0}
+.notification-activation-banner b{font-size:12px;color:var(--ink)}
+.notification-activation-banner small{font-size:10px;line-height:1.35;color:#748078}
+.notification-activation-error{display:block!important;color:#b64b37!important}
 .notification-settings-panel{gap:12px}
 .notification-permission-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid #dfe7df;border-radius:14px;background:#f4f8f3}
 .notification-permission-card>div{display:grid;gap:4px;min-width:0}
