@@ -25,12 +25,17 @@ export function ServiceWorkerRegistration() {
       if (document.visibilityState !== "visible") return;
       void navigator.serviceWorker.ready.then(checkForUpdate).catch(() => {});
     };
+    const handlePageShow = () => {
+      void navigator.serviceWorker.ready.then(checkForUpdate).catch(() => {});
+    };
 
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("online", handlePageShow);
 
     void navigator.serviceWorker
-      .register("/sw.js", { scope: "/" })
+      .register("/sw.js", { scope: "/", updateViaCache: "none" })
       .then((registration) => {
         checkForUpdate(registration);
         intervalId = window.setInterval(() => checkForUpdate(registration), UPDATE_INTERVAL_MS);
@@ -40,6 +45,8 @@ export function ServiceWorkerRegistration() {
     return () => {
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("online", handlePageShow);
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
   }, []);

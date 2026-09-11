@@ -598,6 +598,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [trainingWeekAnchor, setTrainingWeekAnchor] = useState(today);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
   const [statsOffset, setStatsOffset] = useState(0);
+  const [selectedScorePointKey, setSelectedScorePointKey] = useState<string | null>(null);
   // Meta de entrenamientos por semana, para la racha de constancia. Vive en
   // este navegador (no en el servidor) porque es una preferencia liviana de
   // lectura de la racha, no un dato que otra pantalla necesite.
@@ -2514,8 +2515,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const statsPanel = <section className="module-stack">
     {weeklyReviewPanel}
     <div className="stats-controls">
-      <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => { setStatsPeriod(period); setStatsOffset(0); }}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
-      <label className="stats-range-picker"><span>Período</span><select value={String(statsOffset)} onChange={(event) => setStatsOffset(Number(event.target.value))}>
+      <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => { setStatsPeriod(period); setStatsOffset(0); setSelectedScorePointKey(null); }}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
+      <label className="stats-range-picker"><span>Período</span><select value={String(statsOffset)} onChange={(event) => { setStatsOffset(Number(event.target.value)); setSelectedScorePointKey(null); }}>
         {(statsPeriod === "weekly"
           ? Array.from({ length: 13 }, (_, offset) => ({ value: offset, label: offset === 0 ? "Esta semana" : offset === 1 ? "Semana pasada" : "Hace " + offset + " semanas" }))
           : statsPeriod === "monthly"
@@ -2527,7 +2528,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
     <article className="panel score-history-panel">
       <div className="panel-heading">
-        <div><p>DAILY SCORE</p><h2>{statsWindow.title}</h2></div>
+        <div><p>DAILY SCORE</p><h2>{statsPeriod === "weekly" ? "Semana" : statsPeriod === "monthly" ? "Mes" : "Año"}</h2></div>
         <button className="text-link" onClick={() => openSection("score")}>Cómo se calcula →</button>
       </div>
       <div className="score-history">
@@ -2541,7 +2542,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             viewBox={`0 0 ${scoreChartWidth} ${scoreChartHeight}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label={"Daily Score de " + statsWindow.title + ". Promedio " + scoreAverage + " de 100."}
+            aria-label={"Daily Score " + (statsPeriod === "weekly" ? "semanal" : statsPeriod === "monthly" ? "mensual" : "anual") + ". Promedio " + scoreAverage + " de 100."}
           >
             <defs>
               <linearGradient id={scoreGradientId} x1="0" y1="0" x2="0" y2="1">
@@ -2552,25 +2553,42 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <line className="score-average-line" x1="0" y1={scoreAverageY} x2={scoreChartWidth} y2={scoreAverageY} vectorEffect="non-scaling-stroke" />
             {scoreAreaPath && <path className="score-line-area" d={scoreAreaPath} fill={`url(#${scoreGradientId})`} />}
             <path className="score-line-path" d={scoreLinePath} fill="none" vectorEffect="non-scaling-stroke" />
-            {scoreChartPoints.map((point) => <circle
-              key={point.key}
-              className={"score-line-dot " + (point.date === today ? "today" : "")}
-              cx={point.x}
-              cy={point.y}
-              r={point.date === today ? 5 : 3.4}
-              vectorEffect="non-scaling-stroke"
-            >
-              <title>{point.label + " · " + point.value + "/100"}</title>
-            </circle>)}
+            {scoreChartPoints.map((point) => <g key={point.key}>
+              <circle
+                className="score-line-hit-area"
+                cx={point.x}
+                cy={point.y}
+                r={12}
+                role="button"
+                tabIndex={0}
+                aria-label={point.label + ": " + point.value + "/100" + (statsPeriod === "weekly" ? "" : " promedio")}
+                onClick={() => setSelectedScorePointKey(point.key)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedScorePointKey(point.key);
+                  }
+                }}
+              />
+              <circle
+                className={"score-line-dot " + (point.date === today ? "today" : "")}
+                cx={point.x}
+                cy={point.y}
+                r={point.date === today ? 5 : 3.4}
+                vectorEffect="non-scaling-stroke"
+              >
+                <title>{point.label + " · " + point.value + "/100"}</title>
+              </circle>
+            </g>)}
           </svg>
-          <div className="score-bars-foot">
-            <small>{statsPeriod === "weekly" ? "Lunes a domingo" : statsPeriod === "monthly" ? "Promedio semanal" : "Promedio mensual"}</small>
-            <small>Promedio {scoreAverage}/100{scoreDelta === null ? "" : " · " + (scoreDelta > 0 ? "+" : "") + scoreDelta + " vs. período anterior"}</small>
-            <small>{statsWindow.title}</small>
-          </div>
+
           <div className="score-point-labels" style={{ "--score-points": scoreChartPoints.length } as CSSProperties} aria-label="Períodos del Daily Score">
             {scoreChartPoints.map((point) => <small key={point.key}>{point.label}</small>)}
           </div>
+          {selectedScorePoint && <div className="score-point-callout" role="status">
+            <b>{selectedScorePoint.label}</b>
+            <span>{statsPeriod === "weekly" ? "Daily Score: " : "Promedio: "}{selectedScorePoint.value}/100</span>
+          </div>}
         </div>
       </div>
       <p className="formula-note">Cada barra se reconstruye con lo que registraste ese día y las prioridades que tenés hoy. Los días sin registros valen 0.</p>
