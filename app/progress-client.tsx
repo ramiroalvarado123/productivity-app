@@ -250,6 +250,46 @@ function weekFor(date: string) {
     return { iso: current.toISOString().slice(0, 10), short: ["L", "M", "M", "J", "V", "S", "D"][index], number: current.getDate() };
   });
 }
+
+const STAT_WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const STAT_MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+type StatsWindow = { start: string; end: string; title: string };
+
+function shiftMonthStart(date: string, offset: number) {
+  const value = new Date(date + "T12:00:00");
+  value.setDate(1);
+  value.setMonth(value.getMonth() + offset);
+  return value.toISOString().slice(0, 10);
+}
+function lastDayOfMonth(monthStart: string) {
+  const value = new Date(monthStart + "T12:00:00");
+  value.setMonth(value.getMonth() + 1, 0);
+  return value.toISOString().slice(0, 10);
+}
+function statsWindowFor(period: StatsPeriod, offset: number, reference: string): StatsWindow {
+  if (period === "weekly") {
+    const monday = weekFor(reference)[0].iso;
+    const start = dateMinus(monday, offset * 7);
+    const end = datePlus(start, 6);
+    return { start, end, title: "Semana del " + formatDate(start) + " al " + formatDate(end) };
+  }
+  if (period === "monthly") {
+    const start = shiftMonthStart(reference, -offset);
+    return { start, end: lastDayOfMonth(start), title: new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(start + "T12:00:00")) };
+  }
+  const year = Number(reference.slice(0, 4)) - offset;
+  const start = year + "-01-01";
+  return { start, end: year + "-12-31", title: String(year) };
+}
+function datesBetween(start: string, end: string) {
+  const dates: string[] = [];
+  const total = Math.max(0, Math.round((new Date(end + "T12:00:00").getTime() - new Date(start + "T12:00:00").getTime()) / 86400000) + 1);
+  for (let index = 0; index < total; index += 1) dates.push(datePlus(start, index));
+  return dates;
+}
+function averageNumbers(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
 /** Fecha objetivo para los plazos relativos. "custom" no pasa por acá: ahí el usuario elige el día exacto con el DatePicker. */
 function goalDeadline(today: string, period: Exclude<GoalPeriod, "custom">) {
   const date = new Date(today + "T12:00:00");
@@ -557,6 +597,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [editingExerciseId, setEditingExerciseId] = useState<number | null>(null);
   const [trainingWeekAnchor, setTrainingWeekAnchor] = useState(today);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
+  const [statsOffset, setStatsOffset] = useState(0);
   // Meta de entrenamientos por semana, para la racha de constancia. Vive en
   // este navegador (no en el servidor) porque es una preferencia liviana de
   // lectura de la racha, no un dato que otra pantalla necesite.
@@ -2395,51 +2436,70 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{countdownLabelCapitalized(dayDistance(today, item.date))}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
     </div>
   </section>;
-  const periodDays = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 365;
-  const statsStart = dateMinus(today, periodDays - 1);
-  const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart);
-  const periodFocus = uniqueFocusSessions.filter((item) => item.sessionDate >= statsStart);
+  const statsWindow = statsWindowFor(statsPeriod, statsOffset, today);
+  const statsStart = statsWindow.start;
+  const statsEnd = statsWindow.end;
+  const periodDays = Math.max(1, datesBetween(statsStart, statsEnd).length);
+  const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart && item.trainingDate <= statsEnd);
+  const periodFocus = uniqueFocusSessions.filter((item) => item.sessionDate >= statsStart && item.sessionDate <= statsEnd);
   const periodTaskFocusMinutes = Object.entries(completedTaskFocusByDate)
-    .filter(([date]) => date >= statsStart && date <= today)
+    .filter(([date]) => date >= statsStart && date <= statsEnd)
     .reduce((sum, [, minutes]) => sum + minutes, 0);
-  const periodTaskFocusBlocks = completedPlanTasks.filter((task) => Boolean(task.dueDate && task.dueDate >= statsStart && task.dueDate <= today && task.projectId));
+  const periodTaskFocusBlocks = completedPlanTasks.filter((task) => Boolean(task.dueDate && task.dueDate >= statsStart && task.dueDate <= statsEnd && task.projectId));
   const periodTaskTrainingCount = Object.entries(completedTrainingTasksByDate)
-    .filter(([date]) => date >= statsStart && date <= today)
+    .filter(([date]) => date >= statsStart && date <= statsEnd)
     .reduce((sum, [, count]) => sum + count, 0);
-  const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.sleepMinutes > 0);
-  const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart);
-  const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart);
-  // Tendencias diarias del período elegido, con comparación contra el período
-  // anterior de la misma longitud.
-  const trendSpan = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 180;
+  const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.entryDate <= statsEnd && item.sleepMinutes > 0);
+  const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart && item.logDate <= statsEnd);
+  const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart && item.mealDate <= statsEnd);
+  // Las tarjetas secundarias siguen mostrando tendencias diarias, pero respetan
+  // el período elegido en vez de quedar clavadas en "los últimos días".
+  const trendSpan = periodDays;
   const trends: Array<{ key: string; icon: string; label: string; trend: Trend; format: (value: number) => string; caption: string; useAverage?: boolean }> = [
-    { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, today, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
-    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, today, (date) => focusByDate[date] ?? 0), format: (value) => formatFocusHours(value), caption: "tiempo de trabajo concentrado" },
-    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, today, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "promedio dormido por día", useAverage: true },
-    { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, today, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
-    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, today, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "promedio diario", useAverage: true },
+    { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, statsEnd, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
+    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, statsEnd, (date) => focusByDate[date] ?? 0), format: (value) => formatFocusHours(value), caption: "tiempo de trabajo concentrado" },
+    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, statsEnd, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "promedio dormido por día", useAverage: true },
+    { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, statsEnd, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
+    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, statsEnd, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "promedio diario", useAverage: true },
   ];
-  // El Daily Score también es una tendencia: mismo período, mismo criterio de
-  // comparación que el resto de las métricas de esta sección.
-  const scoreTrend = trendFor(trendSpan, today, scoreForDate);
-  const scoreAverage = Math.round(scoreTrend.average);
-  const scorePreviousAverage = Math.round(scoreTrend.previousTotal / trendSpan);
-  const scoreDelta = scorePreviousAverage > 0 ? scoreAverage - scorePreviousAverage : null;
-  // Geometría del gráfico de líneas del Daily Score: un viewBox fijo de
-  // 100/altura para que el promedio y cada punto se ubiquen por regla de tres
-  // simple, sin depender del ancho real renderizado.
+  // El Daily Score se agrupa según la escala elegida: días en la semana,
+  // semanas dentro del mes y meses dentro del año.
+  const scoreBucketsFor = (window: StatsWindow) => {
+    if (statsPeriod === "weekly") {
+      return weekFor(window.start).map((day, index) => ({ key: day.iso, date: day.iso, label: STAT_WEEKDAY_NAMES[index], value: scoreForDate(day.iso) }));
+    }
+    if (statsPeriod === "monthly") {
+      const totalDays = datesBetween(window.start, window.end).length;
+      return Array.from({ length: Math.ceil(totalDays / 7) }, (_, index) => {
+        const start = datePlus(window.start, index * 7);
+        const end = datePlus(start, Math.min(6, totalDays - index * 7 - 1));
+        return { key: start, date: start, label: "Semana " + (index + 1), value: Math.round(averageNumbers(datesBetween(start, end).map(scoreForDate))) };
+      });
+    }
+    return Array.from({ length: 12 }, (_, index) => {
+      const start = shiftMonthStart(window.start, index);
+      const end = lastDayOfMonth(start);
+      return { key: start, date: start, label: STAT_MONTH_NAMES[index], value: Math.round(averageNumbers(datesBetween(start, end).map(scoreForDate))) };
+    });
+  };
+  const scoreTrendPoints = scoreBucketsFor(statsWindow);
+  const previousScorePoints = scoreBucketsFor(statsWindowFor(statsPeriod, statsOffset + 1, today));
+  const scoreAverage = Math.round(averageNumbers(scoreTrendPoints.map((point) => point.value)));
+  const scorePreviousAverage = Math.round(averageNumbers(previousScorePoints.map((point) => point.value)));
+  const scoreDelta = previousScorePoints.length && scorePreviousAverage > 0 ? scoreAverage - scorePreviousAverage : null;
+  // Geometría del gráfico de líneas del Daily Score.
   const scoreGradientId = useId();
   const scoreChartWidth = 600;
   const scoreChartHeight = 130;
   const scoreYFor = (value: number) => scoreChartHeight - (Math.max(0, Math.min(100, value)) / 100) * scoreChartHeight;
-  const scoreChartPoints = scoreTrend.points.map((point, index) => ({
+  const scoreChartPoints = scoreTrendPoints.map((point, index) => ({
     ...point,
-    x: scoreTrend.points.length > 1 ? (index / (scoreTrend.points.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
+    x: scoreTrendPoints.length > 1 ? (index / (scoreTrendPoints.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
     y: scoreYFor(point.value),
   }));
-  const scoreLinePath = scoreChartPoints.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const scoreLinePath = scoreChartPoints.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(1) + "," + point.y.toFixed(1)).join(" ");
   const scoreAreaPath = scoreChartPoints.length
-    ? `${scoreLinePath} L${scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1)},${scoreChartHeight} L${scoreChartPoints[0].x.toFixed(1)},${scoreChartHeight} Z`
+    ? scoreLinePath + " L" + scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1) + "," + scoreChartHeight + " L" + scoreChartPoints[0].x.toFixed(1) + "," + scoreChartHeight + " Z"
     : "";
   const scoreAverageY = scoreYFor(scoreAverage);
 
@@ -2453,11 +2513,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const statsPanel = <section className="module-stack">
     {weeklyReviewPanel}
-    <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => setStatsPeriod(period)}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
+    <div className="stats-controls">
+      <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => { setStatsPeriod(period); setStatsOffset(0); }}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
+      <label className="stats-range-picker"><span>Período</span><select value={String(statsOffset)} onChange={(event) => setStatsOffset(Number(event.target.value))}>
+        {(statsPeriod === "weekly"
+          ? Array.from({ length: 13 }, (_, offset) => ({ value: offset, label: offset === 0 ? "Esta semana" : offset === 1 ? "Semana pasada" : "Hace " + offset + " semanas" }))
+          : statsPeriod === "monthly"
+            ? Array.from({ length: 13 }, (_, offset) => { const start = shiftMonthStart(today, -offset); return { value: offset, label: new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(start + "T12:00:00")) }; })
+            : Array.from({ length: 6 }, (_, offset) => ({ value: offset, label: String(Number(today.slice(0, 4)) - offset) }))
+        ).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select></label>
+    </div>
 
     <article className="panel score-history-panel">
       <div className="panel-heading">
-        <div><p>DAILY SCORE</p><h2>{statsPeriod === "weekly" ? "Últimos 7 días" : statsPeriod === "monthly" ? "Últimos 30 días" : "Últimos 6 meses"}</h2></div>
+        <div><p>DAILY SCORE</p><h2>{statsWindow.title}</h2></div>
         <button className="text-link" onClick={() => openSection("score")}>Cómo se calcula →</button>
       </div>
       <div className="score-history">
@@ -2471,7 +2541,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             viewBox={`0 0 ${scoreChartWidth} ${scoreChartHeight}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label={`Daily Score de los últimos ${trendSpan} días. Promedio ${scoreAverage} de 100.`}
+            aria-label={"Daily Score de " + statsWindow.title + ". Promedio " + scoreAverage + " de 100."}
           >
             <defs>
               <linearGradient id={scoreGradientId} x1="0" y1="0" x2="0" y2="1">
@@ -2483,23 +2553,23 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             {scoreAreaPath && <path className="score-line-area" d={scoreAreaPath} fill={`url(#${scoreGradientId})`} />}
             <path className="score-line-path" d={scoreLinePath} fill="none" vectorEffect="non-scaling-stroke" />
             {scoreChartPoints.map((point) => <circle
-              key={point.date}
+              key={point.key}
               className={"score-line-dot " + (point.date === today ? "today" : "")}
               cx={point.x}
               cy={point.y}
               r={point.date === today ? 5 : 3.4}
               vectorEffect="non-scaling-stroke"
             >
-              <title>{`${formatDate(point.date)} · ${point.value}/100`}</title>
+              <title>{point.label + " · " + point.value + "/100"}</title>
             </circle>)}
           </svg>
           <div className="score-bars-foot">
-            <small>{formatDate(scoreTrend.points[0]?.date ?? today)}</small>
-            <small>Promedio {scoreAverage}/100{scoreDelta === null ? "" : ` · ${scoreDelta > 0 ? "+" : ""}${scoreDelta} vs. período anterior`}</small>
-            <small>Hoy</small>
+            <small>{statsPeriod === "weekly" ? "Lunes a domingo" : statsPeriod === "monthly" ? "Promedio semanal" : "Promedio mensual"}</small>
+            <small>Promedio {scoreAverage}/100{scoreDelta === null ? "" : " · " + (scoreDelta > 0 ? "+" : "") + scoreDelta + " vs. período anterior"}</small>
+            <small>{statsWindow.title}</small>
           </div>
-          <div className="score-point-labels" aria-label="Fechas del Daily Score">
-            {scoreChartPoints.map((point) => <small key={point.date} style={{ left: (point.x / scoreChartWidth * 100) + "%" }}>{point.date === today ? "Hoy" : formatDate(point.date)}</small>)}
+          <div className="score-point-labels" style={{ "--score-points": scoreChartPoints.length } as CSSProperties} aria-label="Períodos del Daily Score">
+            {scoreChartPoints.map((point) => <small key={point.key}>{point.label}</small>)}
           </div>
         </div>
       </div>

@@ -87,7 +87,7 @@ export async function GET(request: Request) {
     const weekStart = DATE.test(params.get("weekStart") ?? "") ? String(params.get("weekStart")) : date;
     const weekEnd = DATE.test(params.get("weekEnd") ?? "") ? String(params.get("weekEnd")) : date;
     const monthKey = MONTH.test(params.get("month") ?? "") ? String(params.get("month")) : date.slice(0, 7);
-    const start = daysBefore(date, 365), email = user.email;
+    const start = daysBefore(date, 5 * 366), email = user.email;
     const profile = (await selectRows<ProgressRow>("profiles", { where: { email }, limit: 1 }))[0];
     if (profile?.onboardingCompleted && !user.onboardingCompleted) await updateChatGPTUserMetadata({ displayName: profile.displayName, onboardingCompleted: true, mainGoals: stringArray(profile.mainGoalsJson), usagePreferences: stringArray(profile.usagePreferencesJson) });
 

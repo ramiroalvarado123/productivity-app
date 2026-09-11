@@ -867,13 +867,21 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .score-bars-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; }
 .score-bars-foot small { font-size:10px; color: #8d9590; }
 .score-bars-foot small:nth-child(2) { text-align: center; color: #6b746f; }
-.score-point-labels { position: relative; min-height: 18px; margin-top: 2px; }
-.score-point-labels small { position: absolute; transform: translateX(-50%); white-space: nowrap; font-size: 9px; color: #8d9590; }
+.score-point-labels { display: grid; grid-template-columns: repeat(var(--score-points), minmax(0, 1fr)); gap: 3px; min-height: 18px; margin-top: 3px; }
+.score-point-labels small { min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; color: #8d9590; }
+.stats-controls { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.stats-range-picker { display: flex; align-items: center; gap: 8px; color: #7f8982; font-size: 10px; font-weight: 700; }
+.stats-range-picker select { min-width: 145px; border: 1px solid #dce5dd; border-radius: 10px; background: #fff; color: var(--green); padding: 9px 11px; font: inherit; outline: none; }
+.stats-range-picker select:focus { border-color: #68a084; }
 
 @media (max-width: 760px) {
   .score-history { grid-template-columns: 1fr; gap: 16px; }
   .score-line-chart { height: 72px; }
   .score-bars-foot small:nth-child(2) { display: none; }
+  .stats-controls { align-items: stretch; flex-direction: column; gap: 9px; }
+  .stats-range-picker { justify-content: space-between; }
+  .stats-range-picker select { flex: 1; min-width: 0; }
+  .score-point-labels small { font-size: 8px; }
 }
 
 /* --- Sub-pestañas de sección --------------------------------------------- */
