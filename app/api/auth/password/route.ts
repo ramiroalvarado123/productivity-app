@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   const action = body?.action;
   const email = body?.email?.trim().toLowerCase();
   const password = body?.password ?? "";
-  if (!email || password.length < 8 || (action !== "login" && action !== "signup")) {
+  if (!email || !password || (action === "signup" && password.length < 8) || (action !== "login" && action !== "signup")) {
     return NextResponse.json({ error: "Revisá el email y usá una contraseña de al menos 8 caracteres." }, { status: 400 });
   }
 

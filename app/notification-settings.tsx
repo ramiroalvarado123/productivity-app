@@ -55,7 +55,7 @@ async function responseJson(response: Response) {
   return response.json().catch(() => ({}));
 }
 
-export function NotificationSettings({ isPro }: { isPro: boolean }) {
+export function NotificationSettings({ isPro, compact = false }: { isPro: boolean; compact?: boolean }) {
   const [preferences, setPreferences] = useState(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,6 +121,7 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
       return;
     }
 
+    setSaving(true);
     try {
       const nextPermission = await Notification.requestPermission();
       setPermission(nextPermission);
@@ -131,7 +132,10 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
 
       const registration = await navigator.serviceWorker.register("/sw.js");
       const existing = await registration.pushManager.getSubscription();
-      const subscription = existing || await registration.pushManager.subscribe({
+      // Al volver a activar, renovamos la suscripción para recuperar dispositivos
+      // que quedaron asociados a una clave VAPID anterior o a un endpoint inválido.
+      if (existing) await existing.unsubscribe();
+      const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
@@ -143,10 +147,13 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
       });
       const body = await responseJson(response);
       if (!response.ok) throw new Error(failMessage(body, "No pudimos registrar este dispositivo."));
-      await save({ ...preferences, pushEnabled: true });
+      // El endpoint ya guarda push_enabled junto con la suscripción.
+      setPreferences((current) => ({ ...current, pushEnabled: true }));
       setNotice("Notificaciones activadas en este dispositivo.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No pudimos activar las notificaciones.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -171,6 +178,14 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
     } finally { setSaving(false); }
   }
 
+  if (compact) {
+    if (loading || preferences.pushEnabled) return null;
+    return <div className="notification-activation-banner" role="status">
+      <div><span className="notification-activation-icon" aria-hidden="true">♧</span><p><b>Activá las notificaciones</b><small>Recibí avisos de tus actividades y el cierre del día.</small></p></div>
+      <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : "Activar ahora"}</button>
+      {error && <small className="notification-activation-error">{error}</small>}
+    </div>;
+  }
   if (loading) return <div className="settings-subpanel"><p className="settings-copy">Cargando preferencias…</p></div>;
 
   return <form className="settings-subpanel notification-settings-panel" onSubmit={saveForm}>
@@ -183,7 +198,7 @@ export function NotificationSettings({ isPro }: { isPro: boolean }) {
       </div>
       {preferences.pushEnabled
         ? <button type="button" className="notification-action secondary" onClick={() => void disablePush()} disabled={saving}>Desactivar</button>
-        : <button type="button" className="notification-action" onClick={() => void enablePush()}>Activar</button>}
+        : <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : "Activar"}</button>}
     </div>
 
     <p className="notification-section-label">AVISOS</p>

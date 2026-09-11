@@ -8,10 +8,10 @@ import { DatePicker } from "./date-picker";
 import { Dropdown, type DropdownOption } from "./dropdown";
 import { FULL_DAY_HOUR_OPTIONS, TimeFieldPicker } from "./time-dropdown";
 import { TourOverlay, type TourStep } from "./tour-overlay";
-import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
+import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, dateInTimeZone, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
 import { quoteForDate } from "./lib/quotes";
 import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "./lib/streaks";
-import { dayBlocks, dayWindow, freeSlots, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
+import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
 import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, type DayRecord, type ScoreWeights } from "./lib/score";
@@ -34,13 +34,13 @@ type GoalCategory = "general" | "gym" | "training" | "nutrition" | "reading" | "
 type Goal = { id: number; title: string; period: GoalPeriod; category: GoalCategory; targetDate: string; completedAt: string | null; createdAt: string };
 type Priorities = { monthKey: string; gymWeight: number; nutritionWeight: number; readingWeight: number; sleepWeight: number; focusWeight: number; goalsWeight: number };
 type DailyCheckin = { id: number; entryDate: string; habitsJson: string; workoutDetail: string; studyMinutes: number; studyDetail: string; sleepMinutes: number; bedtime: string; wakeTime: string; waterMl: number; journal: string; transcript: string; voiceSummary: string };
-type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other" };
-type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string };
+type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other"; priority?: "important" | "secondary" };
+type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string; quality?: number | null };
 type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean };
 type FocusProject = { id: number; name: string; kind: "study" | "work" };
 type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
 type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null };
-type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "other"; notes: string };
+type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "other"; notes: string; completedAt: string | null };
 type VoiceCheckin = { transcript: string; summary: string; gym: { attended: boolean | null; detail: string }; meals: Array<{ name: string; detail: string; calories: number; protein: number; carbs: number; fat: number }>; reading: { bookTitle: string; pages: number; minutes: number; note: string }; habits: string[]; study: { minutes: number; detail: string; tasks: string[] }; sleep: { minutes: number; bedtime: string; wakeTime: string }; waterMl: number; journal: string; goals: Array<{ title: string; period: GoalPeriod; category: GoalCategory; targetDate: string }>; confidence: "low" | "medium" | "high" };
 type MealEstimate = { mealName: string; detail: string; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
 type DietPlanContent = {
@@ -59,6 +59,29 @@ type DietForm = {
   age: number; sex: DietPlanRecord["sex"]; heightCm: number; currentWeightKg: number; targetWeightKg: number;
   activityLevel: DietPlanRecord["activityLevel"]; goalPace: DietPlanRecord["goalPace"]; preferences: string; details: string;
 };
+type DietNumberKey = "age" | "heightCm" | "currentWeightKg" | "targetWeightKg";
+type DietNumberDrafts = Record<DietNumberKey, string>;
+const DIET_NUMBER_LIMITS: Record<DietNumberKey, { min: number; max: number }> = {
+  age: { min: 18, max: 100 },
+  heightCm: { min: 120, max: 230 },
+  currentWeightKg: { min: 35, max: 300 },
+  targetWeightKg: { min: 35, max: 300 },
+};
+function dietNumberDraftsFrom(form: DietForm): DietNumberDrafts {
+  return {
+    age: String(form.age),
+    heightCm: String(form.heightCm),
+    currentWeightKg: String(form.currentWeightKg),
+    targetWeightKg: String(form.targetWeightKg),
+  };
+}
+function isDietNumberKey(key: keyof DietForm): key is DietNumberKey {
+  return key === "age" || key === "heightCm" || key === "currentWeightKg" || key === "targetWeightKg";
+}
+function parseDietNumber(value: string) {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
 type ProgressData = {
   profile: User; gymDates: string[]; disciplines: Discipline[]; trainingLogs: TrainingLog[]; exerciseLogs: ExerciseLog[];
   meals: Meal[]; mealHistory: Meal[]; books: Book[]; readingLogs: ReadingLog[]; readingHistory: ReadingLog[]; notes: Note[];
@@ -98,7 +121,7 @@ const navItems: NavItem[] = [
   { id: "focus", icon: focusIcon, label: "Foco", mobile: "Foco" },
   { id: "sleep", icon: "☾", label: "Sueño", mobile: "Sueño" },
   { id: "plan", icon: "◎", label: "Plan", mobile: "Plan" },
-  { id: "stats", icon: statsIcon, label: "Estadísticas", mobile: "Datos" },
+  { id: "stats", icon: statsIcon, label: "Progreso", mobile: "Progreso" },
 ];
 const mobileNavItems: NavItem[] = [
   navItems.find((item) => item.id === "physical")!,
@@ -129,17 +152,17 @@ const FEEDBACK_TYPES: Array<[FeedbackType, string, string, string]> = [
   ["bug", "!", "Encontré un problema", "Algo no funciona como debería."],
   ["dislike", "−", "Hay algo que no me gusta", "Funciona, pero lo cambiarías."],
 ];
-const FEEDBACK_SECTIONS = ["Inicio", "Daily Score", "Físico", "Foco", "Sueño", "Plan", "Estadísticas", "Amigos", "Cuenta / configuración", "Otra"];
+const FEEDBACK_SECTIONS = ["Inicio", "Daily Score", "Físico", "Foco", "Sueño", "Plan", "Progreso", "Amigos", "Cuenta / configuración", "Otra"];
 const MAX_VOICE_UPLOAD_BYTES = 900 * 1024;
 const VOICE_AUTO_STOP_BYTES = 800 * 1024;
 // Safari puede rechazar rutas relativas dentro de previews embebidos. Construir
 // la URL desde el origen evita el DOMException "expected pattern" antes de que
 // la solicitud llegue al servidor.
-const categoryLabels: Record<GoalCategory, string> = { general: "Personal", gym: "Gimnasio", training: "Entrenamiento", nutrition: "Alimentación", reading: "Lectura", study: "Estudio", work: "Trabajo", sleep: "Sueño", score: "Daily Score", calendar: "Calendario", stats: "Estadísticas", goals: "Objetivos" };
+const categoryLabels: Record<GoalCategory, string> = { general: "Personal", gym: "Gimnasio", training: "Entrenamiento", nutrition: "Alimentación", reading: "Lectura", study: "Estudio", work: "Trabajo", sleep: "Sueño", score: "Daily Score", calendar: "Calendario", stats: "Progreso", goals: "Objetivos" };
 const goalAreaOptions: Array<{ value: GoalCategory; label: string }> = [
   { value: "general", label: "Personal / Inicio" }, { value: "score", label: "Daily Score" }, { value: "training", label: "Entrenamiento" },
   { value: "nutrition", label: "Alimentación" }, { value: "sleep", label: "Sueño" }, { value: "study", label: "Estudio" },
-  { value: "work", label: "Trabajo" }, { value: "calendar", label: "Calendario / planificación" }, { value: "stats", label: "Estadísticas" },
+  { value: "work", label: "Trabajo" }, { value: "calendar", label: "Calendario / planificación" }, { value: "stats", label: "Progreso" },
   { value: "reading", label: "Biblioteca / lectura" }, { value: "goals", label: "Objetivos" },
 ];
 const periodLabels: Record<GoalPeriod, string> = { weekly: "Esta semana", monthly: "Este mes", annual: "Este año", custom: "Plazo personal" };
@@ -156,7 +179,7 @@ const kindLabels: Record<Discipline["kind"], string> = { strength: "Fuerza / gim
 // Recorrido guiado de la primera vez: sólo elementos de Inicio, para no tener
 // que navegar entre secciones mientras el tour está abierto.
 const TOUR_STEPS: TourStep[] = [
-  { selector: "[data-tour='nav']", title: "Tus áreas, siempre a mano", body: "Entrenamiento, Alimentación, Sueño, Estudio o Trabajo, Plan, Estadísticas y Amigos. Todo vive acá." },
+  { selector: "[data-tour='nav']", title: "Tus áreas, siempre a mano", body: "Entrenamiento, Alimentación, Sueño, Estudio o Trabajo, Plan, Progreso y Amigos. Todo vive acá." },
   { selector: "[data-tour='score']", title: "Tu Daily Score", body: "Un puntaje diario armado con lo que registraste y el peso que le diste a cada prioridad." },
   { selector: "[data-tour='metrics']", title: "Lo que más te importa", body: "Estas tarjetas cambian según tus prioridades: acá vas a ver tu avance del día." },
   { selector: "[data-tour='voice']", title: "Cerrá tu día hablando", body: "Contá qué hiciste en 60 segundos en vez de cargar cada cosa a mano." },
@@ -170,12 +193,22 @@ const FRIEND_NUDGE_MESSAGES = [
   "¡Gran racha! Seguí así 🔥",
 ];
 const disciplineKindOptions: DropdownOption[] = Object.entries(kindLabels).map(([value, label]) => ({ value, label }));
+const TRAINING_QUALITY_OPTIONS = [
+  { value: 1, label: "Malo" },
+  { value: 2, label: "Regular" },
+  { value: 3, label: "Bueno" },
+  { value: 4, label: "Muy bueno" },
+] as const;
+const DISCIPLINE_PRIORITY_OPTIONS = [
+  { value: "secondary", label: "Secundaria" },
+  { value: "important", label: "Importante" },
+] as const;
 const bookLanguageOptions = [
   ["es", "Español"], ["en", "Inglés"], ["pt", "Portugués"], ["fr", "Francés"], ["it", "Italiano"], ["de", "Alemán"],
 ] as const;
 
 function argentinaDate() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  return dateInTimeZone("America/Argentina/Buenos_Aires");
 }
 /** Hora actual en Buenos Aires, en minutos desde medianoche. */
 function argentinaMinutes() {
@@ -216,6 +249,46 @@ function weekFor(date: string) {
     current.setDate(monday.getDate() + index);
     return { iso: current.toISOString().slice(0, 10), short: ["L", "M", "M", "J", "V", "S", "D"][index], number: current.getDate() };
   });
+}
+
+const STAT_WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const STAT_MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+type StatsWindow = { start: string; end: string; title: string };
+
+function shiftMonthStart(date: string, offset: number) {
+  const value = new Date(date + "T12:00:00");
+  value.setDate(1);
+  value.setMonth(value.getMonth() + offset);
+  return value.toISOString().slice(0, 10);
+}
+function lastDayOfMonth(monthStart: string) {
+  const value = new Date(monthStart + "T12:00:00");
+  value.setMonth(value.getMonth() + 1, 0);
+  return value.toISOString().slice(0, 10);
+}
+function statsWindowFor(period: StatsPeriod, offset: number, reference: string): StatsWindow {
+  if (period === "weekly") {
+    const monday = weekFor(reference)[0].iso;
+    const start = dateMinus(monday, offset * 7);
+    const end = datePlus(start, 6);
+    return { start, end, title: "Semana del " + formatDate(start) + " al " + formatDate(end) };
+  }
+  if (period === "monthly") {
+    const start = shiftMonthStart(reference, -offset);
+    return { start, end: lastDayOfMonth(start), title: new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(start + "T12:00:00")) };
+  }
+  const year = Number(reference.slice(0, 4)) - offset;
+  const start = year + "-01-01";
+  return { start, end: year + "-12-31", title: String(year) };
+}
+function datesBetween(start: string, end: string) {
+  const dates: string[] = [];
+  const total = Math.max(0, Math.round((new Date(end + "T12:00:00").getTime() - new Date(start + "T12:00:00").getTime()) / 86400000) + 1);
+  for (let index = 0; index < total; index += 1) dates.push(datePlus(start, index));
+  return dates;
+}
+function averageNumbers(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 /** Fecha objetivo para los plazos relativos. "custom" no pasa por acá: ahí el usuario elige el día exacto con el DatePicker. */
 function goalDeadline(today: string, period: Exclude<GoalPeriod, "custom">) {
@@ -330,6 +403,14 @@ function paceLabel(durationMinutes: number, distanceKm: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")} min/km`;
 }
 
+function parseDecimalInput(value: string) {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function formatDecimalInput(value: number) {
+  return value > 0 ? String(value).replace(".", ",") : "";
+}
+
 /** Mantiene el ancho original del botón mientras muestra carga y confirmación. */
 function SaveButtonContent({ label, phase }: { label: ReactNode; phase: SavePhase }) {
   return <span className="save-button-content">
@@ -346,27 +427,42 @@ function SaveButtonContent({ label, phase }: { label: ReactNode; phase: SavePhas
  * escribe; `key={disciplineId-date}` en el padre lo remonta al cambiar de
  * disciplina o de día, así vuelve a partir de lo que ya había ese día.
  */
-function DistanceSessionForm({ disciplineId, date, log, notePlaceholder, saving, savePhase, onSave }: {
+function DistanceSessionForm({ disciplineId, date, log, saving, savePhase, onSave }: {
   disciplineId: number;
   date: string;
   log: TrainingLog | undefined;
-  notePlaceholder: string;
   saving: boolean;
   savePhase: SavePhase;
   onSave: (payload: Record<string, unknown>) => void;
 }) {
-  const [durationMinutes, setDurationMinutes] = useState(log?.durationMinutes ?? 0);
-  const [distanceKm, setDistanceKm] = useState(log ? log.distanceMeters / 1000 : 0);
-  const pace = paceLabel(durationMinutes, distanceKm);
-  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); onSave({ action: "save_training", disciplineId, date, durationMinutes, distanceKm, notes: form.get("notes") }); }}>
+  const [durationDraft, setDurationDraft] = useState(log?.durationMinutes ? formatDecimalInput(log.durationMinutes) : "");
+  const [distanceDraft, setDistanceDraft] = useState(log?.distanceMeters ? formatDecimalInput(log.distanceMeters / 1000) : "");
+  const pace = paceLabel(parseDecimalInput(durationDraft), parseDecimalInput(distanceDraft));
+  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); onSave({ action: "save_training", disciplineId, date, durationMinutes: durationDraft, distanceKm: distanceDraft }); }}>
     <div className="two-fields">
-      <label>Distancia (km)<input type="number" min="0" step=".01" value={distanceKm || ""} onChange={(event) => setDistanceKm(Number(event.target.value) || 0)} /></label>
-      <label>Tiempo (min)<input type="number" min="0" value={durationMinutes || ""} onChange={(event) => setDurationMinutes(Number(event.target.value) || 0)} /></label>
+      <label>Distancia (km)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={distanceDraft} onChange={(event) => setDistanceDraft(event.target.value)} /></label>
+      <label>Tiempo (min)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={durationDraft} onChange={(event) => setDurationDraft(event.target.value)} /></label>
     </div>
     <div className="pace-preview"><span>◷</span><p><small>RITMO</small><b>{pace ?? "Cargá distancia y tiempo"}</b></p></div>
-    <label>Notas<textarea name="notes" defaultValue={log?.notes || ""} placeholder={notePlaceholder} /></label>
     <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase} /></button>
   </form>;
+}
+
+function TrainingQualityBar({ disciplineName, quality, saving, onSelect }: {
+  disciplineName: string;
+  quality: number | null | undefined;
+  saving: boolean;
+  onSelect: (quality: number) => void;
+}) {
+  return <div className="training-quality" aria-label={"Valoración del entrenamiento de " + disciplineName}>
+    <span className="training-quality-label">¿Cómo estuvo?</span>
+    <div className="training-quality-options" role="radiogroup">
+      {TRAINING_QUALITY_OPTIONS.map((option) => {
+        const selected = quality === option.value;
+        return <button key={option.value} type="button" role="radio" aria-checked={selected} className={"training-quality-option" + (selected ? " selected" : "")} disabled={saving} onClick={() => onSelect(option.value)}>{option.label}</button>;
+      })}
+    </div>
+  </div>;
 }
 
 function LockedFeature({ title, note, onOpen, children }: { title: string; note: string; onOpen: () => void; children: React.ReactNode }) {
@@ -427,7 +523,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   /** Sólo viene en true en el primer redirect después de completar el onboarding (ver `?tour=1`). */
   showTutorial?: boolean;
 }) {
-  const [today] = useState(argentinaDate);
+  const [today, setToday] = useState(argentinaDate);
   const monthKey = today.slice(0, 7);
   const week = useMemo(() => weekFor(today), [today]);
   const [data, setData] = useState<ProgressData>(() => emptyData(initialUser, monthKey));
@@ -454,7 +550,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [loading, setLoading] = useState(initialUser.onboardingCompleted);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [saving, setSaving] = useState(false);
+  // Estado del gesto móvil "tirar para actualizar". Los refs mantienen el
+  // seguimiento del dedo sin recrear listeners en cada movimiento.
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullStartXRef = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const pullTrackingRef = useRef(false);
+  const pullRefreshingRef = useRef(false);
   const [saveFeedback, setSaveFeedback] = useState<{ key: string; phase: Exclude<SavePhase, null> } | null>(null);
   const saveFeedbackTimerRef = useRef<number | null>(null);
   const [error, setError] = useState(initialError);
@@ -489,8 +595,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [priorityDraft, setPriorityDraft] = useState<Priorities>({ monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 });
   const [selectedDisciplineId, setSelectedDisciplineId] = useState<number | null>(null);
   const [trainingDate, setTrainingDate] = useState(today);
+  const [editingExerciseId, setEditingExerciseId] = useState<number | null>(null);
   const [trainingWeekAnchor, setTrainingWeekAnchor] = useState(today);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
+  const [statsOffset, setStatsOffset] = useState(0);
+  const [selectedScorePointKey, setSelectedScorePointKey] = useState<string | null>(null);
   // Meta de entrenamientos por semana, para la racha de constancia. Vive en
   // este navegador (no en el servidor) porque es una preferencia liviana de
   // lectura de la racha, no un dato que otra pantalla necesite.
@@ -533,9 +642,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Tildado optimista: la fila responde al toque y recién después se confirma
   // contra el servidor, así no hay medio segundo de pantalla muerta.
   const [pendingTasks, setPendingTasks] = useState<Record<number, boolean>>({});
+  const [pendingEvents, setPendingEvents] = useState<Record<number, boolean>>({});
   const [agendaView, setAgendaView] = useState<"week" | "month">("week");
   const [weekAnchor, setWeekAnchor] = useState(today);
   const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string } | null>(null);
+  const [slotDuration, setSlotDuration] = useState("60");
+  const [slotCustomHours, setSlotCustomHours] = useState("");
   const [nowMinutes, setNowMinutes] = useState(argentinaMinutes);
   const [dietCalendarCursor, setDietCalendarCursor] = useState(today.slice(0, 7));
   const [bookTab, setBookTab] = useState<BookStatus>("reading");
@@ -556,16 +668,72 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [discoverSearched, setDiscoverSearched] = useState(false);
   const [aiDescription, setAiDescription] = useState("");
+  const [mealEntryDate, setMealEntryDate] = useState(today);
   const [mealPhoto, setMealPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
-  const [dietForm, setDietForm] = useState<DietForm>({ age: 25, sex: "unspecified", heightCm: 175, currentWeightKg: 75, targetWeightKg: 70, activityLevel: "light", goalPace: "gentle", preferences: "", details: "" });
+  const initialDietForm: DietForm = { age: 25, sex: "unspecified", heightCm: 175, currentWeightKg: 75, targetWeightKg: 70, activityLevel: "light", goalPace: "gentle", preferences: "", details: "" };
+  const [dietForm, setDietForm] = useState<DietForm>(initialDietForm);
+  const [dietNumberDrafts, setDietNumberDrafts] = useState<DietNumberDrafts>(() => dietNumberDraftsFrom(initialDietForm));
+  const dietNumberFocusRef = useRef<Partial<Record<DietNumberKey, number>>>({});
   // Calculadora rápida (sin IA): null = seguir la sugerencia calculada en vivo; un número = lo que el usuario aceptó o modificó a mano.
   const [dietQuickCalories, setDietQuickCalories] = useState<number | null>(null);
+  const [dietQuickCaloriesDraft, setDietQuickCaloriesDraft] = useState<string | null>(null);
+  const dietQuickCaloriesFocusRef = useRef<number | null>(null);
   function setDietQuickField<K extends keyof DietForm>(key: K, value: DietForm[K]) {
     setDietForm((current) => ({ ...current, [key]: value }));
+    if (isDietNumberKey(key)) setDietNumberDrafts((current) => ({ ...current, [key]: String(value) }));
     setDietQuickCalories(null);
+    setDietQuickCaloriesDraft(null);
+  }
+  function beginDietNumberInput(key: DietNumberKey) {
+    if (dietNumberFocusRef.current[key] === undefined) dietNumberFocusRef.current[key] = dietForm[key];
+  }
+  function updateDietNumberInput(key: DietNumberKey, raw: string) {
+    setDietNumberDrafts((current) => ({ ...current, [key]: raw }));
+    const parsed = parseDietNumber(raw);
+    if (parsed !== null) setDietForm((current) => ({ ...current, [key]: parsed }));
+    setDietQuickCalories(null);
+    setDietQuickCaloriesDraft(null);
+  }
+  function finishDietNumberInput(key: DietNumberKey) {
+    const raw = dietNumberDrafts[key].trim();
+    const original = dietNumberFocusRef.current[key];
+    const fallback = original ?? dietForm[key];
+    const parsed = parseDietNumber(raw);
+    const limits = DIET_NUMBER_LIMITS[key];
+    if (raw === "" || parsed === null || parsed < limits.min || parsed > limits.max) {
+      setDietForm((current) => ({ ...current, [key]: fallback }));
+      setDietNumberDrafts((current) => ({ ...current, [key]: String(fallback) }));
+    } else {
+      setDietForm((current) => ({ ...current, [key]: parsed }));
+      setDietNumberDrafts((current) => ({ ...current, [key]: String(parsed) }));
+    }
+    delete dietNumberFocusRef.current[key];
+  }
+  function beginDietQuickCaloriesInput() {
+    const current = dietQuickCalories ?? estimateTargetCalories(dietForm)?.targetCalories ?? 0;
+    dietQuickCaloriesFocusRef.current = current || null;
+    setDietQuickCaloriesDraft(current ? String(current) : "");
+  }
+  function updateDietQuickCaloriesInput(raw: string) {
+    setDietQuickCaloriesDraft(raw);
+    const parsed = parseDietNumber(raw);
+    if (parsed !== null) setDietQuickCalories(parsed);
+  }
+  function finishDietQuickCaloriesInput() {
+    const raw = (dietQuickCaloriesDraft ?? "").trim();
+    const fallback = dietQuickCaloriesFocusRef.current ?? dietQuickCalories ?? estimateTargetCalories(dietForm)?.targetCalories ?? 0;
+    const parsed = parseDietNumber(raw);
+    if (raw === "" || parsed === null || parsed < 1000 || parsed > 6000) {
+      setDietQuickCalories(fallback || null);
+      setDietQuickCaloriesDraft(fallback ? String(fallback) : "");
+    } else {
+      setDietQuickCalories(parsed);
+      setDietQuickCaloriesDraft(String(parsed));
+    }
+    dietQuickCaloriesFocusRef.current = null;
   }
   const [dietGenerating, setDietGenerating] = useState(false);
   const [generatedDietPlan, setGeneratedDietPlan] = useState<DietPlanContent | null>(null);
@@ -573,7 +741,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [dietVoiceLoading, setDietVoiceLoading] = useState(false);
   const [sleepBedtime, setSleepBedtime] = useState("23:00");
   const [sleepWaketime, setSleepWaketime] = useState("07:00");
-  const [focusHours, setFocusHours] = useState(0);
+  const [focusHours, setFocusHours] = useState("");
   const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>("weekly");
   const [customDate, setCustomDate] = useState(() => datePlus(argentinaDate(), 30));
   const [recording, setRecording] = useState(false);
@@ -592,6 +760,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const dietStopTimerRef = useRef<number | null>(null);
   const dietHydratedRef = useRef(false);
   const sleepHydratedRef = useRef(false);
+  const previousTodayRef = useRef(today);
+
+  // Al cambiar el día, la carga rápida de comidas vuelve a apuntar a hoy.
+  useEffect(() => {
+    setMealEntryDate(today);
+  }, [today]);
 
   // El menú de cuenta se comporta como un desplegable real: cualquier toque
   // exterior o Escape lo cierra, sin interferir con sus acciones internas.
@@ -623,7 +797,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       setPriorityDraft(next.priorities);
       setSelectedDisciplineId((current) => current ?? next.disciplines[0]?.id ?? null);
       if (next.dietPlan && !dietHydratedRef.current) {
-        setDietForm({
+        const hydratedDietForm: DietForm = {
           age: next.dietPlan.age,
           sex: next.dietPlan.sex,
           heightCm: next.dietPlan.heightCm,
@@ -633,8 +807,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           goalPace: next.dietPlan.goalPace,
           preferences: next.dietPlan.preferences,
           details: next.dietPlan.details,
-        });
+        };
+        setDietForm(hydratedDietForm);
+        setDietNumberDrafts(dietNumberDraftsFrom(hydratedDietForm));
         setDietQuickCalories(next.dietPlan.targetCalories || null);
+        setDietQuickCaloriesDraft(null);
         dietHydratedRef.current = true;
       }
       if (next.dailyCheckin && !sleepHydratedRef.current) {
@@ -660,6 +837,27 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     const timer = window.setInterval(() => setNowMinutes(argentinaMinutes()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+  // Detecta el cambio de fecha en Argentina aunque la app permanezca abierta.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const syncToday = () => {
+      const nextToday = argentinaDate();
+      setToday((current) => current === nextToday ? current : nextToday);
+      setNowMinutes(argentinaMinutes());
+    };
+    syncToday();
+    const timer = window.setInterval(syncToday, 30000);
+    window.addEventListener("focus", syncToday);
+    window.addEventListener("pageshow", syncToday);
+    document.addEventListener("visibilitychange", syncToday);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", syncToday);
+      window.removeEventListener("pageshow", syncToday);
+      document.removeEventListener("visibilitychange", syncToday);
+    };
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(() => {
     const title = bookDraft.title.trim();
     if (!bookForm || !bookSuggestionOpen || title.length < 2) {
@@ -695,6 +893,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     return () => window.clearInterval(timer);
   }, [recording]);
 
+  // Al empezar un día nuevo se muestran los controles del día nuevo; el historial queda intacto.
+  useEffect(() => {
+    const previous = previousTodayRef.current;
+    if (previous === today) return;
+    setTrainingDate((current) => current === previous ? today : current);
+    setTrainingWeekAnchor((current) => current === previous ? today : current);
+    setWeekAnchor((current) => current === previous ? today : current);
+    setCalendarCursor(today.slice(0, 7));
+    setDietCalendarCursor(today.slice(0, 7));
+    setSleepBedtime("23:00");
+    setSleepWaketime("07:00");
+    sleepHydratedRef.current = false;
+    previousTodayRef.current = today;
+  }, [today]);
+
   const beginSaveFeedback = useCallback((key: string) => {
     if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current);
     setSaveFeedback({ key, phase: "saving" });
@@ -723,6 +936,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       const result = await readJson<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo guardar.");
       await loadData();
+      if (payload.action === "update_exercise" || payload.action === "delete_exercise") setEditingExerciseId(null);
       finishSaveFeedback(feedbackKey, true);
       return true;
     } catch (caught) {
@@ -749,6 +963,85 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     }
   }, []);
 
+  const refreshAll = useCallback(async () => {
+    setRefreshVersion((version) => version + 1);
+    await Promise.allSettled([loadData(), loadSocial()]);
+  }, [loadData, loadSocial]);
+
+  // En celulares, tirar hacia abajo desde el inicio actualiza todo el espacio de trabajo
+  // sin sacar al usuario de la sección en la que estaba.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("ontouchstart" in window)) return;
+    const threshold = 72;
+    const pointerIsTouch = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+    if (!pointerIsTouch) return;
+    const isAtTop = () => {
+      const scrollElement = document.scrollingElement;
+      return (scrollElement?.scrollTop ?? window.scrollY) <= 0;
+    };
+    const isBlockedTarget = (target: EventTarget | null) => (
+      target instanceof Element &&
+      Boolean(target.closest("input, textarea, select, button, [contenteditable='true'], [role='dialog']"))
+    );
+    const resetPull = () => {
+      pullTrackingRef.current = false;
+      pullStartYRef.current = null;
+      pullStartXRef.current = null;
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      if (pullRefreshingRef.current || event.touches.length !== 1 || !isAtTop() || isBlockedTarget(event.target)) {
+        resetPull();
+        return;
+      }
+      const touch = event.touches[0];
+      pullStartYRef.current = touch?.clientY ?? null;
+      pullStartXRef.current = touch?.clientX ?? null;
+      pullTrackingRef.current = pullStartYRef.current !== null && pullStartXRef.current !== null;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!pullTrackingRef.current || pullRefreshingRef.current) return;
+      if (event.touches.length !== 1) {
+        resetPull();
+        return;
+      }
+      const touch = event.touches[0];
+      if (!touch || pullStartYRef.current === null || pullStartXRef.current === null) return;
+      const deltaY = touch.clientY - pullStartYRef.current;
+      const deltaX = touch.clientX - pullStartXRef.current;
+      if (deltaY <= 0 || !isAtTop() || Math.abs(deltaX) > Math.abs(deltaY)) {
+        resetPull();
+        return;
+      }
+      pullDistanceRef.current = Math.min(threshold * 1.35, deltaY);
+      setPullDistance(pullDistanceRef.current);
+      if (event.cancelable && deltaY > 4) event.preventDefault();
+    };
+    const handleTouchEnd = () => {
+      const shouldRefresh = pullTrackingRef.current && pullDistanceRef.current >= threshold;
+      resetPull();
+      if (!shouldRefresh || pullRefreshingRef.current) return;
+      pullRefreshingRef.current = true;
+      setPullRefreshing(true);
+      void refreshAll().finally(() => {
+        pullRefreshingRef.current = false;
+        setPullRefreshing(false);
+      });
+    };
+    const handleTouchCancel = () => resetPull();
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", handleTouchCancel, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchCancel);
+    };
+  }, [refreshAll]);
   const sendSocial = useCallback(async (payload: Record<string, unknown>, feedbackKey = String(payload.action ?? "social")) => {
     beginSaveFeedback(feedbackKey);
     setSaving(true);
@@ -776,11 +1069,66 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     [data.focusSessions],
   );
 
-  // Series por fecha. Alimentan las tendencias de Estadísticas y también el
+  // Series por fecha. Alimentan las tendencias de Progreso y también el
   // Daily Score, para que el puntaje de hoy y el del histórico salgan del
   // mismo lugar y nunca se contradigan entre pantallas.
-  const trainingByDate = useMemo(() => sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1), [data.trainingLogs]);
-  const focusByDate = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
+  // Un bloque de foco agendado queda contabilizado en su fecha cuando se
+  // completa la tarea. Como el origen es `completedAt`, desmarcarla lo quita
+  // automáticamente y nunca se duplican sesiones en la base.
+  const completedPlanTasks = useMemo(
+    () => data.tasks.filter((task) => Boolean(task.completedAt && task.dueDate && task.durationMinutes > 0)),
+    [data.tasks],
+  );
+  const completedTaskFocusByDate = useMemo(
+    () => sumByDate(
+      completedPlanTasks.filter((task) => task.projectId !== null && task.dueDate),
+      (task) => task.dueDate as string,
+      (task) => Math.max(0, task.durationMinutes || 0),
+    ),
+    [completedPlanTasks],
+  );
+  const completedTrainingTasksByDate = useMemo(
+    () => sumByDate(
+      completedPlanTasks.filter((task) => !task.projectId && task.dueDate && inferTaskCategory(task.title) === "training"),
+      (task) => task.dueDate as string,
+      () => 1,
+    ),
+    [completedPlanTasks],
+  );
+  const trainingByDate = useMemo(() => {
+    const totals = sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1);
+    for (const [date, count] of Object.entries(completedTrainingTasksByDate)) {
+      totals[date] = (totals[date] ?? 0) + count;
+    }
+    return totals;
+  }, [data.trainingLogs, completedTrainingTasksByDate]);
+  // El entrenamiento del Daily Score se pondera por disciplina: una actividad
+  // importante completa el factor, mientras que una secundaria suma la mitad.
+  // Un bloque agendado como "Entrenar", "Gimnasio" o similar completa el factor
+  // al marcarse y se deshace al volver a marcarlo como pendiente.
+  const trainingScoreByDate = useMemo(() => {
+    const weighted: Record<string, number> = {};
+    const seen = new Set<string>();
+    for (const log of data.trainingLogs) {
+      const key = log.trainingDate + ":" + log.disciplineId;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const discipline = data.disciplines.find((item) => item.id === log.disciplineId);
+      const contribution = discipline?.priority === "secondary" ? 0.5 : 1;
+      weighted[log.trainingDate] = Math.min(1, (weighted[log.trainingDate] ?? 0) + contribution);
+    }
+    for (const [date, count] of Object.entries(completedTrainingTasksByDate)) {
+      weighted[date] = Math.min(1, (weighted[date] ?? 0) + count);
+    }
+    return weighted;
+  }, [data.trainingLogs, data.disciplines, completedTrainingTasksByDate]);
+  const focusByDate = useMemo(() => {
+    const totals = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
+    for (const [date, minutes] of Object.entries(completedTaskFocusByDate)) {
+      totals[date] = (totals[date] ?? 0) + minutes;
+    }
+    return totals;
+  }, [uniqueFocusSessions, completedTaskFocusByDate]);
   const readingByDate = sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages);
   const caloriesByDay = sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories);
   const mealCountByDate = sumByDate(data.mealHistory, (row) => row.mealDate, () => 1);
@@ -796,6 +1144,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   /** Lo que registraste un día cualquiera, tal cual, sin interpretar. */
   const dayRecordFor = (date: string): DayRecord => ({
     trainingSessions: trainingByDate[date] ?? 0,
+    trainingScore: (trainingScoreByDate[date] ?? 0) * 100,
     meals: mealCountByDate[date] ?? 0,
     sleepMinutes: sleepMinutesByDate[date] ?? 0,
     focusMinutes: focusByDate[date] ?? 0,
@@ -807,12 +1156,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     hasOpenGoals: data.goals.some((goal) => goal.createdAt.slice(0, 10) <= date && (!goal.completedAt || goal.completedAt.slice(0, 10) >= date)),
   });
 
-  const trainingToday = data.trainingLogs.filter((log) => log.trainingDate === today);
-  const trainedToday = trainingToday.length > 0;
+  const trainedToday = (trainingByDate[today] ?? 0) > 0;
   const calories = data.meals.reduce((sum, meal) => sum + meal.calories, 0);
   const pagesToday = data.readingLogs.reduce((sum, log) => sum + log.pages, 0);
   const sleepToday = data.dailyCheckins.find((item) => item.entryDate === today)?.sleepMinutes ?? 0;
-  const focusToday = uniqueFocusSessions.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0);
+  const focusToday = focusByDate[today] ?? 0;
   const scoreWeights: ScoreWeights = priorityDraft;
   const factors = dayFactors(dayRecordFor(today));
   const score = scoreFrom(factors, scoreWeights);
@@ -839,6 +1187,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const selectedDiscipline = data.disciplines.find((item) => item.id === selectedDisciplineId) ?? data.disciplines[0] ?? null;
   const selectedTrainingLog = selectedDiscipline ? data.trainingLogs.find((item) => item.disciplineId === selectedDiscipline.id && item.trainingDate === trainingDate) : undefined;
   const selectedExercises = selectedTrainingLog ? data.exerciseLogs.filter((item) => item.trainingLogId === selectedTrainingLog.id) : [];
+  const editingExercise = selectedExercises.find((item) => item.id === editingExerciseId) ?? null;
   // Cada disciplina tiene un único detalle de sesión posible: nunca conviven
   // el de pesas, el de distancia y el genérico para la misma disciplina.
   const isDistanceDiscipline = selectedDiscipline?.kind === "running" || selectedDiscipline?.kind === "cycling" || selectedDiscipline?.kind === "swimming";
@@ -866,9 +1215,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     () => Object.fromEntries(data.focusProjects.map((project) => [project.id, project.name])) as Record<number, string>,
     [data.focusProjects],
   );
+  const projectKinds = useMemo(
+    () => Object.fromEntries(data.focusProjects.map((project) => [project.id, project.kind])) as Record<number, "study" | "work">,
+    [data.focusProjects],
+  );
   const scheduleInput = useMemo(
-    () => ({ tasks: data.tasks, events: data.events, projectNames }),
-    [data.tasks, data.events, projectNames],
+    () => ({ tasks: data.tasks, events: data.events, projectNames, projectKinds }),
+    [data.tasks, data.events, projectNames, projectKinds],
   );
   const todayBlocks = useMemo(() => dayBlocks(scheduleInput, today), [scheduleInput, today]);
   const todayUnscheduled = useMemo(() => unscheduledTasks(scheduleInput, today), [scheduleInput, today]);
@@ -886,7 +1239,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // excepción: nadie entrena todos los días, así que su racha es semanal
   // (semanas seguidas cumpliendo la meta de entrenamientos por semana).
   const readingDates = useMemo(() => new Set(data.readingHistory.filter((item) => item.pages > 0).map((item) => item.logDate)), [data.readingHistory]);
-  const focusDates = useMemo(() => new Set(uniqueFocusSessions.map((item) => item.sessionDate)), [uniqueFocusSessions]);
+  const focusDates = useMemo(
+    () => new Set([
+      ...uniqueFocusSessions.map((item) => item.sessionDate),
+      ...Object.keys(completedTaskFocusByDate),
+    ]),
+    [uniqueFocusSessions, completedTaskFocusByDate],
+  );
   const goodSleepDates = useMemo(() => new Set(data.dailyCheckins.filter((item) => item.sleepMinutes >= 420).map((item) => item.entryDate)), [data.dailyCheckins]);
   const loggingDates = useMemo(() => new Set([...data.mealHistory.map((item) => item.mealDate), ...data.dailyCheckins.map((item) => item.entryDate)]), [data.mealHistory, data.dailyCheckins]);
   const streaks = useMemo(() => ({
@@ -941,11 +1300,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // siendo un número, nunca el registro que lo produjo.
   // ---------------------------------------------------------------------------
   const autoSeries = useMemo(() => ({
-    training: sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1),
-    focus: sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes),
+    training: trainingByDate,
+    focus: focusByDate,
     reading: sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages),
     sleep: sumByDate(data.dailyCheckins.filter((row) => row.sleepMinutes >= 420), (row) => row.entryDate, () => 1),
-  }), [data.trainingLogs, uniqueFocusSessions, data.readingHistory, data.dailyCheckins]);
+  }), [trainingByDate, focusByDate, data.readingHistory, data.dailyCheckins]);
 
   const autoGoalValue = useCallback((goal: GroupGoal) => {
     if (goal.source === "manual") return 0;
@@ -998,13 +1357,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const activeCategories = useMemo(() => {
     const since = dateMinus(today, 5);
     const categories = new Set<string>();
-    if (data.trainingLogs.some((item) => item.trainingDate >= since)) { categories.add("training"); categories.add("gym"); }
+    if (Object.keys(trainingByDate).some((date) => date >= since && date <= today)) { categories.add("training"); categories.add("gym"); }
     if (data.mealHistory.some((item) => item.mealDate >= since)) categories.add("nutrition");
     if (data.readingHistory.some((item) => item.logDate >= since && item.pages > 0)) categories.add("reading");
-    if (uniqueFocusSessions.some((item) => item.sessionDate >= since)) { categories.add("study"); categories.add("work"); }
+    if (Object.keys(focusByDate).some((date) => date >= since && date <= today)) { categories.add("study"); categories.add("work"); }
     if (data.dailyCheckins.some((item) => item.entryDate >= since && item.sleepMinutes > 0)) categories.add("sleep");
     return categories;
-  }, [data.trainingLogs, data.mealHistory, data.readingHistory, data.dailyCheckins, uniqueFocusSessions, today]);
+  }, [trainingByDate, data.mealHistory, data.readingHistory, data.dailyCheckins, focusByDate, today]);
 
   // Los tres días siguientes con sus huecos: es lo que permite que un aviso
   // diga "pasalo al miércoles" en vez de "mirá si algo puede pasar a mañana".
@@ -1063,9 +1422,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     setSelectedBookId(booksInTab[nextPage * 3]?.id ?? null);
   }
   async function submitForm(event: FormEvent<HTMLFormElement>, payload: Record<string, unknown>) {
+    const form = event.currentTarget;
     event.preventDefault();
     const ok = await save(payload);
-    if (ok) event.currentTarget.reset();
+    if (ok) form.reset();
   }
   function openSettings() {
     setSettingsName(data.profile.displayName);
@@ -1344,7 +1704,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }
   async function saveEstimate() {
     if (!estimate) return;
-    const ok = await save({ action: "add_meal", date: today, name: estimate.mealName, detail: estimate.detail, calories: estimate.estimatedCalories, protein: estimate.protein, carbs: estimate.carbs, fat: estimate.fat });
+    const ok = await save({ action: "add_meal", date: mealEntryDate, name: estimate.mealName, detail: estimate.detail, calories: estimate.estimatedCalories, protein: estimate.protein, carbs: estimate.carbs, fat: estimate.fat });
     if (ok) {
       setEstimate(null);
       setAiDescription("");
@@ -1499,6 +1859,19 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   /** Estado visible de una tarea: el optimista si lo hay, si no el guardado. */
   const taskDone = (id: number, savedDone: boolean) => pendingTasks[id] ?? savedDone;
 
+  async function toggleEvent(id: number, completed: boolean) {
+    setPendingEvents((current) => ({ ...current, [id]: completed }));
+    const ok = await save({ action: "toggle_event", id, completed });
+    setPendingEvents((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    return ok;
+  }
+
+  const eventDone = (id: number, savedDone: boolean) => pendingEvents[id] ?? savedDone;
+
   const scoreCard = <article className="score-card">
     <div><p>DAILY SCORE</p><h2>{score >= 75 ? <>Tu día va<br /><em>muy bien.</em></> : <>Cada acción<br /><em>suma.</em></>}</h2><span>{priorityCaption}</span></div>
     <div className="score-ring" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
@@ -1545,7 +1918,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const areaMetrics: Record<string, { icon: string; tone: string; label: string; value: string; unit: string; caption: string; area: string }> = {
     gymWeight: {
       icon: "↗", tone: "violet", label: "ENTRENAMIENTOS", area: "training",
-      value: String(data.trainingLogs.filter((item) => item.trainingDate >= week[0].iso).length), unit: "esta semana",
+      value: String(Object.entries(trainingByDate).filter(([date]) => date >= week[0].iso && date <= today).reduce((sum, [, count]) => sum + count, 0)), unit: "esta semana",
       caption: streaks.training.current ? pluralize(streaks.training.current, "semana seguida", "semanas seguidas") : `${data.disciplines.length} disciplinas`,
     },
     focusWeight: {
@@ -1630,8 +2003,15 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </div>
       <div className="discipline-list">{data.disciplines.map((discipline) => {
         const dates = data.trainingLogs.filter((log) => log.disciplineId === discipline.id && log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).map((log) => log.trainingDate);
+        const focusedLog = selectedDiscipline?.id === discipline.id ? data.trainingLogs.find((log) => log.disciplineId === discipline.id && log.trainingDate === trainingDate) : undefined;
         return <div className={"discipline-card " + (selectedDiscipline?.id === discipline.id ? "selected" : "")} key={discipline.id}>
-          <button className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
+          <div className="discipline-card-heading">
+            <button type="button" className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
+            {data.disciplines.length > 1 && <div className="discipline-priority" role="group" aria-label={"Importancia de " + discipline.name}>
+              {DISCIPLINE_PRIORITY_OPTIONS.map((option) => <button key={option.value} type="button" className={discipline.priority === option.value ? "active" : ""} aria-pressed={discipline.priority === option.value} disabled={saving} onClick={() => void save({ action: "set_discipline_priority", disciplineId: discipline.id, priority: option.value })}>{option.label}</button>)}
+            </div>}
+            {data.disciplines.length > 1 && <button type="button" className="discipline-delete" aria-label={"Eliminar " + discipline.name} title="Eliminar disciplina" disabled={saving} onClick={(event) => { event.stopPropagation(); if (window.confirm("¿Eliminar " + discipline.name + "? También se borrará su historial de entrenamiento.")) void save({ action: "delete_discipline", disciplineId: discipline.id }); }}>×</button>}
+          </div>
           <div className="week-row">{trainingWeek.map((day) => {
             const done = dates.includes(day.iso);
             // Primer click en un día: solo lo abre en el detalle de abajo (ver
@@ -1641,6 +2021,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             const focused = selectedDiscipline?.id === discipline.id && trainingDate === day.iso;
             return <button key={day.iso} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (focused ? " active" : "")} disabled={saving} onClick={() => { setSelectedDisciplineId(discipline.id); setTrainingDate(day.iso); if (focused) void save({ action: "toggle_training", disciplineId: discipline.id, date: day.iso }); }}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
           })}</div>
+          {focusedLog && <TrainingQualityBar disciplineName={discipline.name} quality={focusedLog.quality} saving={saving} onSelect={(quality) => void save({ action: "set_training_quality", disciplineId: discipline.id, date: trainingDate, quality })} />}
         </div>;
       })}</div>
     </article>
@@ -1648,31 +2029,25 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <article className="panel">
         <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><span className="week-pill">{trainingDate === today ? "Hoy" : formatDate(trainingDate)}</span></div>
         {selectedDiscipline.kind === "strength" ? <>
-          <form key={`${selectedDiscipline.id}-${trainingDate}-notes`} className="data-form strength-notes-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: selectedTrainingLog?.durationMinutes || 0, distanceKm: 0, notes: form.get("notes") }); }}>
-            <label>Notas de la sesión<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Rutina, sensaciones, técnica…" /></label>
-            <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar notas" phase={savePhase("save_training")} /></button>
-          </form>
-          <div className="panel-divider" />
           <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
-          <form className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_exercise", disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: form.get("weightKg"), sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
-            <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" />
-            <div className="three-fields"><label>Kg<input name="weightKg" type="number" min="0" step=".1" /></label><label>Series<input name="sets" type="number" min="0" /></label><label>Reps<input name="reps" type="number" min="0" /></label></div>
-            <label className="check-label"><input name="isRecord" type="checkbox" /> Es un récord personal</label>
-            <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar ejercicio" phase={savePhase("add_exercise")} /></button>
+          <form key={`${selectedDiscipline.id}-${trainingDate}-${editingExercise?.id ?? "new"}`} className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); const weight = String(form.get("weightKg") ?? "").trim().replace(",", "."); void submitForm(event, { action: editingExercise ? "update_exercise" : "add_exercise", id: editingExercise?.id, disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: weight, sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
+            <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" defaultValue={editingExercise?.exercise ?? ""} />
+            <div className="three-fields"><label>Kg<input name="weightKg" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" placeholder="0,0" defaultValue={editingExercise ? String(editingExercise.weightDeciKg / 10).replace(".", ",") : ""} /></label><label>Series<input name="sets" type="number" min="0" defaultValue={editingExercise ? editingExercise.sets : ""} /></label><label>Reps<input name="reps" type="number" min="0" defaultValue={editingExercise ? editingExercise.reps : ""} /></label></div>
+            <label className="check-label"><input name="isRecord" type="checkbox" defaultChecked={editingExercise?.isRecord ?? false} /> Es un récord personal</label>
+            <button className="primary-action" disabled={saving}><SaveButtonContent label={editingExercise ? "Guardar cambios" : "Agregar ejercicio"} phase={savePhase(editingExercise ? "update_exercise" : "add_exercise")} /></button>
+            {editingExercise ? <button type="button" className="secondary-action" onClick={() => setEditingExerciseId(null)}>Cancelar</button> : null}
           </form>
-          <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
+          <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button type="button" onClick={() => setEditingExerciseId(item.id)}>Editar</button><button type="button" onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
         </> : isDistanceDiscipline ? <DistanceSessionForm
           key={`${selectedDiscipline.id}-${trainingDate}`}
           disciplineId={selectedDiscipline.id}
           date={trainingDate}
           log={selectedTrainingLog}
-          notePlaceholder="Ritmo, sensaciones, recorrido…"
           saving={saving}
           savePhase={savePhase("save_training")}
           onSave={(payload) => void save(payload)}
-        /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0, notes: form.get("notes") }); }}>
-          <label>Duración (min)<input name="durationMinutes" type="number" min="0" defaultValue={selectedTrainingLog?.durationMinutes || ""} /></label>
-          <label>Descripción<textarea name="notes" defaultValue={selectedTrainingLog?.notes || ""} placeholder="Qué hiciste, sensaciones, detalle de la sesión…" /></label>
+        /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0 }); }}>
+          <label>Duración (min)<input name="durationMinutes" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" defaultValue={selectedTrainingLog?.durationMinutes ? formatDecimalInput(selectedTrainingLog.durationMinutes) : ""} /></label>
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase("save_training")} /></button>
         </form>}
       </article>
@@ -1712,16 +2087,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Las tareas sin proyecto se muestran en las dos vistas: no pertenecen a
   // ninguna de las dos y esconderlas en ambas sería peor.
   const tasksInTab = data.tasks.filter((task) => !task.projectId || focusProjectIds.has(task.projectId));
-  const focusTodayInTab = focusSessionsInTab.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0);
-  const focusWeekInTab = focusSessionsInTab.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0);
+  const taskFocusMinutesFor = (projectId: number, matches: (date: string) => boolean) => completedPlanTasks
+    .filter((task) => task.projectId === projectId && Boolean(task.dueDate) && matches(task.dueDate as string))
+    .reduce((sum, task) => sum + Math.max(0, task.durationMinutes || 0), 0);
+  const focusTodayInTab = focusSessionsInTab.filter((item) => item.sessionDate === today).reduce((sum, item) => sum + item.minutes, 0)
+    + [...focusProjectIds].reduce((sum, projectId) => sum + taskFocusMinutesFor(projectId, (date) => date === today), 0);
+  const focusWeekInTab = focusSessionsInTab.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0)
+    + [...focusProjectIds].reduce((sum, projectId) => sum + taskFocusMinutesFor(projectId, (date) => date >= week[0].iso), 0);
 
   const focusPanel = <section className="module-stack">
       <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div>
         <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_focus_project")} /></button></form>
-        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
-        {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const minutes = Math.round(focusHours * 60); if (minutes <= 0) return; void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
+        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate === today).reduce((sum, session) => sum + session.minutes, 0) + taskFocusMinutesFor(project.id, (date) => date === today); const weekMinutes = focusSessionsInTab.filter((session) => session.projectId === project.id && session.sessionDate >= week[0].iso).reduce((sum, session) => sum + session.minutes, 0) + taskFocusMinutesFor(project.id, (date) => date >= week[0].iso); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
+        {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const hours = parseDecimalInput(focusHours); const minutes = Math.round(hours * 60); if (hours <= 0 || hours > 24 || minutes <= 0) { setError("Indicá una cantidad válida de horas (mayor a 0 y hasta 24)."); return; } void save({ action: "add_focus_session", projectId: form.get("projectId"), date: today, minutes, note: form.get("note") }); }}>
           <label>{focusTab === "study" ? "Materia" : "Proyecto"}<Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia" : "Proyecto"} options={focusProjectsInTab.map((project) => ({ value: String(project.id), label: project.name }))} /></label>
-          <label>Horas de foco<div className="focus-duration-control"><input aria-label="Horas de foco" type="number" min="0" max="24" step="0.25" inputMode="decimal" value={focusHours || ""} onChange={(event) => setFocusHours(Number(event.target.value) || 0)} placeholder="Ej. 1,5" /><span>h</span></div></label>
+          <label>Horas de foco<div className="focus-duration-control"><input aria-label="Horas de foco" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={focusHours} onChange={(event) => setFocusHours(event.target.value)} placeholder="Ej. 1,2 o 1,25" /><span>h</span></div></label>
           <label>Qué avanzaste<input name="note" placeholder="Tema, entrega o avance…" /></label>
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar bloque de foco" phase={savePhase("add_focus_session")} /></button>
         </form>}
@@ -1775,18 +2155,22 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </div>
       <ol className="day-timeline">
         {todayBlocks.map((block) => {
-          const done = block.taskId ? taskDone(block.taskId, block.done) : block.done;
+          const done = block.taskId
+            ? taskDone(block.taskId, block.done)
+            : block.eventId
+              ? eventDone(block.eventId, block.done)
+              : block.done;
           const past = block.end <= nowMinutes;
           const live = block.start <= nowMinutes && block.end > nowMinutes;
           const classes = ["day-block", done ? "done" : "", past ? "past" : "", live ? "live" : ""].filter(Boolean).join(" ");
-          // Para una tarea, toda la fila es el botón: en el celular apuntarle a
-          // un cuadradito de 26 px era la mitad de los toques fallados.
+          // Una tarea o evento se puede completar aunque su horario ya haya pasado:
+          // el día se registra cuando la persona realmente lo termina.
           return <li key={block.key} className={classes}>
             {block.taskId ? <button
               type="button"
               className="day-block-hit"
               aria-pressed={done}
-              aria-label={`${block.title}, ${clockFromMinutes(block.start)}. ${done ? "Marcar como pendiente" : "Marcar como hecha"}.`}
+              aria-label={block.title + ", " + clockFromMinutes(block.start) + ". " + (done ? "Marcar como pendiente" : "Marcar como hecha") + "."}
               onClick={() => void toggleTask(block.taskId as number, !done)}
             >
               <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
@@ -1795,15 +2179,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
                 <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
               </span>
               <span className="block-check" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg></span>
-            </button> : <div className="day-block-hit is-event">
+            </button> : block.eventId ? <button
+              type="button"
+              className="day-block-hit is-event"
+              aria-pressed={done}
+              aria-label={block.title + ", " + clockFromMinutes(block.start) + ". " + (done ? "Marcar como pendiente" : "Marcar como hecho") + "."}
+              onClick={() => void toggleEvent(block.eventId as number, !done)}
+            >
               <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
               <span className={"block-body " + block.category}>
                 <b>{block.title}</b>
-                <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
+                <small>{[blockCategoryLabel[block.category] ?? "Evento", block.detail].filter(Boolean).join(" · ")}</small>
               </span>
-              <span className="block-check block-check-event" aria-hidden="true" title="Evento del calendario">◇</span>
-            </div>}
-          </li>;
+              <span className={"block-check " + (done ? "" : "block-check-event")} aria-hidden="true" title="Evento del calendario">{done ? <svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg> : "◇"}</span>
+            </button> : null}
+          </li>
         })}
       </ol>
     </> : <div className="inline-empty tall">
@@ -1928,6 +2318,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const agendaEndHour = Math.ceil(Math.max(todayWindow.end, ...agendaAllBlocks.map((block) => block.end), 21 * 60) / 60);
   const agendaHours = Array.from({ length: Math.max(1, agendaEndHour - agendaStartHour) }, (_, index) => agendaStartHour + index);
   const shiftWeek = (amount: number) => setWeekAnchor((current) => dateMinus(current, -amount * 7));
+  const openSlotDraft = (date: string, startTime: string) => {
+    setSlotDraft({ date, startTime });
+    setSlotDuration("60");
+    setSlotCustomHours("");
+  };
 
   const weekAgendaPanel = <article className="panel week-agenda">
     <div className="agenda-head">
@@ -1951,21 +2346,28 @@ export default function ProgressClient({ initialUser, initialError = "", pending
               key={hour}
               className="agenda-slot"
               aria-label={`Agregar un bloque el ${formatDate(day.iso)} a las ${String(hour).padStart(2, "0")}:00`}
-              onClick={() => setSlotDraft({ date: day.iso, startTime: `${String(hour).padStart(2, "0")}:00` })}
+              onClick={() => openSlotDraft(day.iso, `${String(hour).padStart(2, "0")}:00`)}
             />)}
             {blocks.map((block) => {
               const top = (block.start - agendaStartHour * 60) / 60;
               const height = block.minutes / 60;
               if (top + height <= 0 || top >= agendaHours.length) return null;
-              return <div
+              return <button
+                type="button"
                 key={block.key}
                 className={"agenda-block " + block.category + (block.done ? " done" : "")}
-                style={{ top: `calc(${Math.max(0, top)} * var(--hour-height))`, height: `calc(${Math.min(height, agendaHours.length - top)} * var(--hour-height) - 3px)` }}
-                title={`${block.title} · ${clockFromMinutes(block.start)}–${clockFromMinutes(block.end)}`}
+                style={{ top: "calc(" + Math.max(0, top) + " * var(--hour-height)", height: "calc(" + Math.min(height, agendaHours.length - top) + " * var(--hour-height) - 3px)" }}
+                title={block.title + " · " + clockFromMinutes(block.start) + "–" + clockFromMinutes(block.end)}
+                aria-pressed={block.done}
+                onClick={() => block.taskId
+                  ? void toggleTask(block.taskId, !block.done)
+                  : block.eventId
+                    ? void toggleEvent(block.eventId, !block.done)
+                    : undefined}
               >
                 <b>{block.title}</b>
                 <small>{clockFromMinutes(block.start)}</small>
-              </div>;
+              </button>;
             })}
             {day.iso === today && nowMinutes >= agendaStartHour * 60 && nowMinutes <= agendaEndHour * 60 && <i
               className="agenda-now"
@@ -1978,20 +2380,41 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {slotDraft && <form className="slot-form" onSubmit={(event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
+      const customHours = parseDecimalInput(slotCustomHours);
+      const durationMinutes = slotDuration === "custom" ? Math.round(customHours * 60) : Number(slotDuration) || 60;
+      if (durationMinutes < 15 || durationMinutes > 1440) {
+        setError("Indicá una duración válida (entre 15 minutos y 24 horas).");
+        return;
+      }
       void save({
         action: "add_task",
         title: form.get("title"),
         projectId: form.get("projectId"),
         dueDate: slotDraft.date,
         startTime: slotDraft.startTime,
-        durationMinutes: Number(form.get("durationMinutes")) || 60,
+        durationMinutes,
       }).then((ok) => { if (ok) setSlotDraft(null); });
     }}>
       <p>Nuevo bloque · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
       <div className="slot-fields">
         <input name="title" required autoFocus placeholder="Ej. Estudiar capítulo 2" />
         <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />
-        <Dropdown name="durationMinutes" ariaLabel="Duración del bloque" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120, 180])} />
+        <Dropdown ariaLabel="Duración del bloque" value={slotDuration} onChange={setSlotDuration} options={[...durationOptions([30, 45, 60, 90, 120, 180]), { value: "custom", label: "Personalizado" }]} />
+        {slotDuration === "custom" && <label className="slot-custom-duration">Duración personalizada
+          <div className="slot-custom-duration-input">
+            <input
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]+([.,][0-9]+)?"
+              value={slotCustomHours}
+              onChange={(event) => setSlotCustomHours(event.target.value)}
+              placeholder="Ej. 4,5"
+              autoFocus
+              required
+            />
+            <span>h</span>
+          </div>
+        </label>}
       </div>
       <div className="slot-actions">
         <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
@@ -2021,44 +2444,71 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{countdownLabelCapitalized(dayDistance(today, item.date))}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
     </div>
   </section>;
-  const periodDays = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 365;
-  const statsStart = dateMinus(today, periodDays - 1);
-  const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart);
-  const periodFocus = uniqueFocusSessions.filter((item) => item.sessionDate >= statsStart);
-  const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.sleepMinutes > 0);
-  const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart);
-  const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart);
-  // Tendencias diarias del período elegido, con comparación contra el período
-  // anterior de la misma longitud.
-  const trendSpan = statsPeriod === "weekly" ? 7 : statsPeriod === "monthly" ? 30 : 180;
+  const statsWindow = statsWindowFor(statsPeriod, statsOffset, today);
+  const statsStart = statsWindow.start;
+  const statsEnd = statsWindow.end;
+  const periodDays = Math.max(1, datesBetween(statsStart, statsEnd).length);
+  const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart && item.trainingDate <= statsEnd);
+  const periodFocus = uniqueFocusSessions.filter((item) => item.sessionDate >= statsStart && item.sessionDate <= statsEnd);
+  const periodTaskFocusMinutes = Object.entries(completedTaskFocusByDate)
+    .filter(([date]) => date >= statsStart && date <= statsEnd)
+    .reduce((sum, [, minutes]) => sum + minutes, 0);
+  const periodTaskFocusBlocks = completedPlanTasks.filter((task) => Boolean(task.dueDate && task.dueDate >= statsStart && task.dueDate <= statsEnd && task.projectId));
+  const periodTaskTrainingCount = Object.entries(completedTrainingTasksByDate)
+    .filter(([date]) => date >= statsStart && date <= statsEnd)
+    .reduce((sum, [, count]) => sum + count, 0);
+  const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.entryDate <= statsEnd && item.sleepMinutes > 0);
+  const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart && item.logDate <= statsEnd);
+  const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart && item.mealDate <= statsEnd);
+  // Las tarjetas secundarias siguen mostrando tendencias diarias, pero respetan
+  // el período elegido en vez de quedar clavadas en "los últimos días".
+  const trendSpan = periodDays;
   const trends: Array<{ key: string; icon: string; label: string; trend: Trend; format: (value: number) => string; caption: string; useAverage?: boolean }> = [
-    { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, today, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
-    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, today, (date) => focusByDate[date] ?? 0), format: (value) => formatFocusHours(value), caption: "tiempo de trabajo concentrado" },
-    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, today, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "promedio dormido por día", useAverage: true },
-    { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, today, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
-    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, today, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "promedio diario", useAverage: true },
+    { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, statsEnd, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
+    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, statsEnd, (date) => focusByDate[date] ?? 0), format: (value) => formatFocusHours(value), caption: "tiempo de trabajo concentrado" },
+    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, statsEnd, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "promedio dormido por día", useAverage: true },
+    { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, statsEnd, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
+    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, statsEnd, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "promedio diario", useAverage: true },
   ];
-  // El Daily Score también es una tendencia: mismo período, mismo criterio de
-  // comparación que el resto de las métricas de esta sección.
-  const scoreTrend = trendFor(trendSpan, today, scoreForDate);
-  const scoreAverage = Math.round(scoreTrend.average);
-  const scorePreviousAverage = Math.round(scoreTrend.previousTotal / trendSpan);
-  const scoreDelta = scorePreviousAverage > 0 ? scoreAverage - scorePreviousAverage : null;
-  // Geometría del gráfico de líneas del Daily Score: un viewBox fijo de
-  // 100/altura para que el promedio y cada punto se ubiquen por regla de tres
-  // simple, sin depender del ancho real renderizado.
+  // El Daily Score se agrupa según la escala elegida: días en la semana,
+  // semanas dentro del mes y meses dentro del año.
+  const scoreBucketsFor = (window: StatsWindow) => {
+    if (statsPeriod === "weekly") {
+      return weekFor(window.start).map((day, index) => ({ key: day.iso, date: day.iso, label: STAT_WEEKDAY_NAMES[index], value: scoreForDate(day.iso) }));
+    }
+    if (statsPeriod === "monthly") {
+      const totalDays = datesBetween(window.start, window.end).length;
+      return Array.from({ length: Math.ceil(totalDays / 7) }, (_, index) => {
+        const start = datePlus(window.start, index * 7);
+        const end = datePlus(start, Math.min(6, totalDays - index * 7 - 1));
+        return { key: start, date: start, label: "Semana " + (index + 1), value: Math.round(averageNumbers(datesBetween(start, end).map(scoreForDate))) };
+      });
+    }
+    return Array.from({ length: 12 }, (_, index) => {
+      const start = shiftMonthStart(window.start, index);
+      const end = lastDayOfMonth(start);
+      return { key: start, date: start, label: STAT_MONTH_NAMES[index], value: Math.round(averageNumbers(datesBetween(start, end).map(scoreForDate))) };
+    });
+  };
+  const scoreTrendPoints = scoreBucketsFor(statsWindow);
+  const previousScorePoints = scoreBucketsFor(statsWindowFor(statsPeriod, statsOffset + 1, today));
+  const scoreAverage = Math.round(averageNumbers(scoreTrendPoints.map((point) => point.value)));
+  const scorePreviousAverage = Math.round(averageNumbers(previousScorePoints.map((point) => point.value)));
+  const scoreDelta = previousScorePoints.length && scorePreviousAverage > 0 ? scoreAverage - scorePreviousAverage : null;
+  // Geometría del gráfico de líneas del Daily Score.
   const scoreGradientId = useId();
   const scoreChartWidth = 600;
   const scoreChartHeight = 130;
   const scoreYFor = (value: number) => scoreChartHeight - (Math.max(0, Math.min(100, value)) / 100) * scoreChartHeight;
-  const scoreChartPoints = scoreTrend.points.map((point, index) => ({
+  const scoreChartPoints = scoreTrendPoints.map((point, index) => ({
     ...point,
-    x: scoreTrend.points.length > 1 ? (index / (scoreTrend.points.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
+    x: scoreTrendPoints.length > 1 ? (index / (scoreTrendPoints.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
     y: scoreYFor(point.value),
   }));
-  const scoreLinePath = scoreChartPoints.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const selectedScorePoint = scoreTrendPoints.find((point) => point.key === selectedScorePointKey) ?? null;
+  const scoreLinePath = scoreChartPoints.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(1) + "," + point.y.toFixed(1)).join(" ");
   const scoreAreaPath = scoreChartPoints.length
-    ? `${scoreLinePath} L${scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1)},${scoreChartHeight} L${scoreChartPoints[0].x.toFixed(1)},${scoreChartHeight} Z`
+    ? scoreLinePath + " L" + scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1) + "," + scoreChartHeight + " L" + scoreChartPoints[0].x.toFixed(1) + "," + scoreChartHeight + " Z"
     : "";
   const scoreAverageY = scoreYFor(scoreAverage);
 
@@ -2072,11 +2522,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const statsPanel = <section className="module-stack">
     {weeklyReviewPanel}
-    <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => setStatsPeriod(period)}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
+    <div className="stats-controls">
+      <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => { setStatsPeriod(period); setStatsOffset(0); setSelectedScorePointKey(null); }}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
+      <label className="stats-range-picker"><span>Período</span><select value={String(statsOffset)} onChange={(event) => { setStatsOffset(Number(event.target.value)); setSelectedScorePointKey(null); }}>
+        {(statsPeriod === "weekly"
+          ? Array.from({ length: 13 }, (_, offset) => ({ value: offset, label: offset === 0 ? "Esta semana" : offset === 1 ? "Semana pasada" : "Hace " + offset + " semanas" }))
+          : statsPeriod === "monthly"
+            ? Array.from({ length: 13 }, (_, offset) => { const start = shiftMonthStart(today, -offset); return { value: offset, label: new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(start + "T12:00:00")) }; })
+            : Array.from({ length: 6 }, (_, offset) => ({ value: offset, label: String(Number(today.slice(0, 4)) - offset) }))
+        ).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select></label>
+    </div>
 
     <article className="panel score-history-panel">
       <div className="panel-heading">
-        <div><p>DAILY SCORE</p><h2>{statsPeriod === "weekly" ? "Últimos 7 días" : statsPeriod === "monthly" ? "Últimos 30 días" : "Últimos 6 meses"}</h2></div>
+        <div><p>DAILY SCORE</p><h2>{statsPeriod === "weekly" ? "Semana" : statsPeriod === "monthly" ? "Mes" : "Año"}</h2></div>
         <button className="text-link" onClick={() => openSection("score")}>Cómo se calcula →</button>
       </div>
       <div className="score-history">
@@ -2090,7 +2550,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             viewBox={`0 0 ${scoreChartWidth} ${scoreChartHeight}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label={`Daily Score de los últimos ${trendSpan} días. Promedio ${scoreAverage} de 100.`}
+            aria-label={"Daily Score " + (statsPeriod === "weekly" ? "semanal" : statsPeriod === "monthly" ? "mensual" : "anual") + ". Promedio " + scoreAverage + " de 100."}
           >
             <defs>
               <linearGradient id={scoreGradientId} x1="0" y1="0" x2="0" y2="1">
@@ -2101,22 +2561,46 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <line className="score-average-line" x1="0" y1={scoreAverageY} x2={scoreChartWidth} y2={scoreAverageY} vectorEffect="non-scaling-stroke" />
             {scoreAreaPath && <path className="score-line-area" d={scoreAreaPath} fill={`url(#${scoreGradientId})`} />}
             <path className="score-line-path" d={scoreLinePath} fill="none" vectorEffect="non-scaling-stroke" />
-            {scoreChartPoints.map((point) => <circle
-              key={point.date}
-              className={"score-line-dot " + (point.date === today ? "today" : "")}
-              cx={point.x}
-              cy={point.y}
-              r={point.date === today ? 5 : 3.4}
-              vectorEffect="non-scaling-stroke"
-            >
-              <title>{`${formatDate(point.date)} · ${point.value}/100`}</title>
-            </circle>)}
+            {scoreChartPoints.map((point) => <g key={point.key}>
+              <circle
+                className="score-line-hit-area"
+                cx={point.x}
+                cy={point.y}
+                r={12}
+                role="button"
+                tabIndex={0}
+                aria-label={point.label + ": " + point.value + "/100" + (statsPeriod === "weekly" ? "" : " promedio")}
+                onClick={() => setSelectedScorePointKey(point.key)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedScorePointKey(point.key);
+                  }
+                }}
+              />
+              <circle
+                className={"score-line-dot " + (point.date === today ? "today" : "")}
+                cx={point.x}
+                cy={point.y}
+                r={point.date === today ? 5 : 3.4}
+                vectorEffect="non-scaling-stroke"
+              >
+                <title>{point.label + " · " + point.value + "/100"}</title>
+              </circle>
+              {selectedScorePointKey === point.key && <g
+                className="score-point-tooltip"
+                transform={"translate(" + Math.max(38, Math.min(scoreChartWidth - 38, point.x)) + "," + Math.max(24, point.y - 18) + ")"}
+              >
+                <rect x="-38" y="-21" width="76" height="19" rx="6" />
+                <text x="0" y="-8" textAnchor="middle">{point.value + (statsPeriod === "weekly" ? "/100" : " prom.")}</text>
+              </g>}
+            </g>)}
           </svg>
-          <div className="score-bars-foot">
-            <small>{formatDate(scoreTrend.points[0]?.date ?? today)}</small>
-            <small>Promedio {scoreAverage}/100{scoreDelta === null ? "" : ` · ${scoreDelta > 0 ? "+" : ""}${scoreDelta} vs. período anterior`}</small>
-            <small>Hoy</small>
+
+          <div className="score-point-labels" style={{ "--score-points": scoreChartPoints.length } as CSSProperties} aria-label="Períodos del Daily Score">
+            {scoreChartPoints.map((point) => <small key={point.key}>{point.label}</small>)}
           </div>
+
         </div>
       </div>
       <p className="formula-note">Cada barra se reconstruye con lo que registraste ese día y las prioridades que tenés hoy. Los días sin registros valen 0.</p>
@@ -2153,9 +2637,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </article>
 
     <div className="metrics-grid">
-      <article><span>↗</span><p>ENTRENAMIENTOS<b>{periodTraining.length}</b><small>{(periodTraining.reduce((sum, item) => sum + item.distanceMeters, 0) / 1000).toFixed(1)} km recorridos</small></p></article>
+      <article><span>↗</span><p>ENTRENAMIENTOS<b>{periodTraining.length + periodTaskTrainingCount}</b><small>{(periodTraining.reduce((sum, item) => sum + item.distanceMeters, 0) / 1000).toFixed(1)} km recorridos</small></p></article>
       <article><span>☾</span><p>SUEÑO PROMEDIO<b>{periodSleep.length ? (periodSleep.reduce((sum, item) => sum + item.sleepMinutes, 0) / periodSleep.length / 60).toFixed(1) : "0"} h</b><small>{periodSleep.length} noches registradas</small></p></article>
-      <article><span>⌁</span><p>TRABAJO PROFUNDO<b>{(periodFocus.reduce((sum, item) => sum + item.minutes, 0) / 60).toFixed(1)} h</b><small>{periodFocus.length} bloques de foco</small></p></article>
+      <article><span>⌁</span><p>TRABAJO PROFUNDO<b>{((periodFocus.reduce((sum, item) => sum + item.minutes, 0) + periodTaskFocusMinutes) / 60).toFixed(1)} h</b><small>{periodFocus.length + periodTaskFocusBlocks.length} bloques de foco</small></p></article>
       <article><span>▱</span><p>PÁGINAS LEÍDAS<b>{periodReading.reduce((sum, item) => sum + item.pages, 0)}</b><small>{periodReading.reduce((sum, item) => sum + item.minutes, 0)} min de lectura</small></p></article>
       <article><span>◇</span><p>CALORÍAS REGISTRADAS<b>{periodMeals.reduce((sum, item) => sum + item.calories, 0).toLocaleString("es-AR")}</b><small>estimación del período</small></p></article>
     </div>
@@ -2180,7 +2664,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     return difference <= .1 ? "on-target" : difference <= .2 ? "near-target" : "off-target";
   };
 
-  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE HOY</p><h2>Comidas</h2></div></div>
+  const mealEntryMeals = data.mealHistory.filter((meal) => meal.mealDate === mealEntryDate);
+  const mealEntryCalories = mealEntryMeals.reduce((sum, meal) => sum + meal.calories, 0);
+  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE {mealEntryDate === today ? "HOY" : "AYER"}</p><h2>Comidas</h2></div><div className="meal-panel-actions"><span className="week-pill">{mealEntryDate === today ? "Hoy" : "Ayer"}</span><button type="button" className="meal-backfill-toggle" onClick={() => { setMealEntryDate((current) => current === today ? dateMinus(today, 1) : today); setEstimate(null); }}>{mealEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
     {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><Image src={photoPreview} alt="Comida a analizar" width={38} height={38} unoptimized /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
       {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" disabled={saving} onClick={() => void saveEstimate()}><SaveButtonContent label="Confirmar y guardar" phase={savePhase("add_meal")} /></button></div>}
     </div> : <LockedFeature
@@ -2188,13 +2674,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       note="Escribí qué comiste o sacale una foto al plato: la app estima calorías y macros."
       onOpen={openPro}
     ><div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea readOnly value="" placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><span className="photo-button">📷 Sacar o subir foto</span><span className="analyze-button">Analizar comida</span></div></div></LockedFeature>}
-    <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: today, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}>
+    <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: mealEntryDate, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}>
       <label>Comida<input name="name" required placeholder="Ej. Milanesa con puré" /></label>
       <label>Detalle<input name="detail" required placeholder="Porción mediana, con ensalada…" /></label>
       <label>Calorías<input name="calories" type="number" min="0" placeholder="kcal" /></label>
       <button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_meal")} /></button>
     </form>
-    <div className="meal-list">{data.meals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!data.meals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{calories.toLocaleString("es-AR")} kcal</b></div>
+    <div className="meal-list">{mealEntryMeals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!mealEntryMeals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas {mealEntryDate === today ? "hoy" : "ayer"}</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{mealEntryCalories.toLocaleString("es-AR")} kcal</b></div>
   </article>;
 
   const dietEstimate = estimateTargetCalories(dietForm);
@@ -2203,16 +2689,16 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <div className="panel-heading"><div><p>CALCULADORA RÁPIDA</p><h2>Calorías objetivo, sin IA</h2></div></div>
     <p className="diet-intro">Completá tus datos y te proponemos una cifra diaria de referencia. Podés aceptarla o modificarla antes de guardarla.</p>
     <div className="diet-fields">
-      <label>Peso actual (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.currentWeightKg} onChange={(event) => setDietQuickField("currentWeightKg", Number(event.target.value))} /></label>
-      <label>Peso objetivo (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.targetWeightKg} onChange={(event) => setDietQuickField("targetWeightKg", Number(event.target.value))} /></label>
-      <label>Altura (cm)<input type="number" min="120" max="230" value={dietForm.heightCm} onChange={(event) => setDietQuickField("heightCm", Number(event.target.value))} /></label>
-      <label>Edad<input type="number" min="18" max="100" value={dietForm.age} onChange={(event) => setDietQuickField("age", Number(event.target.value))} /></label>
+      <label>Peso actual (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.currentWeightKg} onFocus={() => beginDietNumberInput("currentWeightKg")} onChange={(event) => updateDietNumberInput("currentWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("currentWeightKg")} /></label>
+      <label>Peso objetivo (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.targetWeightKg} onFocus={() => beginDietNumberInput("targetWeightKg")} onChange={(event) => updateDietNumberInput("targetWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("targetWeightKg")} /></label>
+      <label>Altura (cm)<input type="text" inputMode="numeric" min="120" max="230" value={dietNumberDrafts.heightCm} onFocus={() => beginDietNumberInput("heightCm")} onChange={(event) => updateDietNumberInput("heightCm", event.target.value)} onBlur={() => finishDietNumberInput("heightCm")} /></label>
+      <label>Edad<input type="text" inputMode="numeric" min="18" max="100" value={dietNumberDrafts.age} onFocus={() => beginDietNumberInput("age")} onChange={(event) => updateDietNumberInput("age", event.target.value)} onBlur={() => finishDietNumberInput("age")} /></label>
       <label>Género<Dropdown ariaLabel="Género para la estimación" value={dietForm.sex} onChange={(value) => setDietQuickField("sex", value as DietForm["sex"])} options={[{ value: "unspecified", label: "Prefiero no indicar" }, { value: "male", label: "Masculino" }, { value: "female", label: "Femenino" }]} /></label>
       <label>Actividad<Dropdown ariaLabel="Actividad habitual" value={dietForm.activityLevel} onChange={(value) => setDietQuickField("activityLevel", value as DietForm["activityLevel"])} options={[{ value: "sedentary", label: "Baja / sedentaria" }, { value: "light", label: "Ligera · 1–3 días" }, { value: "moderate", label: "Moderada · 3–5 días" }, { value: "high", label: "Alta · 6–7 días" }]} /></label>
       <label>Intensidad<Dropdown ariaLabel="Intensidad del objetivo" value={dietForm.goalPace} onChange={(value) => setDietQuickField("goalPace", value as DietForm["goalPace"])} options={[{ value: "gentle", label: "Gradual" }, { value: "moderate", label: "Moderado" }]} /></label>
     </div>
     <div className="diet-quick-result">
-      <label><span>CALORÍAS OBJETIVO</span><input type="number" min="1000" max="6000" step="10" value={dietQuickCaloriesValue || ""} onChange={(event) => setDietQuickCalories(Number(event.target.value) || 0)} /><small>{dietEstimate ? `Sugerencia: ${dietEstimate.targetCalories.toLocaleString("es-AR")} kcal · mantenimiento ${dietEstimate.maintenanceCalories.toLocaleString("es-AR")} kcal` : "Completá tus datos para calcular una sugerencia."}</small></label>
+      <label><span>CALORÍAS OBJETIVO</span><input type="text" inputMode="numeric" min="1000" max="6000" value={dietQuickCaloriesDraft ?? (dietQuickCaloriesValue ? String(dietQuickCaloriesValue) : "")} onFocus={beginDietQuickCaloriesInput} onChange={(event) => updateDietQuickCaloriesInput(event.target.value)} onBlur={finishDietQuickCaloriesInput} /><small>{dietEstimate ? `Sugerencia: ${dietEstimate.targetCalories.toLocaleString("es-AR")} kcal · mantenimiento ${dietEstimate.maintenanceCalories.toLocaleString("es-AR")} kcal` : "Completá tus datos para calcular una sugerencia."}</small></label>
       <button className="primary-action" type="button" disabled={saving || !dietQuickCaloriesValue} onClick={() => void saveDietTarget(dietQuickCaloriesValue)}><SaveButtonContent label="Guardar objetivo" phase={savePhase("set_diet_target")} /></button>
     </div>
   </article>;
@@ -2222,10 +2708,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <p className="diet-intro">Completá tus datos y contanos qué necesitás. La aplicación calcula una referencia energética y la IA propone opciones intercambiables; no reemplaza la evaluación de un nutricionista.</p>
     <div className="diet-builder-grid">
       <div className="diet-fields">
-        <label>Edad<input type="number" min="18" max="100" value={dietForm.age} onChange={(event) => setDietForm({ ...dietForm, age: Number(event.target.value) })} /></label>
-        <label>Altura (cm)<input type="number" min="120" max="230" value={dietForm.heightCm} onChange={(event) => setDietForm({ ...dietForm, heightCm: Number(event.target.value) })} /></label>
-        <label>Peso actual (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.currentWeightKg} onChange={(event) => setDietForm({ ...dietForm, currentWeightKg: Number(event.target.value) })} /></label>
-        <label>Peso objetivo (kg)<input type="number" min="35" max="300" step=".1" value={dietForm.targetWeightKg} onChange={(event) => setDietForm({ ...dietForm, targetWeightKg: Number(event.target.value) })} /></label>
+        <label>Edad<input type="text" inputMode="numeric" min="18" max="100" value={dietNumberDrafts.age} onFocus={() => beginDietNumberInput("age")} onChange={(event) => updateDietNumberInput("age", event.target.value)} onBlur={() => finishDietNumberInput("age")} /></label>
+        <label>Altura (cm)<input type="text" inputMode="numeric" min="120" max="230" value={dietNumberDrafts.heightCm} onFocus={() => beginDietNumberInput("heightCm")} onChange={(event) => updateDietNumberInput("heightCm", event.target.value)} onBlur={() => finishDietNumberInput("heightCm")} /></label>
+        <label>Peso actual (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.currentWeightKg} onFocus={() => beginDietNumberInput("currentWeightKg")} onChange={(event) => updateDietNumberInput("currentWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("currentWeightKg")} /></label>
+        <label>Peso objetivo (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.targetWeightKg} onFocus={() => beginDietNumberInput("targetWeightKg")} onChange={(event) => updateDietNumberInput("targetWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("targetWeightKg")} /></label>
         <label>Sexo para la estimación<Dropdown ariaLabel="Sexo para la estimación" value={dietForm.sex} onChange={(value) => setDietForm({ ...dietForm, sex: value as DietForm["sex"] })} options={[{ value: "unspecified", label: "Prefiero no indicar" }, { value: "male", label: "Masculino" }, { value: "female", label: "Femenino" }]} /></label>
         <label>Actividad habitual<Dropdown ariaLabel="Actividad habitual" value={dietForm.activityLevel} onChange={(value) => setDietForm({ ...dietForm, activityLevel: value as DietForm["activityLevel"] })} options={[{ value: "sedentary", label: "Baja / sedentaria" }, { value: "light", label: "Ligera · 1–3 días" }, { value: "moderate", label: "Moderada · 3–5 días" }, { value: "high", label: "Alta · 6–7 días" }]} /></label>
         <label>Ritmo del objetivo<Dropdown ariaLabel="Ritmo del objetivo" value={dietForm.goalPace} onChange={(value) => setDietForm({ ...dietForm, goalPace: value as DietForm["goalPace"] })} options={[{ value: "gentle", label: "Gradual" }, { value: "moderate", label: "Moderado" }]} /></label>
@@ -2253,7 +2739,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     ["focusWeight", "Estudio / Trabajo", "⌁", "Trabajo profundo en materias y proyectos"],
     ["readingWeight", "Lectura", "▱", "Leer y avanzar en tus libros"],
     ["goalsWeight", "Objetivos y organización", "◎", "Completar metas y próximos pasos"],
-  ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Estadísticas reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" disabled={saving} onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}><SaveButtonContent label="Guardar prioridades" phase={savePhase("set_priorities")} /></button></article>;
+  ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Progreso reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" disabled={saving} onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}><SaveButtonContent label="Guardar prioridades" phase={savePhase("set_priorities")} /></button></article>;
   const goalTargetDate = goalPeriod === "custom" ? customDate : goalDeadline(today, goalPeriod);
   const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalTargetDate }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<Dropdown name="category" ariaLabel="Área del objetivo" options={goalAreaOptions.map((area) => ({ value: area.value, label: area.label }))} /></label><label>Plazo<Dropdown ariaLabel="Plazo del objetivo" value={goalPeriod} onChange={(value) => setGoalPeriod(value as GoalPeriod)} options={[{ value: "weekly", label: "Esta semana" }, { value: "monthly", label: "Este mes" }, { value: "annual", label: "Este año" }, { value: "custom", label: "Fecha exacta" }]} /></label>{goalPeriod === "custom" && <label>Fecha exacta<DatePicker ariaLabel="Fecha exacta del objetivo" value={customDate} onChange={setCustomDate} min={today} /></label>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalTargetDate)}</b></p></div><button className="primary-action" disabled={saving}><SaveButtonContent label="Crear objetivo" phase={savePhase("add_goal")} /></button></form></article>
     <article className="panel goal-list-panel"><div className="panel-heading"><div><p>TU CAMINO</p><h2>Objetivos guardados</h2></div><span className="week-pill">{activeGoals.length} activos</span></div><div className="goal-list">{data.goals.map((goal) => <div className={"goal-row " + (goal.completedAt ? "completed" : "")} key={goal.id}><button className="goal-check" onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: !goal.completedAt })}>{goal.completedAt ? "✓" : ""}</button><div><div className="goal-meta"><span className={"category-chip " + goal.category}>{categoryLabels[goal.category]}</span><span>{periodLabels[goal.period]}</span></div><b>{goal.title}</b><small>{goal.completedAt ? "Objetivo cumplido" : formatDate(goal.targetDate) + " · " + countdownLabel(Math.max(0, dayDistance(today, goal.targetDate)))}</small></div><button className="goal-delete" onClick={() => void save({ action: "delete_goal", id: goal.id })}>×</button></div>)}{!data.goals.length && <div className="inline-empty tall"><span>◎</span><p><b>Todavía no hay objetivos</b><small>Empezá con uno concreto.</small></p></div>}</div></article></div></section>;
@@ -2866,7 +3352,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     focus: [focusTab === "study" ? "Estudio" : "Trabajo", focusTab === "study" ? "Materias, foco, tareas y lecturas" : "Proyectos, foco profundo y entregas"],
     sleep: ["Sueño", "Horas de descanso y regularidad"],
     plan: ["Plan", "Lo que querés lograr y cuándo entra en el calendario"],
-    stats: ["Estadísticas", "Rachas, tendencias y comparaciones"],
+    stats: ["Progreso", "Rachas, tendencias y comparaciones"],
     friends: ["Amigos", "Daily Scores, objetivos compartidos y compromiso mutuo"],
     pro: [isPro ? "AVORA Pro" : "Pasate a Pro", isPro ? "Tu suscripción y todo lo que incluye" : "Lo que cambia cuando la app piensa con vos"],
   };
@@ -2958,7 +3444,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </a>
   </>;
 
-  return <main className="app-shell">
+  const pullProgress = pullRefreshing ? 1 : Math.min(1, pullDistance / 72);
+  return <>
+    <div
+      className={"pull-refresh-indicator " + ((pullDistance > 0 || pullRefreshing) ? "is-visible" : "")}
+      style={{
+        opacity: pullRefreshing ? 1 : Math.min(1, pullProgress * 1.3),
+        transform: `translate(-50%, ${-44 + pullProgress * 52}px)`,
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <span aria-hidden="true">{pullRefreshing ? "↻" : pullProgress >= 1 ? "↑" : "↓"}</span>
+      <small>{pullRefreshing ? "Actualizando…" : pullProgress >= 1 ? "Soltá para actualizar" : "Deslizá para actualizar"}</small>
+    </div>
+    <main className="app-shell">
     <aside className="sidebar"><button type="button" className="side-brand" onClick={() => openSection("summary")} aria-label="Ir a Inicio"><span className="brand-mark small"><BrandMark /></span><b>AVORA</b></button><nav data-tour="nav">{navItems.map((item) => <button key={item.id} className={"nav-item " + (section === item.id ? "active" : "")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav><div className="profile-menu" ref={profileMenuRef}>
           {profileMenuOpen && <div className="profile-menu-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}
           <button
@@ -2977,6 +3477,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
       {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
+        <NotificationSettings key={refreshVersion} isPro={data.profile.isPro} compact />
         {quotePanel}
         <section className={"hero-row " + (loading ? "is-loading" : "")}>
           <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
@@ -3013,7 +3514,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
           ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
           ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
-        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Inicio y Estadísticas muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
+        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Inicio y Progreso muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
         {priorityEditor}
       </section>}
       {section === "physical" && <>
@@ -3059,5 +3560,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </section>
     </div>}
     {bookToDelete && <div className="delete-book-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookToDelete(null); }}><section className="delete-book-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-book-title"><span className="delete-book-icon" aria-hidden="true">⌫</span><p>ELIMINAR DE TU BIBLIOTECA</p><h2 id="delete-book-title">¿Eliminar “{bookToDelete.title}”?</h2><small>También se eliminarán sus páginas registradas y sus notas. Esta acción no se puede deshacer.</small><div><button type="button" className="delete-book-cancel" disabled={saving} onClick={() => setBookToDelete(null)}>Cancelar</button><button type="button" className="delete-book-confirm" disabled={saving} onClick={() => { const bookId = bookToDelete.id; void save({ action: "delete_book", bookId }).then((ok) => { if (ok) { setBookToDelete(null); setSelectedBookId(null); setBookShelfPage(0); setPagesInput(0); setNote(""); } }); }}>{saving ? "Eliminando…" : "Sí, eliminar libro"}</button></div></section></div>}
-  </main>;
+    </main>
+  </>;
 }

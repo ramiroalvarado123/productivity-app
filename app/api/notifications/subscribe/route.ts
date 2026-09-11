@@ -34,6 +34,12 @@ export async function POST(request: Request) {
       userAgent: String(body?.userAgent ?? "").slice(0, 500),
       updatedAt: new Date().toISOString(),
     }, { upsert: true, onConflict: ["endpoint"] });
+    // Activar el permiso en la misma operación para evitar una segunda
+    // llamada de red al guardar las preferencias.
+    await insertRows("notification_preferences", {
+      userEmail: user.email,
+      pushEnabled: true,
+    }, { upsert: true, onConflict: ["userEmail"] });
 
     return Response.json({ ok: true });
   } catch (error) {

@@ -1,4 +1,28 @@
-/* AVORA push service worker. Mantener este archivo en la raíz pública para que controle toda la aplicación. */
+/* AVORA push service worker v2026-09-11-auto-update. Mantenerlo en la raíz pública para actualizar la PWA sin reinstalarla. */
+self.addEventListener("install", () => {
+  // La nueva versión queda activa sin esperar a que se cierren todas las pestañas.
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  // Toma el control de las pestañas existentes para aplicar los deploys enseguida.
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  // Solo controlamos navegaciones de AVORA. Los assets siempre se piden a red
+  // para evitar que un bundle viejo quede instalado después de un deploy.
+  if (url.origin !== self.location.origin || request.mode !== "navigate") return;
+
+  event.respondWith(
+    fetch(request).catch(() => caches.match(request)),
+  );
+});
+
 self.addEventListener("push", (event) => {
   let payload = {};
   try {

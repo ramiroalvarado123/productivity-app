@@ -38,16 +38,29 @@ function adminHeaders(extra: Record<string, string> = {}) {
 }
 
 async function adminRequest(table: string, query = "", init: RequestInit = {}): Promise<Row[]> {
-  const response = await fetch(SUPABASE_URL + "/rest/v1/" + table + (query ? "?" + query : ""), {
-    ...init,
-    headers: { ...adminHeaders(), ...(init.headers ?? {}) },
-    cache: "no-store",
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error("Supabase " + response.status + ": " + text);
-  if (!text) return [];
-  const parsed: unknown = JSON.parse(text);
-  return Array.isArray(parsed) ? parsed as Row[] : [];
+  const url = SUPABASE_URL + "/rest/v1/" + table + (query ? "?" + query : "");
+  let lastError: unknown;
+  // Supabase puede rechazar temporalmente una consulta por sincronización de
+  // reloj o por un reinicio de la API. Reintentamos antes de marcar el cron
+  // como fallido; las operaciones usadas aquí son idempotentes.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers: { ...adminHeaders(), ...(init.headers ?? {}) },
+        cache: "no-store",
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error("Supabase " + response.status + ": " + text);
+      if (!text) return [];
+      const parsed: unknown = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed as Row[] : [];
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Supabase request failed");
 }
 
 function value(row: Row, key: string) {
@@ -160,7 +173,7 @@ async function releaseDelivery(candidate: Candidate) {
 
 function isExpiredPushError(error: unknown) {
   const statusCode = Number((error as { statusCode?: unknown })?.statusCode);
-  return statusCode === 404 || statusCode === 410;
+  return statusCode === 400 || statusCode === 404 || statusCode === 410;
 }
 
 function notificationFor(candidate: Candidate) {

@@ -21,6 +21,11 @@ export type ScoreWeights = {
 /** Lo que hiciste en un día, sin interpretar. */
 export type DayRecord = {
   trainingSessions: number;
+  /**
+   * Ponderación de las disciplinas completadas ese día (0–100).
+   * Cuando falta, se mantiene el comportamiento histórico de "algún entrenamiento".
+   */
+  trainingScore?: number;
   meals: number;
   sleepMinutes: number;
   focusMinutes: number;
@@ -39,7 +44,9 @@ export const FULL_PAGES = 10;
 
 export function dayFactors(day: DayRecord): ScoreFactors {
   return {
-    training: day.trainingSessions > 0 ? 100 : 0,
+    training: typeof day.trainingScore === "number"
+      ? Math.max(0, Math.min(100, Math.round(day.trainingScore)))
+      : day.trainingSessions > 0 ? 100 : 0,
     nutrition: Math.min(100, Math.round(day.meals / FULL_MEALS * 100)),
     sleep: day.sleepMinutes ? Math.min(100, Math.round(day.sleepMinutes / FULL_SLEEP_MINUTES * 100)) : 0,
     focus: Math.min(100, Math.round(day.focusMinutes / FULL_FOCUS_MINUTES * 100)),
