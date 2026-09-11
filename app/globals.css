@@ -1910,6 +1910,7 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   display:none;
 }
 @media(max-width:760px){
+  html,body{overscroll-behavior-y:contain}
   .pull-refresh-indicator{
     position:fixed;
     top:max(8px,env(safe-area-inset-top));
