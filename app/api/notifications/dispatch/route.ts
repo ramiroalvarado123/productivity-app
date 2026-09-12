@@ -435,21 +435,32 @@ export async function POST(request: Request) {
       if (Number.isNaN(parsed.getTime())) return Response.json({ error: "test_now inválido." }, { status: 400 });
       now = parsed;
     }
-    const [preferenceRows, subscriptions, profiles, events, disciplines, trainingLogs, tasks, meals, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
+    const [preferenceRows, subscriptions, profiles, events] = await Promise.all([
       adminRequest("notification_preferences", new URLSearchParams({ push_enabled: "eq.true" }).toString()),
       adminRequest("push_subscriptions"),
       adminRequest("profiles", new URLSearchParams({ select: "email,display_name,pro_since" }).toString()),
       adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,event_time" }).toString()),
-      adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,priority" }).toString()),
-      adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date" }).toString()),
-      adminRequest("tasks", new URLSearchParams({ select: "id,user_email,project_id,due_date,duration_minutes,completed_at,title" }).toString()),
-      adminRequest("meals", new URLSearchParams({ select: "id,user_email,meal_date" }).toString()),
-      adminRequest("daily_checkins", new URLSearchParams({ select: "id,user_email,entry_date,sleep_minutes" }).toString()),
-      adminRequest("reading_logs", new URLSearchParams({ select: "id,user_email,log_date,pages" }).toString()),
-      adminRequest("focus_sessions", new URLSearchParams({ select: "id,user_email,session_date,minutes" }).toString()),
-      adminRequest("goals", new URLSearchParams({ select: "id,user_email,created_at,completed_at" }).toString()),
-      adminRequest("monthly_priorities", new URLSearchParams({ select: "id,user_email,month_key,gym_weight,nutrition_weight,sleep_weight,focus_weight,reading_weight,goals_weight" }).toString()),
     ]);
+
+    let dailyScoreRows: DailyScoreRows | null = null;
+    try {
+      const [disciplines, trainingLogs, tasks, meals, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
+        adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,priority" }).toString()),
+        adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date" }).toString()),
+        adminRequest("tasks", new URLSearchParams({ select: "id,user_email,project_id,due_date,duration_minutes,completed_at,title" }).toString()),
+        adminRequest("meals", new URLSearchParams({ select: "id,user_email,meal_date" }).toString()),
+        adminRequest("daily_checkins", new URLSearchParams({ select: "id,user_email,entry_date,sleep_minutes" }).toString()),
+        adminRequest("reading_logs", new URLSearchParams({ select: "id,user_email,log_date,pages" }).toString()),
+        adminRequest("focus_sessions", new URLSearchParams({ select: "id,user_email,session_date,minutes" }).toString()),
+        adminRequest("goals", new URLSearchParams({ select: "id,user_email,created_at,completed_at" }).toString()),
+        adminRequest("monthly_priorities", new URLSearchParams({ select: "id,user_email,month_key,gym_weight,nutrition_weight,sleep_weight,focus_weight,reading_weight,goals_weight" }).toString()),
+      ]);
+      dailyScoreRows = { disciplines, trainingLogs, tasks, meals, dailyCheckins, readingLogs, focusSessions, goals, priorities };
+    } catch (error) {
+      // La alerta nueva no debe interrumpir calendario, balance ni resúmenes
+      // si la migración de permisos todavía no fue ejecutada en Supabase.
+      console.error("daily score notification source data unavailable", error);
+    }
 
     const profilesByEmail = new Map(profiles.map((row) => [stringValue(row, "email"), row]));
     const subscriptionsByEmail = new Map<string, Row[]>();
@@ -467,25 +478,13 @@ export async function POST(request: Request) {
       eventsByEmail.set(email, current);
     }
 
-    const dailyScoreRows: DailyScoreRows = {
-      disciplines,
-      trainingLogs,
-      tasks,
-      meals,
-      dailyCheckins,
-      readingLogs,
-      focusSessions,
-      goals,
-      priorities,
-    };
-
     let usersChecked = 0;
     let candidatesFound = 0;
     let sent = 0;
     let expired = 0;
     let failed = 0;
     const errors: string[] = [];
-    const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; configuredCalendarDaysBefore: number; dailyScoreDue: boolean; dailyScore?: number; candidates: number }> = [];
+    const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; configuredCalendarDaysBefore: number; dailyScoreDue: boolean; dailyScoreReady: boolean; dailyScore?: number; candidates: number }> = [];
     for (const preference of preferenceRows) {
       const email = stringValue(preference, "user_email");
       const userSubscriptions = subscriptionsByEmail.get(email) ?? [];
@@ -517,7 +516,7 @@ export async function POST(request: Request) {
       }
 
       const dailyScoreDue = dueWithinWindow(clock.time, DAILY_SCORE_NUDGE_TIME);
-      const dailyScore = dailyScoreDue ? dailyScoreForDate(email, clock.date, dailyScoreRows) : undefined;
+      const dailyScore = dailyScoreDue && dailyScoreRows ? dailyScoreForDate(email, clock.date, dailyScoreRows) : undefined;
       if (dailyScoreDue && dailyScore !== undefined && dailyScore < 50) {
         candidates.push({
           email,
@@ -538,6 +537,7 @@ export async function POST(request: Request) {
         configuredDailyTime: stringValue(preference, "daily_balance_time", "21:00"),
         configuredCalendarDaysBefore: Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1)))),
         dailyScoreDue,
+        dailyScoreReady: dailyScoreRows !== null,
         ...(dailyScore === undefined ? {} : { dailyScore }),
         candidates: candidates.length,
       });
