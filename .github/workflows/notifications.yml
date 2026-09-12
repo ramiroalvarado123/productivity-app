@@ -2,6 +2,16 @@ name: AVORA notifications
 
 on:
   workflow_dispatch:
+    inputs:
+      test_now:
+        description: "Hora simulada en ISO 8601 (ej. 2026-09-12T20:00:00Z)"
+        required: false
+        type: string
+      only_daily_score:
+        description: "Procesar únicamente el aviso del Daily Score"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: avora-notifications
@@ -16,10 +26,23 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.AVORA_CRON_SECRET }}
           APP_URL: ${{ secrets.AVORA_APP_URL }}
+          TEST_NOW: ${{ inputs.test_now }}
+          ONLY_DAILY_SCORE: ${{ inputs.only_daily_score }}
         run: |
           set -euo pipefail
           test -n "${CRON_SECRET}" || { echo "Falta configurar AVORA_CRON_SECRET"; exit 1; }
           test -n "${APP_URL}" || { echo "Falta configurar AVORA_APP_URL"; exit 1; }
+          dispatch_url="${APP_URL%/}/api/notifications/dispatch"
+          if [ -n "${TEST_NOW}" ]; then
+            dispatch_url="${dispatch_url}?test_now=${TEST_NOW}"
+          fi
+          if [ "${ONLY_DAILY_SCORE}" = "true" ]; then
+            if [[ "${dispatch_url}" == *"?"* ]]; then
+              dispatch_url="${dispatch_url}&only=daily_score_nudge"
+            else
+              dispatch_url="${dispatch_url}?only=daily_score_nudge"
+            fi
+          fi
           curl --fail-with-body --silent --show-error --retry 2 --retry-delay 5 \
-            --request POST "${APP_URL%/}/api/notifications/dispatch" \
+            --request POST "${dispatch_url}" \
             --header "Authorization: Bearer ${CRON_SECRET}"
