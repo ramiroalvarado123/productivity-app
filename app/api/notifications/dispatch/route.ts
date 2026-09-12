@@ -309,6 +309,9 @@ function notificationFor(candidate: Candidate) {
     icon: "/favicon.svg",
     badge: "/favicon.svg",
     tag: candidate.kind + ":" + candidate.referenceKey,
+    // Se mantiene en ambos niveles para que tanto el Service Worker actual
+    // como el actualizado puedan abrir la sección correcta al tocar el aviso.
+    url: candidate.url,
     data: { url: candidate.url },
   });
 }
