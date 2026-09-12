@@ -790,7 +790,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const loadData = useCallback(async () => {
     try {
-      const response = await fetch("/api/progress?date=" + today + "&weekStart=" + week[0].iso + "&weekEnd=" + week[6].iso + "&month=" + monthKey, { cache: "no-store", credentials: "same-origin" });
+      const url = "/api/progress?date=" + today + "&weekStart=" + week[0].iso + "&weekEnd=" + week[6].iso + "&month=" + monthKey;
+      let response: Response | null = null;
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+          const transient = [408, 425, 429, 500, 502, 503, 504].includes(response.status);
+          if (response.ok || !transient || attempt === 2) break;
+        } catch (caught) {
+          lastError = caught;
+          if (attempt === 2) throw caught;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 600 : 1600));
+      }
+      if (!response) throw lastError instanceof Error ? lastError : new Error("No pudimos cargar tus datos.");
       const next = await readJson<ProgressData & { error?: string }>(response);
       if (!response.ok) throw new Error(next.error || "No pudimos cargar tus datos.");
       setData(next);
@@ -3475,7 +3489,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           </button>
         </div></aside>
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
-      {error && <div className="error-banner">{error}<button onClick={() => setError("")}>Cerrar</button></div>}
+      {error && <div className="error-banner">{error}{(error.includes("cargar") || error.includes("conectar tus datos")) && <button type="button" onClick={() => void loadData()}>Reintentar</button>}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
         <NotificationSettings key={refreshVersion} isPro={data.profile.isPro} compact />
         {quotePanel}
