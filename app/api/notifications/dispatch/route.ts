@@ -459,7 +459,7 @@ export async function POST(request: Request) {
     } catch (error) {
       // La alerta nueva no debe interrumpir calendario, balance ni resúmenes
       // si la migración de permisos todavía no fue ejecutada en Supabase.
-      console.error("daily score notification source data unavailable", error);
+      console.warn("daily score notification source data unavailable", error);
     }
 
     const profilesByEmail = new Map(profiles.map((row) => [stringValue(row, "email"), row]));
