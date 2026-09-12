@@ -1,5 +1,7 @@
 import webpush from "web-push";
 import { SUPABASE_URL } from "../../../lib/supabase-auth";
+import { inferTaskCategory } from "../../../lib/schedule";
+import { scoreForDay, type DayRecord, type ScoreWeights } from "../../../lib/score";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +19,8 @@ type Candidate = {
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://productivity-app-git-feat-avora-ui-polish-ralvarado-3362.vercel.app";
 const DEFAULT_VAPID_PUBLIC_KEY = "BFjo70YM_MZxUr28GKf0hneZBkUyvP-wP1SuyFJcpDXF8XphPUTruryDXucj0c1MlAPool4YiNLqeK8zImedOTQ";
+const DAILY_SCORE_NUDGE_KIND = "daily_score_nudge";
+const DAILY_SCORE_NUDGE_TIME = "17:00";
 
 function serviceRoleKey() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -136,6 +140,128 @@ function addDays(isoDate: string, amount: number) {
 
 function daysInMonth(year: string, month: string) {
   return new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+}
+
+type DailyScoreRows = {
+  disciplines: Row[];
+  trainingLogs: Row[];
+  tasks: Row[];
+  meals: Row[];
+  dailyCheckins: Row[];
+  readingLogs: Row[];
+  focusSessions: Row[];
+  goals: Row[];
+  priorities: Row[];
+};
+
+const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
+  gymWeight: 2,
+  nutritionWeight: 2,
+  sleepWeight: 2,
+  focusWeight: 2,
+  readingWeight: 2,
+  goalsWeight: 2,
+};
+
+function localDatePart(value: unknown) {
+  return typeof value === "string" ? value.slice(0, 10) : "";
+}
+
+function weightsFromRow(row: Row | undefined): ScoreWeights {
+  return {
+    gymWeight: numberValue(row ?? {}, "gym_weight", 2),
+    nutritionWeight: numberValue(row ?? {}, "nutrition_weight", 2),
+    sleepWeight: numberValue(row ?? {}, "sleep_weight", 2),
+    focusWeight: numberValue(row ?? {}, "focus_weight", 2),
+    readingWeight: numberValue(row ?? {}, "reading_weight", 2),
+    goalsWeight: numberValue(row ?? {}, "goals_weight", 2),
+  };
+}
+
+/**
+ * Reconstruye el Daily Score con los mismos registros y fórmula que usa la
+ * interfaz. No guarda ningún resultado: el scheduler calcula el puntaje al
+ * momento de decidir si debe enviar el aviso.
+ */
+function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) {
+  const disciplines = source.disciplines.filter((row) => stringValue(row, "user_email") === email);
+  const disciplinePriority = new Map<number, string>(
+    disciplines.map((row) => [numberValue(row, "id"), stringValue(row, "priority")]),
+  );
+  const trainingLogs = source.trainingLogs.filter((row) =>
+    stringValue(row, "user_email") === email && stringValue(row, "training_date") === date,
+  );
+  const tasks = source.tasks.filter((row) =>
+    stringValue(row, "user_email") === email && stringValue(row, "due_date") === date,
+  );
+  const completedTrainingTasks = tasks.filter((row) =>
+    value(row, "project_id") == null
+    && localDatePart(value(row, "completed_at")) !== ""
+    && numberValue(row, "duration_minutes") > 0
+    && inferTaskCategory(stringValue(row, "title")) === "training",
+  );
+
+  const seenTraining = new Set<string>();
+  let trainingScore = 0;
+  for (const row of trainingLogs) {
+    const key = stringValue(row, "training_date") + ":" + numberValue(row, "discipline_id");
+    if (seenTraining.has(key)) continue;
+    seenTraining.add(key);
+    trainingScore += disciplinePriority.get(numberValue(row, "discipline_id")) === "secondary" ? 0.5 : 1;
+  }
+  trainingScore = Math.min(1, trainingScore + completedTrainingTasks.length);
+
+  const seenFocus = new Set<string>();
+  let focusMinutes = 0;
+  for (const row of source.focusSessions) {
+    if (stringValue(row, "user_email") !== email || stringValue(row, "session_date") !== date) continue;
+    const id = String(value(row, "id"));
+    if (seenFocus.has(id)) continue;
+    seenFocus.add(id);
+    focusMinutes += numberValue(row, "minutes");
+  }
+  focusMinutes += tasks
+    .filter((row) =>
+      value(row, "project_id") != null
+      && localDatePart(value(row, "completed_at")) !== ""
+      && numberValue(row, "duration_minutes") > 0,
+    )
+    .reduce((sum, row) => sum + numberValue(row, "duration_minutes"), 0);
+
+  const sleepMinutes = source.dailyCheckins
+    .filter((row) => stringValue(row, "user_email") === email && stringValue(row, "entry_date") === date && numberValue(row, "sleep_minutes") > 0)
+    .reduce((sum, row) => sum + numberValue(row, "sleep_minutes"), 0);
+  const pages = source.readingLogs
+    .filter((row) => stringValue(row, "user_email") === email && stringValue(row, "log_date") === date)
+    .reduce((sum, row) => sum + numberValue(row, "pages"), 0);
+  const meals = source.meals.filter((row) =>
+    stringValue(row, "user_email") === email && stringValue(row, "meal_date") === date,
+  ).length;
+  const completedSomething = source.goals.some((row) =>
+    stringValue(row, "user_email") === email && localDatePart(value(row, "completed_at")) === date,
+  ) || source.tasks.some((row) =>
+    stringValue(row, "user_email") === email && localDatePart(value(row, "completed_at")) === date,
+  );
+  const hasOpenGoals = source.goals.some((row) => {
+    if (stringValue(row, "user_email") !== email) return false;
+    const created = localDatePart(value(row, "created_at"));
+    const completed = localDatePart(value(row, "completed_at"));
+    return Boolean(created) && created <= date && (!completed || completed >= date);
+  });
+  const priority = source.priorities.find((row) =>
+    stringValue(row, "user_email") === email && stringValue(row, "month_key") === date.slice(0, 7),
+  );
+  const day: DayRecord = {
+    trainingSessions: trainingLogs.length + completedTrainingTasks.length,
+    trainingScore: trainingScore * 100,
+    meals,
+    sleepMinutes,
+    focusMinutes,
+    pages,
+    completedSomething,
+    hasOpenGoals,
+  };
+  return scoreForDay(day, priority ? weightsFromRow(priority) : DEFAULT_SCORE_WEIGHTS);
 }
 
 function referenceQuery(email: string, kind: string, referenceKey: string) {
@@ -300,12 +426,29 @@ export async function POST(request: Request) {
     if (!privateKey) throw new Error("Falta VAPID_PRIVATE_KEY en el entorno del servidor.");
     webpush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:notifications@avora.app", publicKey, privateKey);
 
-    const now = new Date();
-    const [preferenceRows, subscriptions, profiles, events] = await Promise.all([
+    const searchParams = new URL(request.url).searchParams;
+    const testNow = searchParams.get("test_now");
+    const onlyDailyScore = searchParams.get("only") === DAILY_SCORE_NUDGE_KIND;
+    let now = new Date();
+    if (testNow) {
+      const parsed = new Date(testNow);
+      if (Number.isNaN(parsed.getTime())) return Response.json({ error: "test_now inválido." }, { status: 400 });
+      now = parsed;
+    }
+    const [preferenceRows, subscriptions, profiles, events, disciplines, trainingLogs, tasks, meals, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
       adminRequest("notification_preferences", new URLSearchParams({ push_enabled: "eq.true" }).toString()),
       adminRequest("push_subscriptions"),
       adminRequest("profiles", new URLSearchParams({ select: "email,display_name,pro_since" }).toString()),
       adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,event_time" }).toString()),
+      adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,priority" }).toString()),
+      adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date" }).toString()),
+      adminRequest("tasks", new URLSearchParams({ select: "id,user_email,project_id,due_date,duration_minutes,completed_at,title" }).toString()),
+      adminRequest("meals", new URLSearchParams({ select: "id,user_email,meal_date" }).toString()),
+      adminRequest("daily_checkins", new URLSearchParams({ select: "id,user_email,entry_date,sleep_minutes" }).toString()),
+      adminRequest("reading_logs", new URLSearchParams({ select: "id,user_email,log_date,pages" }).toString()),
+      adminRequest("focus_sessions", new URLSearchParams({ select: "id,user_email,session_date,minutes" }).toString()),
+      adminRequest("goals", new URLSearchParams({ select: "id,user_email,created_at,completed_at" }).toString()),
+      adminRequest("monthly_priorities", new URLSearchParams({ select: "id,user_email,month_key,gym_weight,nutrition_weight,sleep_weight,focus_weight,reading_weight,goals_weight" }).toString()),
     ]);
 
     const profilesByEmail = new Map(profiles.map((row) => [stringValue(row, "email"), row]));
@@ -324,13 +467,25 @@ export async function POST(request: Request) {
       eventsByEmail.set(email, current);
     }
 
+    const dailyScoreRows: DailyScoreRows = {
+      disciplines,
+      trainingLogs,
+      tasks,
+      meals,
+      dailyCheckins,
+      readingLogs,
+      focusSessions,
+      goals,
+      priorities,
+    };
+
     let usersChecked = 0;
     let candidatesFound = 0;
     let sent = 0;
     let expired = 0;
     let failed = 0;
     const errors: string[] = [];
-    const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; configuredCalendarDaysBefore: number; candidates: number }> = [];
+    const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; configuredCalendarDaysBefore: number; dailyScoreDue: boolean; dailyScore?: number; candidates: number }> = [];
     for (const preference of preferenceRows) {
       const email = stringValue(preference, "user_email");
       const userSubscriptions = subscriptionsByEmail.get(email) ?? [];
@@ -339,9 +494,9 @@ export async function POST(request: Request) {
       const profile = profilesByEmail.get(email) ?? {};
       const timezone = stringValue(preference, "timezone", DEFAULT_TIMEZONE);
       const clock = localClock(now, timezone);
-      const candidates = summaryCandidates(email, profile, preference, clock);
+      const candidates = onlyDailyScore ? [] : summaryCandidates(email, profile, preference, clock);
 
-      if (booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
+      if (!onlyDailyScore && booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
         const daysBefore = Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1))));
         const targetDate = addDays(clock.date, daysBefore);
         const dayLabel = daysBefore === 1 ? "mañana" : "en " + daysBefore + " días";
@@ -361,6 +516,19 @@ export async function POST(request: Request) {
         }
       }
 
+      const dailyScoreDue = dueWithinWindow(clock.time, DAILY_SCORE_NUDGE_TIME);
+      const dailyScore = dailyScoreDue ? dailyScoreForDate(email, clock.date, dailyScoreRows) : undefined;
+      if (dailyScoreDue && dailyScore !== undefined && dailyScore < 50) {
+        candidates.push({
+          email,
+          kind: DAILY_SCORE_NUDGE_KIND,
+          referenceKey: clock.date,
+          title: "¿Estás desperdiciando tu día?",
+          body: "Tu Daily Score sigue por debajo de 50. Todavía estás a tiempo: concentrate y levantá el día.",
+          url: APP_URL + "/?section=summary",
+        });
+      }
+
       candidatesFound += candidates.length;
       diagnostics.push({
         timezone,
@@ -369,6 +537,8 @@ export async function POST(request: Request) {
         weekday: clock.weekday,
         configuredDailyTime: stringValue(preference, "daily_balance_time", "21:00"),
         configuredCalendarDaysBefore: Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1)))),
+        dailyScoreDue,
+        ...(dailyScore === undefined ? {} : { dailyScore }),
         candidates: candidates.length,
       });
 
