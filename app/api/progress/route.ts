@@ -78,6 +78,11 @@ async function upsert(table: string, values: Record<string, unknown>, conflict: 
   await insertRows(table, { ...values, updatedAt: now() }, { upsert: true, onConflict: conflict });
 }
 
+function isTransientSupabaseError(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return /Supabase (408|425|429|500|502|503|504)\b/.test(message) || /fetch failed|network/i.test(message);
+}
+
 export async function GET(request: Request) {
   try {
     const user = await currentUser();
@@ -132,7 +137,11 @@ export async function GET(request: Request) {
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
       goals, dailyCheckin: dailyCheckins.find((row) => row.entryDate === date) ?? null, dailyCheckins, focusProjects, focusSessions, tasks, events,
     });
-  } catch (cause) { console.error("progress GET", cause); return fail("No se pudieron cargar tus datos. Verificá Supabase.", 500); }
+  } catch (cause) {
+    console.error("progress GET", cause);
+    if (isTransientSupabaseError(cause)) return fail("Tuvimos un problema temporal al conectar tus datos. Intentá nuevamente en unos segundos.", 503);
+    return fail("No se pudieron cargar tus datos. Verificá Supabase.", 500);
+  }
 }
 
 export async function POST(request: Request) {
