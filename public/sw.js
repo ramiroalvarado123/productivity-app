@@ -38,7 +38,7 @@ self.addEventListener("push", (event) => {
     badge: payload.badge || "/favicon.svg",
     tag: payload.tag || "avora-notification",
     renotify: false,
-    data: { url: payload.url || "/" },
+    data: { url: payload.url || (payload.data && payload.data.url) || "/" },
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
