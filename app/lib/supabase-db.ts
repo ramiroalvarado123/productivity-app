@@ -16,26 +16,49 @@ function encodeFilter(value: Scalar) {
   return `eq.${String(value)}`;
 }
 
-async function request(table: string, init: RequestInit = {}, query = new URLSearchParams()) {
-  const token = (await cookies()).get(ACCESS_COOKIE)?.value;
-  if (!token) throw new Error("Sesión de Supabase ausente.");
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
-    ...init,
-    headers: {
-      ...authHeaders(token),
-      ...(init.headers ?? {}),
-    },
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Supabase ${response.status}: ${detail}`);
-  }
-  if (response.status === 204) return [];
-  const text = await response.text();
-  return text ? JSON.parse(text) : [];
+const TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [300, 900, 1800];
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function request(table: string, init: RequestInit = {}, query = new URLSearchParams(), retryable = false) {
+  const token = (await cookies()).get(ACCESS_COOKIE)?.value;
+  if (!token) throw new Error("Sesión de Supabase ausente.");
+  const method = String(init.method ?? "GET").toUpperCase();
+  const canRetry = retryable || method === "GET";
+
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+        ...init,
+        headers: {
+          ...authHeaders(token),
+          ...(init.headers ?? {}),
+        },
+        cache: "no-store",
+      });
+    } catch (cause) {
+      if (!canRetry || attempt >= RETRY_DELAYS_MS.length) throw cause;
+      await wait(RETRY_DELAYS_MS[attempt]);
+      continue;
+    }
+    if (!response.ok) {
+      const detail = await response.text();
+      if (canRetry && TRANSIENT_STATUSES.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
+        console.warn("[supabase] transient request failure", { table, status: response.status, attempt: attempt + 1 });
+        await wait(RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      throw new Error(`Supabase ${response.status} (${table}): ${detail}`);
+    }
+    if (response.status === 204) return [];
+    const text = await response.text();
+    return text ? JSON.parse(text) : [];
+  }
+}
 function filters(query: URLSearchParams, values: Record<string, Scalar> = {}) {
   for (const [key, value] of Object.entries(values)) query.set(toSnake(key), encodeFilter(value));
 }
@@ -83,7 +106,7 @@ export async function insertRows<T extends Row = Row>(table: string, values: Row
     method: "POST",
     headers: { Prefer: prefer },
     body: JSON.stringify(body),
-  }, query) as Row[];
+  }, query, Boolean(options.upsert && options.ignoreDuplicates)) as Row[];
   return rows.map((row) => mapKeys(row, toCamel) as T);
 }
 
