@@ -95,3 +95,18 @@ grant select, insert, update, delete on public.push_subscriptions to authenticat
 grant select, insert, update, delete on public.notification_deliveries to authenticated;
 grant usage, select on sequence public.push_subscriptions_id_seq to authenticated;
 grant usage, select on sequence public.notification_deliveries_id_seq to authenticated;
+-- El scheduler reconstruye el Daily Score desde el servidor y necesita leer
+-- estas tablas con la clave administrativa. Nunca se otorga este acceso al
+-- navegador.
+grant usage on schema public to service_role;
+grant select on table
+  public.training_disciplines,
+  public.training_logs,
+  public.tasks,
+  public.meals,
+  public.daily_checkins,
+  public.reading_logs,
+  public.focus_sessions,
+  public.goals,
+  public.monthly_priorities
+to service_role;
