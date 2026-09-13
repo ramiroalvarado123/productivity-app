@@ -27,6 +27,9 @@ export type DayRecord = {
    */
   trainingScore?: number;
   meals: number;
+  /** Calorías registradas y objetivo diario, si el usuario configuró alimentación. */
+  calories?: number;
+  targetCalories?: number;
   sleepMinutes: number;
   focusMinutes: number;
   pages: number;
@@ -41,13 +44,25 @@ export const FULL_SLEEP_MINUTES = 8 * 60;
 export const FULL_FOCUS_MINUTES = 2 * 60;
 export const FULL_MEALS = 3;
 export const FULL_PAGES = 10;
+/** Dentro de este margen el objetivo de calorías se considera cumplido. */
+export const CALORIE_TARGET_TOLERANCE = 0.10;
+
+export function nutritionScoreFromCalories(calories: number, targetCalories: number): number | null {
+  if (!Number.isFinite(targetCalories) || targetCalories <= 0) return null;
+  const actual = Math.max(0, Number.isFinite(calories) ? calories : 0);
+  const relativeDifference = Math.abs(actual - targetCalories) / targetCalories;
+  if (relativeDifference <= CALORIE_TARGET_TOLERANCE) return 100;
+  const remainingRange = Math.max(0.0001, 1 - CALORIE_TARGET_TOLERANCE);
+  return Math.max(0, Math.min(100, Math.round((1 - (relativeDifference - CALORIE_TARGET_TOLERANCE) / remainingRange) * 100)));
+}
 
 export function dayFactors(day: DayRecord): ScoreFactors {
   return {
     training: typeof day.trainingScore === "number"
       ? Math.max(0, Math.min(100, Math.round(day.trainingScore)))
       : day.trainingSessions > 0 ? 100 : 0,
-    nutrition: Math.min(100, Math.round(day.meals / FULL_MEALS * 100)),
+    nutrition: nutritionScoreFromCalories(day.calories ?? 0, day.targetCalories ?? 0)
+      ?? Math.min(100, Math.round(day.meals / FULL_MEALS * 100)),
     sleep: day.sleepMinutes ? Math.min(100, Math.round(day.sleepMinutes / FULL_SLEEP_MINUTES * 100)) : 0,
     focus: Math.min(100, Math.round(day.focusMinutes / FULL_FOCUS_MINUTES * 100)),
     reading: Math.min(100, day.pages * FULL_PAGES),
@@ -57,15 +72,24 @@ export function dayFactors(day: DayRecord): ScoreFactors {
 
 /** Promedio ponderado de los seis factores según tus prioridades del mes. */
 export function scoreFrom(factors: ScoreFactors, weights: ScoreWeights): number {
-  const total = weights.gymWeight + weights.nutritionWeight + weights.sleepWeight + weights.focusWeight + weights.readingWeight + weights.goalsWeight;
+  // La escala queda siempre ordenada: Prioridad (3) > Importante (2) > Secundario (1),
+  // incluso si una fila antigua tuviera un valor fuera del rango.
+  const normalizeWeight = (value: number) => Math.max(1, Math.min(3, Math.round(Number(value) || 2)));
+  const gymWeight = normalizeWeight(weights.gymWeight);
+  const nutritionWeight = normalizeWeight(weights.nutritionWeight);
+  const sleepWeight = normalizeWeight(weights.sleepWeight);
+  const focusWeight = normalizeWeight(weights.focusWeight);
+  const readingWeight = normalizeWeight(weights.readingWeight);
+  const goalsWeight = normalizeWeight(weights.goalsWeight);
+  const total = gymWeight + nutritionWeight + sleepWeight + focusWeight + readingWeight + goalsWeight;
   if (total <= 0) return 0;
   return Math.round((
-    factors.training * weights.gymWeight
-    + factors.nutrition * weights.nutritionWeight
-    + factors.sleep * weights.sleepWeight
-    + factors.focus * weights.focusWeight
-    + factors.reading * weights.readingWeight
-    + factors.goals * weights.goalsWeight
+    factors.training * gymWeight
+    + factors.nutrition * nutritionWeight
+    + factors.sleep * sleepWeight
+    + factors.focus * focusWeight
+    + factors.reading * readingWeight
+    + factors.goals * goalsWeight
   ) / total);
 }
 
