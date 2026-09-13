@@ -19,6 +19,11 @@ export const metadata: Metadata = {
   title: "AVORA",
   description: "Todo tu progreso en un solo lugar.",
   manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "AVORA",
+    statusBarStyle: "default",
+  },
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
   openGraph: {
     title: "AVORA",
