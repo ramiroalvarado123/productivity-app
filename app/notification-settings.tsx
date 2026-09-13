@@ -61,6 +61,7 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
   const [saving, setSaving] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
   const [standalone, setStandalone] = useState(false);
+  const [subscriptionReady, setSubscriptionReady] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -69,6 +70,12 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
     if (typeof window !== "undefined") {
       if ("Notification" in window) setPermission(Notification.permission);
       setStandalone(window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+    }
+    if ("serviceWorker" in navigator && "PushManager" in window) {
+      void navigator.serviceWorker.ready
+        .then((registration) => registration.pushManager.getSubscription())
+        .then((subscription) => { if (!cancelled) setSubscriptionReady(Boolean(subscription)); })
+        .catch(() => { if (!cancelled) setSubscriptionReady(false); });
     }
     fetch("/api/notifications/preferences", { cache: "no-store" })
       .then(async (response) => {
@@ -81,7 +88,7 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
     return () => { cancelled = true; };
   }, []);
 
-  const pushReady = preferences.pushEnabled && permission === "granted";
+  const pushReady = preferences.pushEnabled && permission === "granted" && subscriptionReady;
   const browserLabel = useMemo(() => {
     if (pushReady && standalone) return "Activas en la app instalada";
     if (pushReady) return "Activas en este navegador";
@@ -160,6 +167,7 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
       if (!response.ok) throw new Error(failMessage(body, "No pudimos registrar este dispositivo."));
       // El endpoint ya guarda push_enabled junto con la suscripción.
       setPreferences((current) => ({ ...current, pushEnabled: true }));
+      setSubscriptionReady(true);
       setNotice("Notificaciones activadas en este dispositivo.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No pudimos activar las notificaciones.");
@@ -182,6 +190,7 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
         });
         await subscription.unsubscribe();
       }
+      setSubscriptionReady(false);
       await save({ ...preferences, pushEnabled: false });
       setNotice("Notificaciones desactivadas en este dispositivo.");
     } catch (cause) {
