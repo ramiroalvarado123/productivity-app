@@ -17,7 +17,6 @@ type Candidate = {
 };
 
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://productivity-app-git-feat-avora-ui-polish-ralvarado-3362.vercel.app";
 const DEFAULT_VAPID_PUBLIC_KEY = "BFjo70YM_MZxUr28GKf0hneZBkUyvP-wP1SuyFJcpDXF8XphPUTruryDXucj0c1MlAPool4YiNLqeK8zImedOTQ";
 const DAILY_SCORE_NUDGE_KIND = "daily_score_nudge";
 const DAILY_SCORE_NUDGE_TIME = "17:00";
@@ -318,8 +317,8 @@ function notificationFor(candidate: Candidate) {
     icon: "/favicon.svg",
     badge: "/favicon.svg",
     tag: candidate.kind + ":" + candidate.referenceKey,
-    // Se mantiene en ambos niveles para que tanto el Service Worker actual
-    // como el actualizado puedan abrir la sección correcta al tocar el aviso.
+    // La ruta debe ser relativa: así una notificación recibida en la app
+    // instalada conserva el origen de esa app y no salta a Safari u otro deploy.
     url: candidate.url,
     data: { url: candidate.url },
   });
@@ -389,7 +388,7 @@ function summaryCandidates(email: string, profile: Row, preferences: Row, clock:
       referenceKey: clock.date,
       title: "Balance del día",
       body: isPro ? "Recuerda hacer el balance de tu día, tomará menos de un minuto." : "Recuerda hacer el balance de tu día.",
-      url: APP_URL + "/?section=summary",
+      url: "/?section=summary",
     });
   }
   if (booleanValue(preferences, "weekly_summary_enabled", true) && isSunday && dueWithinWindow(clock.time, stringValue(preferences, "weekly_summary_time", "20:00"))) {
@@ -399,7 +398,7 @@ function summaryCandidates(email: string, profile: Row, preferences: Row, clock:
       referenceKey: clock.date,
       title: "Tu resumen semanal",
       body: "Mira tu progreso, tus rachas y las áreas que conviene acomodar.",
-      url: APP_URL + "/?section=stats",
+      url: "/?section=stats",
     });
   }
   if (booleanValue(preferences, "monthly_summary_enabled", true) && isLastDay && dueWithinWindow(clock.time, stringValue(preferences, "monthly_summary_time", "20:00"))) {
@@ -409,7 +408,7 @@ function summaryCandidates(email: string, profile: Row, preferences: Row, clock:
       referenceKey: year + "-" + month,
       title: "Tu resumen mensual",
       body: "Cerrá el mes viendo qué avanzó y qué querés priorizar después.",
-      url: APP_URL + "/?section=stats",
+      url: "/?section=stats",
     });
   }
   if (booleanValue(preferences, "annual_summary_enabled", true) && isNewYearEve && dueWithinWindow(clock.time, stringValue(preferences, "annual_summary_time", "20:00"))) {
@@ -419,7 +418,7 @@ function summaryCandidates(email: string, profile: Row, preferences: Row, clock:
       referenceKey: year,
       title: "Tu resumen anual",
       body: "Repasá todo lo que construiste este año en AVORA.",
-      url: APP_URL + "/?section=stats",
+      url: "/?section=stats",
     });
   }
   return candidates;
@@ -524,7 +523,7 @@ export async function POST(request: Request) {
             referenceKey: String(eventId) + ":" + targetDate,
             title: "Recordatorio de calendario",
             body: "Recuerda: " + dayLabel + " tienes " + title + (eventTime ? " a las " + eventTime + "." : "."),
-            url: APP_URL + "/?section=plan",
+            url: "/?section=plan",
           });
         }
       }
@@ -538,7 +537,7 @@ export async function POST(request: Request) {
           referenceKey: clock.date,
           title: "¿Estás desperdiciando tu día?",
           body: "Tu Daily Score sigue por debajo de 50. Todavía estás a tiempo: concentrate y levantá el día.",
-          url: APP_URL + "/?section=summary",
+          url: "/?section=summary",
         });
       }
 
