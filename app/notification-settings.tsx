@@ -60,12 +60,16 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
+  const [standalone, setStandalone] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    if (typeof window !== "undefined" && "Notification" in window) setPermission(Notification.permission);
+    if (typeof window !== "undefined") {
+      if ("Notification" in window) setPermission(Notification.permission);
+      setStandalone(window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+    }
     fetch("/api/notifications/preferences", { cache: "no-store" })
       .then(async (response) => {
         const body = await responseJson(response);
@@ -77,12 +81,15 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
     return () => { cancelled = true; };
   }, []);
 
+  const pushReady = preferences.pushEnabled && permission === "granted";
   const browserLabel = useMemo(() => {
-    if (permission === "granted") return "Permiso concedido en este dispositivo";
+    if (pushReady && standalone) return "Activas en la app instalada";
+    if (pushReady) return "Activas en este navegador";
+    if (preferences.pushEnabled) return "Activadas en otro dispositivo; falta activarlas acá";
     if (permission === "denied") return "Bloqueadas desde el navegador";
     if (permission === "unsupported") return "Este navegador no admite notificaciones push";
     return "Todavía no están activadas en este dispositivo";
-  }, [permission]);
+  }, [permission, preferences.pushEnabled, pushReady, standalone]);
 
   async function save(next: NotificationPreferences) {
     const response = await fetch("/api/notifications/preferences", {
@@ -143,7 +150,11 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
       const response = await fetch("/api/notifications/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: subscription.toJSON(), userAgent: navigator.userAgent }),
+        body: JSON.stringify({
+          subscription: subscription.toJSON(),
+          userAgent: navigator.userAgent,
+          clientContext: isStandalone ? "app" : "browser",
+        }),
       });
       const body = await responseJson(response);
       if (!response.ok) throw new Error(failMessage(body, "No pudimos registrar este dispositivo."));
@@ -179,7 +190,7 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
   }
 
   if (compact) {
-    if (loading || preferences.pushEnabled) return null;
+    if (loading || pushReady) return null;
     return <div className="notification-activation-banner" role="status">
       <div><span className="notification-activation-icon" aria-hidden="true">♧</span><p><b>Activá las notificaciones</b><small>Recibí avisos de tus actividades y el cierre del día.</small></p></div>
       <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : "Activar ahora"}</button>
@@ -196,10 +207,11 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
         <b>{preferences.pushEnabled ? "Notificaciones activadas" : "Notificaciones desactivadas"}</b>
         <small>{browserLabel}</small>
       </div>
-      {preferences.pushEnabled
+      {pushReady
         ? <button type="button" className="notification-action secondary" onClick={() => void disablePush()} disabled={saving}>Desactivar</button>
-        : <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : "Activar"}</button>}
+        : <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : preferences.pushEnabled ? "Activar en esta app" : "Activar"}</button>}
     </div>
+    {preferences.pushEnabled && !pushReady && <small className="field-note">Si usás iPhone, abrí AVORA desde el ícono de la pantalla de inicio y activalas una vez ahí.</small>}
 
     <p className="notification-section-label">AVISOS</p>
     <div className="settings-disabled-row"><span><b>Actividades del calendario</b><small>Se envía según el horario y la anticipación que elijas.</small></span><i>{preferences.calendarEnabled ? "Activado" : "Desactivado"}</i></div>

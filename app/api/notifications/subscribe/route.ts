@@ -26,14 +26,29 @@ export async function POST(request: Request) {
     if (typeof p256dh !== "string" || !p256dh || p256dh.length > 500 || typeof auth !== "string" || !auth || auth.length > 500) return fail("Claves de suscripción inválidas.");
 
     await insertRows("profiles", { email: user.email, displayName: user.displayName }, { upsert: true, onConflict: ["email"], ignoreDuplicates: true });
-    await insertRows("push_subscriptions", {
-      userEmail: user.email,
-      endpoint,
-      p256dh,
-      auth,
-      userAgent: String(body?.userAgent ?? "").slice(0, 500),
-      updatedAt: new Date().toISOString(),
-    }, { upsert: true, onConflict: ["endpoint"] });
+    const clientContext = body?.clientContext === "app" ? "app" : "browser";
+    try {
+      await insertRows("push_subscriptions", {
+        userEmail: user.email,
+        endpoint,
+        p256dh,
+        auth,
+        userAgent: String(body?.userAgent ?? "").slice(0, 500),
+        clientContext,
+        updatedAt: new Date().toISOString(),
+      }, { upsert: true, onConflict: ["endpoint"] });
+    } catch (error) {
+      // Compatibilidad temporal con bases que aún no tienen la columna nueva.
+      console.warn("push subscription context column unavailable", error);
+      await insertRows("push_subscriptions", {
+        userEmail: user.email,
+        endpoint,
+        p256dh,
+        auth,
+        userAgent: String(body?.userAgent ?? "").slice(0, 500),
+        updatedAt: new Date().toISOString(),
+      }, { upsert: true, onConflict: ["endpoint"] });
+    }
     // Activar el permiso en la misma operación para evitar una segunda
     // llamada de red al guardar las preferencias.
     await insertRows("notification_preferences", {
