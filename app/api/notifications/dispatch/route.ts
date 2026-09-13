@@ -147,6 +147,7 @@ type DailyScoreRows = {
   trainingLogs: Row[];
   tasks: Row[];
   meals: Row[];
+  dietPlans: Row[];
   dailyCheckins: Row[];
   readingLogs: Row[];
   focusSessions: Row[];
@@ -234,9 +235,15 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
   const pages = source.readingLogs
     .filter((row) => stringValue(row, "user_email") === email && stringValue(row, "log_date") === date)
     .reduce((sum, row) => sum + numberValue(row, "pages"), 0);
-  const meals = source.meals.filter((row) =>
+  const mealRows = source.meals.filter((row) =>
     stringValue(row, "user_email") === email && stringValue(row, "meal_date") === date,
-  ).length;
+  );
+  const meals = mealRows.length;
+  const calories = mealRows.reduce((sum, row) => sum + numberValue(row, "calories"), 0);
+  const targetCalories = numberValue(
+    source.dietPlans.find((row) => stringValue(row, "user_email") === email) ?? {},
+    "target_calories",
+  );
   const completedSomething = source.goals.some((row) =>
     stringValue(row, "user_email") === email && localDatePart(value(row, "completed_at")) === date,
   ) || source.tasks.some((row) =>
@@ -255,6 +262,8 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
     trainingSessions: trainingLogs.length + completedTrainingTasks.length,
     trainingScore: trainingScore * 100,
     meals,
+    calories,
+    targetCalories,
     sleepMinutes,
     focusMinutes,
     pages,
@@ -447,18 +456,19 @@ export async function POST(request: Request) {
 
     let dailyScoreRows: DailyScoreRows | null = null;
     try {
-      const [disciplines, trainingLogs, tasks, meals, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
+      const [disciplines, trainingLogs, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
         adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,priority" }).toString()),
         adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date" }).toString()),
         adminRequest("tasks", new URLSearchParams({ select: "id,user_email,project_id,due_date,duration_minutes,completed_at,title" }).toString()),
-        adminRequest("meals", new URLSearchParams({ select: "id,user_email,meal_date" }).toString()),
+        adminRequest("meals", new URLSearchParams({ select: "id,user_email,meal_date,calories" }).toString()),
+        adminRequest("diet_plans", new URLSearchParams({ select: "id,user_email,target_calories" }).toString()),
         adminRequest("daily_checkins", new URLSearchParams({ select: "id,user_email,entry_date,sleep_minutes" }).toString()),
         adminRequest("reading_logs", new URLSearchParams({ select: "id,user_email,log_date,pages" }).toString()),
         adminRequest("focus_sessions", new URLSearchParams({ select: "id,user_email,session_date,minutes" }).toString()),
         adminRequest("goals", new URLSearchParams({ select: "id,user_email,created_at,completed_at" }).toString()),
         adminRequest("monthly_priorities", new URLSearchParams({ select: "id,user_email,month_key,gym_weight,nutrition_weight,sleep_weight,focus_weight,reading_weight,goals_weight" }).toString()),
       ]);
-      dailyScoreRows = { disciplines, trainingLogs, tasks, meals, dailyCheckins, readingLogs, focusSessions, goals, priorities };
+      dailyScoreRows = { disciplines, trainingLogs, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities };
     } catch (error) {
       // La alerta nueva no debe interrumpir calendario, balance ni resúmenes
       // si la migración de permisos todavía no fue ejecutada en Supabase.
