@@ -1986,3 +1986,8 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .meal-panel-actions { align-items: flex-end; flex-direction: column; gap: 5px; }
   .meal-backfill-toggle { font-size: 8px; padding: 7px 8px; }
 }
+
+/* Colores de los bloques creados desde áreas distintas de Foco. */
+.agenda-block.nutrition{background:#fff0e8;border-left-color:#d98a6f;color:#814a38}
+.agenda-block.sleep{background:#eee9ff;border-left-color:#8874bf;color:#5c4a8b}
+.agenda-block.reading{background:#e8f0ff;border-left-color:#6d8ec5;color:#45628f}
