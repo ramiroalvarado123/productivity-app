@@ -10,6 +10,7 @@ grant select on table
   public.training_logs,
   public.tasks,
   public.meals,
+  public.diet_plans,
   public.daily_checkins,
   public.reading_logs,
   public.focus_sessions,
