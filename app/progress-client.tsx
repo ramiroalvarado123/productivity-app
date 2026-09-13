@@ -40,7 +40,8 @@ type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weight
 type FocusProject = { id: number; name: string; kind: "study" | "work" };
 type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
 type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null };
-type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "other"; notes: string; completedAt: string | null };
+type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "nutrition" | "sleep" | "reading" | "other"; notes: string; completedAt: string | null };
+type SlotCategory = "focus" | "training" | "nutrition" | "sleep" | "study" | "work" | "reading" | "personal" | "other";
 type VoiceCheckin = { transcript: string; summary: string; gym: { attended: boolean | null; detail: string }; meals: Array<{ name: string; detail: string; calories: number; protein: number; carbs: number; fat: number }>; reading: { bookTitle: string; pages: number; minutes: number; note: string }; habits: string[]; study: { minutes: number; detail: string; tasks: string[] }; sleep: { minutes: number; bedtime: string; wakeTime: string }; waterMl: number; journal: string; goals: Array<{ title: string; period: GoalPeriod; category: GoalCategory; targetDate: string }>; confidence: "low" | "medium" | "high" };
 type MealEstimate = { mealName: string; detail: string; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
 type DietPlanContent = {
@@ -173,7 +174,19 @@ const WAKE_HOUR_OPTIONS = ["05", "06", "07", "08", "09", "10", "11", "12", "13",
 const WEEKLY_TARGET_OPTIONS: DropdownOption[] = Array.from({ length: 14 }, (_, index) => ({ value: String(index + 1), label: `${index + 1} por semana` }));
 const EVENT_CATEGORY_OPTIONS: DropdownOption[] = [
   { value: "personal", label: "Personal" }, { value: "study", label: "Estudio" }, { value: "work", label: "Trabajo" },
-  { value: "training", label: "Entrenamiento" }, { value: "health", label: "Salud" }, { value: "other", label: "Otro" },
+  { value: "training", label: "Entrenamiento" }, { value: "nutrition", label: "Alimentación" }, { value: "sleep", label: "Sueño" },
+  { value: "reading", label: "Lectura" }, { value: "health", label: "Salud" }, { value: "other", label: "Otro" },
+];
+const SLOT_CATEGORY_OPTIONS: DropdownOption[] = [
+  { value: "focus", label: "Foco · proyecto" },
+  { value: "training", label: "Entrenamiento / gimnasio" },
+  { value: "nutrition", label: "Alimentación" },
+  { value: "sleep", label: "Sueño" },
+  { value: "study", label: "Estudio" },
+  { value: "work", label: "Trabajo" },
+  { value: "reading", label: "Lectura" },
+  { value: "personal", label: "Personal" },
+  { value: "other", label: "Otro" },
 ];
 const kindLabels: Record<Discipline["kind"], string> = { strength: "Fuerza / gimnasio", running: "Running", cycling: "Ciclismo", swimming: "Natación", sport: "Deporte", other: "Otra" };
 // Recorrido guiado de la primera vez: sólo elementos de Inicio, para no tener
@@ -649,6 +662,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [agendaView, setAgendaView] = useState<"week" | "month">("week");
   const [weekAnchor, setWeekAnchor] = useState(today);
   const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string } | null>(null);
+  const [slotCategory, setSlotCategory] = useState<SlotCategory>("focus");
   const [slotDuration, setSlotDuration] = useState("60");
   const [slotCustomHours, setSlotCustomHours] = useState("");
   const [nowMinutes, setNowMinutes] = useState(argentinaMinutes);
@@ -1162,10 +1176,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   ]);
 
   /** Lo que registraste un día cualquiera, tal cual, sin interpretar. */
+  const nutritionTargetCalories = data.dietPlan?.targetCalories ?? 0;
   const dayRecordFor = (date: string): DayRecord => ({
     trainingSessions: trainingByDate[date] ?? 0,
     trainingScore: (trainingScoreByDate[date] ?? 0) * 100,
     meals: mealCountByDate[date] ?? 0,
+    calories: caloriesByDay[date] ?? 0,
+    targetCalories: nutritionTargetCalories,
     sleepMinutes: sleepMinutesByDate[date] ?? 0,
     focusMinutes: focusByDate[date] ?? 0,
     pages: readingByDate[date] ?? 0,
@@ -2158,7 +2175,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // ---------------------------------------------------------------------------
   const blockCategoryLabel: Record<string, string> = {
     task: "Tarea", study: "Estudio", work: "Trabajo", personal: "Personal",
-    training: "Entrenamiento", health: "Salud", other: "Otro",
+    training: "Entrenamiento", nutrition: "Alimentación", sleep: "Sueño", reading: "Lectura",
+    health: "Salud", other: "Otro",
   };
   const currentBlock = todayBlocks.find((block) => !block.done && block.start <= nowMinutes && block.end > nowMinutes);
   const nextBlock = todayBlocks.find((block) => !block.done && block.start > nowMinutes);
@@ -2345,6 +2363,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const shiftWeek = (amount: number) => setWeekAnchor((current) => dateMinus(current, -amount * 7));
   const openSlotDraft = (date: string, startTime: string) => {
     setSlotDraft({ date, startTime });
+    setSlotCategory("focus");
     setSlotDuration("60");
     setSlotCustomHours("");
   };
@@ -2411,19 +2430,29 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         setError("Indicá una duración válida (entre 15 minutos y 24 horas).");
         return;
       }
-      void save({
-        action: "add_task",
-        title: form.get("title"),
-        projectId: form.get("projectId"),
-        dueDate: slotDraft.date,
-        startTime: slotDraft.startTime,
-        durationMinutes,
-      }).then((ok) => { if (ok) setSlotDraft(null); });
+      void save(slotCategory === "focus"
+        ? {
+            action: "add_task",
+            title: form.get("title"),
+            projectId: form.get("projectId"),
+            dueDate: slotDraft.date,
+            startTime: slotDraft.startTime,
+            durationMinutes,
+          }
+        : {
+            action: "add_event",
+            title: form.get("title"),
+            eventDate: slotDraft.date,
+            eventTime: slotDraft.startTime,
+            durationMinutes,
+            category: slotCategory,
+          }).then((ok) => { if (ok) setSlotDraft(null); });
     }}>
       <p>Nuevo bloque · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
       <div className="slot-fields">
-        <input name="title" required autoFocus placeholder="Ej. Estudiar capítulo 2" />
-        <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />
+        <input name="title" required autoFocus placeholder={slotCategory === "focus" ? "Ej. Estudiar capítulo 2" : "Ej. Gimnasio"} />
+        <Dropdown ariaLabel="Área del bloque" value={slotCategory} onChange={(value) => setSlotCategory(value as SlotCategory)} options={SLOT_CATEGORY_OPTIONS} />
+        {slotCategory === "focus" && <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />}
         <Dropdown ariaLabel="Duración del bloque" value={slotDuration} onChange={setSlotDuration} options={[...durationOptions([30, 45, 60, 90, 120, 180]), { value: "custom", label: "Personalizado" }]} />
         {slotDuration === "custom" && <label className="slot-custom-duration">Duración personalizada
           <div className="slot-custom-duration-input">
@@ -2443,7 +2472,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </div>
       <div className="slot-actions">
         <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
-        <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar bloque" phase={savePhase("add_task")} /></button>
+        <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar bloque" phase={savePhase(slotCategory === "focus" ? "add_task" : "add_event")} /></button>
       </div>
     </form>}
     <p className="agenda-hint">Tocá cualquier franja vacía para poner un bloque ahí.</p>
@@ -3539,7 +3568,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
           ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
           ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
-        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Inicio y Progreso muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
+        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Alimentación se calcula contra tu objetivo diario de calorías: dentro de un 10% suma 100 y cuanto más te alejás, menos suma. Las áreas con “Prioridad” pesan 3, las “Importantes” 2 y las “Secundarias” 1. Inicio y Progreso muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
         {priorityEditor}
       </section>}
       {section === "physical" && <>
