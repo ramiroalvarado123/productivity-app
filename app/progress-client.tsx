@@ -1226,7 +1226,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const displayedDietPlan = generatedDietPlan ?? savedDietPlan;
   const dietTargetCalories = generatedDietPlan?.targetCalories ?? data.dietPlan?.targetCalories ?? 0;
   const calculatedSleepMinutes = sleepDuration(sleepBedtime, sleepWaketime);
-  const selectedSleepCheckin = data.dailyCheckins.find((item) => item.entryDate === sleepEntryDate);
 
   // ---------------------------------------------------------------------------
   // Plan del día: la agenda con horarios, los huecos libres y los avisos que
