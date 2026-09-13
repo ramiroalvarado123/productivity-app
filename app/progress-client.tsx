@@ -1429,8 +1429,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }, [selectedBook, selectedReadingLog?.pages, readingEntryDate]);
   useEffect(() => {
     const checkin = data.dailyCheckins.find((item) => item.entryDate === sleepEntryDate);
-    setSleepBedtime(normalizeClock(checkin?.bedtime, "23:00"));
-    setSleepWaketime(normalizeClock(checkin?.wakeTime, "07:00"));
+    setSleepBedtime(checkin ? normalizeClock(checkin.bedtime, "23:00") : "23:00");
+    setSleepWaketime(checkin ? normalizeClock(checkin.wakeTime, "07:00") : "07:00");
   }, [data.dailyCheckins, sleepEntryDate]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
