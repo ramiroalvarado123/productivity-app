@@ -31,7 +31,7 @@ async function syncStandalonePush(nextRegistration: ServiceWorkerRegistration) {
   const preferences = await preferencesResponse.json().catch(() => null) as { pushEnabled?: unknown } | null;
   if (preferences?.pushEnabled !== true) return;
 
-  const registration = await navigator.serviceWorker.ready;
+  const registration = nextRegistration.active ? nextRegistration : await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
