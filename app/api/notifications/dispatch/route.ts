@@ -481,7 +481,8 @@ export async function POST(request: Request) {
       const email = stringValue(row, "user_email");
       const current = subscriptionsByEmail.get(email) ?? [];
       current.push(row);
-      subscriptionsByEmail.set(email, current);
+      const appSubscriptions = current.filter((subscription) => stringValue(subscription, "client_context") === "app");
+      subscriptionsByEmail.set(email, appSubscriptions.length ? appSubscriptions : current);
     }
     const eventsByEmail = new Map<string, Row[]>();
     for (const row of events) {
