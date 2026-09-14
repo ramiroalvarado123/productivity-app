@@ -47,6 +47,21 @@ export const FULL_PAGES = 10;
 /** Dentro de este margen el objetivo de calorías se considera cumplido. */
 export const CALORIE_TARGET_TOLERANCE = 0.10;
 
+/**
+ * Aporte de una disciplina al factor Entrenamiento.
+ * Una actividad importante pesa el doble que una secundaria y la calidad
+ * evita que marcar una sesión lleve automáticamente el factor a 100.
+ * Sin valoración queda en un punto medio hasta que el usuario la califique.
+ */
+export function trainingContribution(priority: "important" | "secondary" | undefined, quality: number | null | undefined) {
+  const qualityMultiplier = quality === 1 ? 0.4
+    : quality === 2 ? 0.6
+    : quality === 3 ? 0.8
+    : quality === 4 ? 1
+    : 0.5;
+  return (priority === "secondary" ? 0.5 : 1) * qualityMultiplier;
+}
+
 export function nutritionScoreFromCalories(calories: number, targetCalories: number): number | null {
   if (!Number.isFinite(targetCalories) || targetCalories <= 0) return null;
   const actual = Math.max(0, Number.isFinite(calories) ? calories : 0);
