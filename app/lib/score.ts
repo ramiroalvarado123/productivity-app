@@ -32,6 +32,8 @@ export type DayRecord = {
   targetCalories?: number;
   sleepMinutes: number;
   focusMinutes: number;
+  /** Objetivo personal de Estudio/Trabajo para ese día; 2 h si aún no se configuró. */
+  focusTargetMinutes?: number;
   pages: number;
   /** Cerraste al menos una tarea u objetivo ese día. */
   completedSomething: boolean;
@@ -72,6 +74,9 @@ export function nutritionScoreFromCalories(calories: number, targetCalories: num
 }
 
 export function dayFactors(day: DayRecord): ScoreFactors {
+  const focusTargetMinutes = Number.isFinite(day.focusTargetMinutes) && Number(day.focusTargetMinutes) > 0
+    ? Number(day.focusTargetMinutes)
+    : FULL_FOCUS_MINUTES;
   return {
     training: typeof day.trainingScore === "number"
       ? Math.max(0, Math.min(100, Math.round(day.trainingScore)))
@@ -79,7 +84,7 @@ export function dayFactors(day: DayRecord): ScoreFactors {
     nutrition: nutritionScoreFromCalories(day.calories ?? 0, day.targetCalories ?? 0)
       ?? Math.min(100, Math.round(day.meals / FULL_MEALS * 100)),
     sleep: day.sleepMinutes ? Math.min(100, Math.round(day.sleepMinutes / FULL_SLEEP_MINUTES * 100)) : 0,
-    focus: Math.min(100, Math.round(day.focusMinutes / FULL_FOCUS_MINUTES * 100)),
+    focus: Math.min(100, Math.round(day.focusMinutes / focusTargetMinutes * 100)),
     reading: Math.min(100, day.pages * FULL_PAGES),
     goals: day.completedSomething ? 100 : day.hasOpenGoals ? 50 : 0,
   };
