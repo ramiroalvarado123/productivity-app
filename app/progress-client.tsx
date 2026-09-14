@@ -2453,8 +2453,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
                 title={block.title + " · " + clockFromMinutes(block.start) + "–" + clockFromMinutes(block.end)}
                 aria-pressed={block.done}
                 onClick={() => handleAgendaBlockClick(block)}
-                onPointerDown={() => beginAgendaLongPress(block, day.iso)}
-                onPointerUp={clearAgendaLongPress}
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture?.(event.pointerId);
+                  beginAgendaLongPress(block, day.iso);
+                }}
+                onPointerUp={(event) => {
+                  clearAgendaLongPress();
+                  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
+                }}
                 onPointerCancel={clearAgendaLongPress}
                 onPointerLeave={clearAgendaLongPress}
                 onContextMenu={(event) => { event.preventDefault(); clearAgendaLongPress(); setBlockMenu({ block, date: day.iso }); }}
@@ -2517,7 +2523,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <button className="primary-action" disabled={saving}><SaveButtonContent label={slotDraft.editingBlock ? "Guardar cambios" : "Agregar bloque"} phase={savePhase(slotDraft.editingBlock ? (slotDraft.editingBlock.taskId ? "update_task" : "update_event") : (slotCategory === "focus" ? "add_task" : "add_event"))} /></button>
       </div>
     </form>}
-    <p className="agenda-hint">Tocá cualquier franja vacía para poner un bloque ahí.</p>
+    <p className="agenda-hint">Tocá una franja vacía para agregar. Mantené apretado un bloque para editarlo o eliminarlo.</p>
   </article>;
 
   const monthCalendarPanel = <article className="panel calendar-panel"><div className="calendar-head"><button onClick={() => shiftCalendar(-1)}>‹</button><h2>{calendarMonthName}</h2><button onClick={() => shiftCalendar(1)}>›</button></div><div className="calendar-grid"><div className="calendar-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((item, index) => <b key={item + index}>{item}</b>)}</div><div className="calendar-cells">{Array.from({ length: calendarOffset }, (_, index) => <span className="blank" key={"blank" + index} />)}{Array.from({ length: calendarDays }, (_, index) => {
