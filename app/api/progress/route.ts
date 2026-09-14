@@ -212,6 +212,13 @@ export async function POST(request: Request) {
       await updateRows("training_logs", { id: row.id, userEmail: email }, { quality });
       return ok();
     }
+    if (action === "set_plan_training_quality") {
+      const eventId = Number(p.eventId), quality = trainingQuality(p.quality);
+      const event = (await owned("calendar_events", email, { id: eventId }))[0];
+      if (!event || event.kind !== "training" && String(event.category ?? "") !== "training" || quality === undefined) return fail("Valoración inválida.");
+      await updateRows("calendar_events", { id: eventId, userEmail: email }, { quality });
+      return ok();
+    }
     if (action === "toggle_training") {
       const disciplineId = Number(p.disciplineId), date = String(p.date ?? ""); if (!disciplineId || !DATE.test(date) || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Entrenamiento inválido."); const row = (await owned("training_logs", email, { disciplineId, trainingDate: date }))[0];
       if (row) { if (row.durationMinutes || row.distanceMeters || row.notes || (await owned("exercise_logs", email, { trainingLogId: row.id }))[0]) return fail("Este día tiene detalles cargados. Borrá sus registros antes de desmarcarlo.", 409); await deleteRows("training_logs", { id: row.id, userEmail: email }); }
@@ -252,7 +259,9 @@ export async function POST(request: Request) {
       const id = Number(p.id), title = String(p.title ?? "").trim().slice(0, 180), dueDate = String(p.dueDate ?? ""), startTime = cleanTime(p.startTime), duration = Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60)));
       if (!(await owned("tasks", email, { id }))[0]) return fail("Tarea no encontrada.", 404);
       if (!title || !DATE.test(dueDate) || startTime === null) return fail("Completá una tarea válida.");
-      await updateRows("tasks", { id, userEmail: email }, { title, dueDate, startTime, durationMinutes: duration });
+      const projectId = Number(p.projectId) || null;
+      if (projectId && !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Proyecto no encontrado.", 404);
+      await updateRows("tasks", { id, userEmail: email }, { title, dueDate, startTime, durationMinutes: duration, projectId });
       return ok();
     }
     if (action === "toggle_task") {
@@ -268,12 +277,21 @@ export async function POST(request: Request) {
       return ok();
     }
     if (action === "delete_task") { await deleteRows("tasks", { id: Number(p.id), userEmail: email }); return ok(); }
-    if (action === "add_event") { const title = String(p.title ?? "").trim().slice(0, 180), eventDate = String(p.eventDate ?? ""), eventTime = cleanTime(p.eventTime), category = String(p.category ?? "personal"); if (!title || !DATE.test(eventDate) || eventTime === null || !["personal", "study", "work", "training", "nutrition", "sleep", "reading", "health", "other"].includes(category)) return fail("Completá un evento válido."); await insertRows("calendar_events", { userEmail: email, title, eventDate, eventTime, durationMinutes: Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60))), category, notes: String(p.notes ?? "").slice(0, 1500) }); return ok(); }
+    if (action === "add_event") {
+      const title = String(p.title ?? "").trim().slice(0, 180), eventDate = String(p.eventDate ?? ""), eventTime = cleanTime(p.eventTime), category = String(p.category ?? "personal");
+      const disciplineId = category === "training" ? Number(p.disciplineId) || null : null;
+      if (!title || !DATE.test(eventDate) || eventTime === null || !["personal", "study", "work", "training", "nutrition", "sleep", "reading", "health", "other"].includes(category)) return fail("Completá un evento válido.");
+      if (disciplineId && !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Disciplina no encontrada.", 404);
+      await insertRows("calendar_events", { userEmail: email, title, eventDate, eventTime, durationMinutes: Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60))), category, notes: String(p.notes ?? "").slice(0, 1500), ...(disciplineId ? { disciplineId } : {}) });
+      return ok();
+    }
     if (action === "update_event") {
       const id = Number(p.id), title = String(p.title ?? "").trim().slice(0, 180), eventDate = String(p.eventDate ?? ""), eventTime = cleanTime(p.eventTime), category = String(p.category ?? "personal"), duration = Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60)));
+      const disciplineId = category === "training" ? Number(p.disciplineId) || null : null;
       if (!(await owned("calendar_events", email, { id }))[0]) return fail("Evento no encontrado.", 404);
       if (!title || !DATE.test(eventDate) || eventTime === null || !["personal", "study", "work", "training", "nutrition", "sleep", "reading", "health", "other"].includes(category)) return fail("Completá un evento válido.");
-      await updateRows("calendar_events", { id, userEmail: email }, { title, eventDate, eventTime, durationMinutes: duration, category });
+      if (disciplineId && !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Disciplina no encontrada.", 404);
+      await updateRows("calendar_events", { id, userEmail: email }, { title, eventDate, eventTime, durationMinutes: duration, category, disciplineId });
       return ok();
     }
     if (action === "delete_event") { await deleteRows("calendar_events", { id: Number(p.id), userEmail: email }); return ok(); }
