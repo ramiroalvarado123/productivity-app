@@ -497,6 +497,7 @@ export async function POST(request: Request) {
 
     const searchParams = new URL(request.url).searchParams;
     const testNow = searchParams.get("test_now");
+    const testEmail = String(searchParams.get("test_email") ?? "").trim().toLowerCase();
     const onlyDailyScore = searchParams.get("only") === DAILY_SCORE_NUDGE_KIND;
     let now = new Date();
     if (testNow) {
@@ -560,6 +561,7 @@ export async function POST(request: Request) {
     const diagnostics: Array<{ timezone: string; date: string; time: string; weekday: string; configuredDailyTime: string; configuredCalendarDaysBefore: number; dailyScoreDue: boolean; dailyScoreReady: boolean; dailyScore?: number; candidates: number }> = [];
     for (const preference of preferenceRows) {
       const email = stringValue(preference, "user_email");
+      if (testEmail && email.toLowerCase() !== testEmail) continue;
       const userSubscriptions = subscriptionsByEmail.get(email) ?? [];
       if (!email || !userSubscriptions.length) continue;
       usersChecked += 1;
