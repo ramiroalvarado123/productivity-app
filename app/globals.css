@@ -2050,3 +2050,8 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 
 /* El gesto prolongado debe funcionar de forma estable en Safari/iPhone. */
 .agenda-block{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+
+
+/* Los bloques deben recibir el toque; antes el evento atravesaba hacia la franja vacía. */
+.agenda-slot{position:relative;z-index:1}
+.agenda-block{pointer-events:auto;z-index:2}
