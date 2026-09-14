@@ -1127,6 +1127,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     () => data.tasks.filter((task) => Boolean(task.completedAt && task.dueDate && task.durationMinutes > 0)),
     [data.tasks],
   );
+  const completedPlanEvents = useMemo(
+    () => data.events.filter((event) => Boolean(event.completedAt && event.eventDate && event.durationMinutes > 0)),
+    [data.events],
+  );
   const completedTaskFocusByDate = useMemo(
     () => sumByDate(
       completedPlanTasks.filter((task) => task.projectId !== null && task.dueDate),
@@ -1134,6 +1138,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       (task) => Math.max(0, task.durationMinutes || 0),
     ),
     [completedPlanTasks],
+  );
+  const completedEventFocusByDate = useMemo(
+    () => sumByDate(
+      completedPlanEvents.filter((event) => event.category === "study" || event.category === "work"),
+      (event) => event.eventDate,
+      (event) => Math.max(0, event.durationMinutes || 0),
+    ),
+    [completedPlanEvents],
   );
   const completedTrainingTasksByDate = useMemo(
     () => sumByDate(
@@ -1143,17 +1155,27 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     ),
     [completedPlanTasks],
   );
+  const completedTrainingEventsByDate = useMemo(
+    () => sumByDate(
+      completedPlanEvents.filter((event) => event.category === "training"),
+      (event) => event.eventDate,
+      () => 1,
+    ),
+    [completedPlanEvents],
+  );
   const trainingByDate = useMemo(() => {
     const totals = sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1);
-    for (const [date, count] of Object.entries(completedTrainingTasksByDate)) {
-      totals[date] = (totals[date] ?? 0) + count;
+    for (const source of [completedTrainingTasksByDate, completedTrainingEventsByDate]) {
+      for (const [date, count] of Object.entries(source)) {
+        totals[date] = (totals[date] ?? 0) + count;
+      }
     }
     return totals;
-  }, [data.trainingLogs, completedTrainingTasksByDate]);
+  }, [data.trainingLogs, completedTrainingTasksByDate, completedTrainingEventsByDate]);
   // El entrenamiento del Daily Score se pondera por disciplina: una actividad
   // importante completa el factor, mientras que una secundaria suma la mitad.
-  // Un bloque agendado como "Entrenar", "Gimnasio" o similar completa el factor
-  // al marcarse y se deshace al volver a marcarlo como pendiente.
+  // Los bloques del Plan marcados como Entrenamiento cuentan por su categoría,
+  // sin depender de que el título contenga "gimnasio" o alguna palabra clave.
   const trainingScoreByDate = useMemo(() => {
     const weighted: Record<string, number> = {};
     const seen = new Set<string>();
@@ -1165,18 +1187,22 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       const contribution = discipline?.priority === "secondary" ? 0.5 : 1;
       weighted[log.trainingDate] = Math.min(1, (weighted[log.trainingDate] ?? 0) + contribution);
     }
-    for (const [date, count] of Object.entries(completedTrainingTasksByDate)) {
-      weighted[date] = Math.min(1, (weighted[date] ?? 0) + count);
+    for (const source of [completedTrainingTasksByDate, completedTrainingEventsByDate]) {
+      for (const [date, count] of Object.entries(source)) {
+        weighted[date] = Math.min(1, (weighted[date] ?? 0) + count);
+      }
     }
     return weighted;
-  }, [data.trainingLogs, data.disciplines, completedTrainingTasksByDate]);
+  }, [data.trainingLogs, data.disciplines, completedTrainingTasksByDate, completedTrainingEventsByDate]);
   const focusByDate = useMemo(() => {
     const totals = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
-    for (const [date, minutes] of Object.entries(completedTaskFocusByDate)) {
-      totals[date] = (totals[date] ?? 0) + minutes;
+    for (const source of [completedTaskFocusByDate, completedEventFocusByDate]) {
+      for (const [date, minutes] of Object.entries(source)) {
+        totals[date] = (totals[date] ?? 0) + minutes;
+      }
     }
     return totals;
-  }, [uniqueFocusSessions, completedTaskFocusByDate]);
+  }, [uniqueFocusSessions, completedTaskFocusByDate, completedEventFocusByDate]);
   const readingByDate = sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages);
   const caloriesByDay = sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories);
   const mealCountByDate = sumByDate(data.mealHistory, (row) => row.mealDate, () => 1);
@@ -1186,7 +1212,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Daily Score pregunta por cientos de días seguidos.
   const completionDates = new Set([
     ...data.goals.filter((goal) => goal.completedAt).map((goal) => (goal.completedAt as string).slice(0, 10)),
-    ...data.tasks.filter((task) => task.completedAt).map((task) => (task.completedAt as string).slice(0, 10)),
+    ...data.tasks.filter((task) => task.completedAt && task.dueDate).map((task) => task.dueDate as string),
+    ...data.events.filter((event) => event.completedAt).map((event) => event.eventDate),
   ]);
 
   /** Lo que registraste un día cualquiera, tal cual, sin interpretar. */
