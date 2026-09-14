@@ -238,7 +238,7 @@ export async function POST(request: Request) {
       return ok();
     }
     if (action === "delete_exercise") { await deleteRows("exercise_logs", { id: Number(p.id), userEmail: email }); return ok(); }
-    if (action === "save_sleep") { const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); await upsert("daily_checkins", { userEmail: email, entryDate: date, sleepMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.sleepMinutes) || 0))), bedtime: String(p.bedtime ?? "").slice(0, 20), wakeTime: String(p.wakeTime ?? "").slice(0, 20) }, ["userEmail", "entryDate"]); return ok(); }
+    if (action === "save_sleep") { const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); const sleepQuality = p.sleepQuality === "good" || p.sleepQuality === "bad" ? p.sleepQuality : null; await upsert("daily_checkins", { userEmail: email, entryDate: date, sleepMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.sleepMinutes) || 0))), bedtime: String(p.bedtime ?? "").slice(0, 20), wakeTime: String(p.wakeTime ?? "").slice(0, 20), sleepQuality }, ["userEmail", "entryDate"]); return ok(); }
     if (action === "add_focus_project") { const name = String(p.name ?? "").trim().slice(0, 80), kind = String(p.kind ?? "study"); if (!name || !["study", "work"].includes(kind)) return fail("Completá el nombre y el tipo."); await insertRows("focus_projects", { userEmail: email, name, kind }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }
     // Cada envío suma un bloque nuevo (podés estudiar la misma materia dos
     // veces en un día): antes borraba el bloque anterior del mismo día y se
@@ -321,6 +321,7 @@ export async function POST(request: Request) {
         sleepMinutes: sleepMentioned ? clamp(sleep.minutes, 1440) : clamp(previous.sleepMinutes, 1440),
         bedtime: sleepMentioned ? String(sleep.bedtime ?? "").slice(0, 20) : String(previous.bedtime ?? ""),
         wakeTime: sleepMentioned ? String(sleep.wakeTime ?? "").slice(0, 20) : String(previous.wakeTime ?? ""),
+        sleepQuality: previous.sleepQuality === "good" || previous.sleepQuality === "bad" ? previous.sleepQuality : null,
         waterMl: waterMentioned ? clamp(c.waterMl, 20000) : clamp(previous.waterMl, 20000),
         journal: journal || String(previous.journal ?? ""),
         transcript,

@@ -33,7 +33,7 @@ type GoalPeriod = "weekly" | "monthly" | "annual" | "custom";
 type GoalCategory = "general" | "gym" | "training" | "nutrition" | "reading" | "study" | "work" | "sleep" | "score" | "calendar" | "stats" | "goals";
 type Goal = { id: number; title: string; period: GoalPeriod; category: GoalCategory; targetDate: string; completedAt: string | null; createdAt: string };
 type Priorities = { monthKey: string; gymWeight: number; nutritionWeight: number; readingWeight: number; sleepWeight: number; focusWeight: number; goalsWeight: number };
-type DailyCheckin = { id: number; entryDate: string; habitsJson: string; workoutDetail: string; studyMinutes: number; studyDetail: string; sleepMinutes: number; bedtime: string; wakeTime: string; waterMl: number; journal: string; transcript: string; voiceSummary: string };
+type DailyCheckin = { id: number; entryDate: string; habitsJson: string; workoutDetail: string; studyMinutes: number; studyDetail: string; sleepMinutes: number; bedtime: string; wakeTime: string; sleepQuality?: "good" | "bad" | null; waterMl: number; journal: string; transcript: string; voiceSummary: string };
 type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other"; priority?: "important" | "secondary" };
 type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string; quality?: number | null };
 type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean };
@@ -758,6 +758,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [dietVoiceLoading, setDietVoiceLoading] = useState(false);
   const [sleepBedtime, setSleepBedtime] = useState("23:00");
   const [sleepWaketime, setSleepWaketime] = useState("07:00");
+  const [sleepQuality, setSleepQuality] = useState<"good" | "bad" | null>(null);
   const [focusHours, setFocusHours] = useState("");
   const adjustFocusHours = (delta: number) => {
     setFocusHours((current) => {
@@ -1458,6 +1459,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     const checkin = data.dailyCheckins.find((item) => item.entryDate === sleepEntryDate);
     setSleepBedtime(checkin ? normalizeClock(checkin.bedtime, "23:00") : "23:00");
     setSleepWaketime(checkin ? normalizeClock(checkin.wakeTime, "07:00") : "07:00");
+    setSleepQuality(checkin?.sleepQuality === "good" || checkin?.sleepQuality === "bad" ? checkin.sleepQuality : null);
   }, [data.dailyCheckins, sleepEntryDate]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -2109,7 +2111,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const sleepPanel = <section className="module-stack sleep-page">
     <div className="split-grid">
       <article className="panel"><div className="panel-heading"><div><p>DESCANSO DE {sleepEntryDate === today ? "HOY" : "AYER"}</p><h2>Registrar sueño</h2></div><div className="meal-panel-actions"><span className="sleep-icon">☾</span><button type="button" className="meal-backfill-toggle" onClick={() => setSleepEntryDate((current) => current === today ? dateMinus(today, 1) : today)}>{sleepEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
-        <form className="data-form sleep-form" onSubmit={(event) => void submitForm(event, { action: "save_sleep", date: sleepEntryDate, sleepMinutes: calculatedSleepMinutes, bedtime: sleepBedtime, wakeTime: sleepWaketime })}>
+        <form className="data-form sleep-form" onSubmit={(event) => void submitForm(event, { action: "save_sleep", date: sleepEntryDate, sleepMinutes: calculatedSleepMinutes, bedtime: sleepBedtime, wakeTime: sleepWaketime, sleepQuality })}>
           <div className="sleep-duration-badge"><span>TIEMPO CALCULADO</span><b>{Math.floor(calculatedSleepMinutes / 60)} h {calculatedSleepMinutes % 60 ? calculatedSleepMinutes % 60 + " min" : ""}</b><small>Entre la hora de acostarte y la de despertarte</small></div>
           <div className="sleep-time-grid">
             <div className="time-picker-card">
@@ -2122,6 +2124,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             </div>
           </div>
           <p className="sleep-form-note">Elegí la hora de la lista: sin escribir y sin AM/PM.</p>
+          {calculatedSleepMinutes > 0 && <fieldset className="sleep-quality-picker">
+            <legend>¿Cómo fue tu sueño?</legend>
+            <div className="sleep-quality-options">
+              <button type="button" className={sleepQuality === "good" ? "active good" : "good"} aria-pressed={sleepQuality === "good"} onClick={() => setSleepQuality("good")}>Bueno</button>
+              <button type="button" className={sleepQuality === "bad" ? "active bad" : "bad"} aria-pressed={sleepQuality === "bad"} onClick={() => setSleepQuality("bad")}>Malo</button>
+            </div>
+          </fieldset>}
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar descanso" phase={savePhase("save_sleep")} /></button>
         </form>
       </article>
