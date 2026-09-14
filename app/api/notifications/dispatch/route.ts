@@ -142,6 +142,7 @@ function daysInMonth(year: string, month: string) {
 }
 
 type DailyScoreRows = {
+  profiles: Row[];
   disciplines: Row[];
   trainingLogs: Row[];
   calendarEvents: Row[];
@@ -261,21 +262,24 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
   trainingScore = Math.min(1, trainingScore + completedTrainingTasks.length * 0.5);
 
   const seenFocus = new Set<string>();
-  let focusMinutes = 0;
+  const manualFocusByProject = new Map<number, number>();
+  const plannedFocusByProject = new Map<number, number>();
   for (const row of source.focusSessions) {
     if (stringValue(row, "user_email") !== email || stringValue(row, "session_date") !== date) continue;
     const id = String(value(row, "id"));
     if (seenFocus.has(id)) continue;
     seenFocus.add(id);
-    focusMinutes += numberValue(row, "minutes");
+    const projectId = numberValue(row, "project_id");
+    if (!projectId) continue;
+    manualFocusByProject.set(projectId, (manualFocusByProject.get(projectId) ?? 0) + numberValue(row, "minutes"));
   }
-  focusMinutes += tasks
-    .filter((row) =>
-      value(row, "project_id") != null
-      && localDatePart(value(row, "completed_at")) !== ""
-      && numberValue(row, "duration_minutes") > 0,
-    )
-    .reduce((sum, row) => sum + numberValue(row, "duration_minutes"), 0);
+  for (const row of tasks) {
+    const projectId = numberValue(row, "project_id");
+    if (!projectId || localDatePart(value(row, "completed_at")) === "" || numberValue(row, "duration_minutes") <= 0) continue;
+    plannedFocusByProject.set(projectId, (plannedFocusByProject.get(projectId) ?? 0) + numberValue(row, "duration_minutes"));
+  }
+  let focusMinutes = [...new Set([...manualFocusByProject.keys(), ...plannedFocusByProject.keys()])]
+    .reduce((sum, projectId) => sum + Math.max(manualFocusByProject.get(projectId) ?? 0, plannedFocusByProject.get(projectId) ?? 0), 0);
   focusMinutes += calendarEvents
     .filter((row) => stringValue(row, "category") === "study" || stringValue(row, "category") === "work")
     .reduce((sum, row) => sum + numberValue(row, "duration_minutes"), 0);
@@ -308,6 +312,8 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
   const priority = source.priorities.find((row) =>
     stringValue(row, "user_email") === email && stringValue(row, "month_key") === date.slice(0, 7),
   );
+  const profile = source.profiles.find((row) => stringValue(row, "email") === email);
+  const focusTargetMinutes = Math.max(30, Math.min(720, Math.round(numberValue(profile ?? {}, "focus_daily_target_minutes", 120))));
   const day: DayRecord = {
     trainingSessions: seenTraining.size + completedTrainingTasks.length + unlinkedPlanTraining,
     trainingScore: trainingScore * 100,
@@ -316,6 +322,7 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
     targetCalories,
     sleepMinutes,
     focusMinutes,
+    focusTargetMinutes,
     pages,
     completedSomething,
     hasOpenGoals,
@@ -506,7 +513,8 @@ export async function POST(request: Request) {
 
     let dailyScoreRows: DailyScoreRows | null = null;
     try {
-      const [disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
+      const [scoreProfiles, disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
+        adminRequest("profiles", new URLSearchParams({ select: "email,focus_daily_target_minutes" }).toString()),
         adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,name,kind,priority" }).toString()),
         adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date,quality" }).toString()),
         adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,duration_minutes,category,completed_at,discipline_id,quality" }).toString()),
@@ -519,7 +527,7 @@ export async function POST(request: Request) {
         adminRequest("goals", new URLSearchParams({ select: "id,user_email,created_at,completed_at" }).toString()),
         adminRequest("monthly_priorities", new URLSearchParams({ select: "id,user_email,month_key,gym_weight,nutrition_weight,sleep_weight,focus_weight,reading_weight,goals_weight" }).toString()),
       ]);
-      dailyScoreRows = { disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities };
+      dailyScoreRows = { profiles: scoreProfiles, disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities };
     } catch (error) {
       // La alerta nueva no debe interrumpir calendario, balance ni resúmenes
       // si la migración de permisos todavía no fue ejecutada en Supabase.
