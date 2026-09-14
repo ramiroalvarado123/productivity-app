@@ -14,7 +14,7 @@ import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Tr
 import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
 import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
-import { dayFactors, scoreFrom, scoreLabel, type DayRecord, type ScoreWeights } from "./lib/score";
+import { dayFactors, scoreFrom, scoreLabel, trainingContribution, type DayRecord, type ScoreWeights } from "./lib/score";
 import {
   GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalPeriodLabel,
   goalSource, goalTotal, goalUnit, goalWindow, initialsFor, inviteMessage, isFresh, mailLink,
@@ -35,12 +35,12 @@ type Goal = { id: number; title: string; period: GoalPeriod; category: GoalCateg
 type Priorities = { monthKey: string; gymWeight: number; nutritionWeight: number; readingWeight: number; sleepWeight: number; focusWeight: number; goalsWeight: number };
 type DailyCheckin = { id: number; entryDate: string; habitsJson: string; workoutDetail: string; studyMinutes: number; studyDetail: string; sleepMinutes: number; bedtime: string; wakeTime: string; sleepQuality?: "good" | "bad" | null; waterMl: number; journal: string; transcript: string; voiceSummary: string };
 type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other"; priority?: "important" | "secondary" };
-type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string; quality?: number | null };
+type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string; quality?: number | null; planEventId?: number };
 type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean };
 type FocusProject = { id: number; name: string; kind: "study" | "work" };
 type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
 type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null };
-type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "nutrition" | "sleep" | "reading" | "other"; notes: string; completedAt: string | null };
+type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "nutrition" | "sleep" | "reading" | "other"; notes: string; completedAt: string | null; disciplineId?: number | null; quality?: number | null };
 type SlotCategory = "focus" | "training" | "nutrition" | "sleep" | "study" | "work" | "reading" | "personal" | "other";
 type VoiceCheckin = { transcript: string; summary: string; gym: { attended: boolean | null; detail: string }; meals: Array<{ name: string; detail: string; calories: number; protein: number; carbs: number; fat: number }>; reading: { bookTitle: string; pages: number; minutes: number; note: string }; habits: string[]; study: { minutes: number; detail: string; tasks: string[] }; sleep: { minutes: number; bedtime: string; wakeTime: string }; waterMl: number; journal: string; goals: Array<{ title: string; period: GoalPeriod; category: GoalCategory; targetDate: string }>; confidence: "low" | "medium" | "high" };
 type MealEstimate = { mealName: string; detail: string; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
@@ -178,12 +178,12 @@ const EVENT_CATEGORY_OPTIONS: DropdownOption[] = [
   { value: "reading", label: "Lectura" }, { value: "health", label: "Salud" }, { value: "other", label: "Otro" },
 ];
 const SLOT_CATEGORY_OPTIONS: DropdownOption[] = [
-  { value: "focus", label: "Foco · proyecto" },
-  { value: "training", label: "Entrenamiento / gimnasio" },
+  { value: "focus", label: "Estudio / trabajo · elegir proyecto" },
+  { value: "training", label: "Entrenamiento · elegir disciplina" },
   { value: "nutrition", label: "Alimentación" },
   { value: "sleep", label: "Sueño" },
-  { value: "study", label: "Estudio" },
-  { value: "work", label: "Trabajo" },
+  { value: "study", label: "Estudio · elegir materia" },
+  { value: "work", label: "Trabajo · elegir proyecto" },
   { value: "reading", label: "Lectura" },
   { value: "personal", label: "Personal" },
   { value: "other", label: "Otro" },
@@ -361,6 +361,34 @@ function formatFocusHours(minutes: number) {
 }
 function projectOptions(projects: Array<{ id: number; name: string }>, noneLabel = "Sin proyecto"): DropdownOption[] {
   return [{ value: "", label: noneLabel }, ...projects.map((project) => ({ value: String(project.id), label: project.name }))];
+}
+
+function normalizedPlanText(value: string) {
+  return value.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+}
+
+/**
+ * Los bloques nuevos guardan la disciplina explícita. Para los bloques viejos,
+ * intenta recuperar la relación por nombre (por ejemplo "gim" → "Gimnasio")
+ * para que también se sincronicen sin obligar al usuario a recrearlos.
+ */
+function planDisciplineIdFor(event: CalendarEvent, disciplines: Discipline[]) {
+  if (event.disciplineId && disciplines.some((item) => item.id === event.disciplineId)) return event.disciplineId;
+  if (event.category !== "training") return null;
+  const title = normalizedPlanText(event.title);
+  if (title.length < 3) return null;
+  const named = disciplines.find((discipline) => {
+    const name = normalizedPlanText(discipline.name);
+    return name.includes(title) || title.includes(name) || name.startsWith(title) || title.startsWith(name);
+  });
+  if (named) return named.id;
+  const inferredKind = /gim|gym|pesas|fuerza/.test(title) ? "strength"
+    : /correr|running/.test(title) ? "running"
+    : /bici|ciclismo/.test(title) ? "cycling"
+    : /nadar|natacion/.test(title) ? "swimming"
+    : null;
+  const candidates = inferredKind ? disciplines.filter((item) => item.kind === inferredKind) : [];
+  return candidates.length === 1 ? candidates[0].id : null;
 }
 const DIET_ACTIVITY_MULTIPLIERS: Record<DietForm["activityLevel"], number> = { sedentary: 1.2, light: 1.375, moderate: 1.55, high: 1.725 };
 /**
@@ -1131,6 +1159,32 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     () => data.events.filter((event) => Boolean(event.completedAt && event.eventDate && event.durationMinutes > 0)),
     [data.events],
   );
+  // Une sesiones cargadas en Físico con bloques completados en Plan. La clave
+  // fecha+disciplina evita contar dos veces si ambos registros existen.
+  const effectiveTrainingLogs = useMemo<TrainingLog[]>(() => {
+    const byDisciplineAndDate = new Map<string, TrainingLog>();
+    for (const log of data.trainingLogs) {
+      byDisciplineAndDate.set(log.trainingDate + ":" + log.disciplineId, log);
+    }
+    for (const event of completedPlanEvents) {
+      const disciplineId = planDisciplineIdFor(event, data.disciplines);
+      if (!disciplineId) continue;
+      const key = event.eventDate + ":" + disciplineId;
+      if (!byDisciplineAndDate.has(key)) {
+        byDisciplineAndDate.set(key, {
+          id: -event.id,
+          disciplineId,
+          trainingDate: event.eventDate,
+          durationMinutes: event.durationMinutes,
+          distanceMeters: 0,
+          notes: event.title,
+          quality: event.quality ?? null,
+          planEventId: event.id,
+        });
+      }
+    }
+    return [...byDisciplineAndDate.values()];
+  }, [data.trainingLogs, data.disciplines, completedPlanEvents]);
   const completedTaskFocusByDate = useMemo(
     () => sumByDate(
       completedPlanTasks.filter((task) => task.projectId !== null && task.dueDate),
@@ -1157,43 +1211,43 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   );
   const completedTrainingEventsByDate = useMemo(
     () => sumByDate(
-      completedPlanEvents.filter((event) => event.category === "training"),
+      completedPlanEvents.filter((event) => event.category === "training" && !planDisciplineIdFor(event, data.disciplines)),
       (event) => event.eventDate,
       () => 1,
     ),
-    [completedPlanEvents],
+    [completedPlanEvents, data.disciplines],
   );
   const trainingByDate = useMemo(() => {
-    const totals = sumByDate(data.trainingLogs, (row) => row.trainingDate, () => 1);
+    const totals = sumByDate(effectiveTrainingLogs, (row) => row.trainingDate, () => 1);
     for (const source of [completedTrainingTasksByDate, completedTrainingEventsByDate]) {
       for (const [date, count] of Object.entries(source)) {
         totals[date] = (totals[date] ?? 0) + count;
       }
     }
     return totals;
-  }, [data.trainingLogs, completedTrainingTasksByDate, completedTrainingEventsByDate]);
-  // El entrenamiento del Daily Score se pondera por disciplina: una actividad
-  // importante completa el factor, mientras que una secundaria suma la mitad.
-  // Los bloques del Plan marcados como Entrenamiento cuentan por su categoría,
-  // sin depender de que el título contenga "gimnasio" o alguna palabra clave.
+  }, [effectiveTrainingLogs, completedTrainingTasksByDate, completedTrainingEventsByDate]);
+  // La calidad y la importancia se combinan: Malo 40%, Regular 60%,
+  // Bueno 80% y Muy bueno 100%; una disciplina secundaria vale la mitad.
   const trainingScoreByDate = useMemo(() => {
     const weighted: Record<string, number> = {};
     const seen = new Set<string>();
-    for (const log of data.trainingLogs) {
+    for (const log of effectiveTrainingLogs) {
       const key = log.trainingDate + ":" + log.disciplineId;
       if (seen.has(key)) continue;
       seen.add(key);
       const discipline = data.disciplines.find((item) => item.id === log.disciplineId);
-      const contribution = discipline?.priority === "secondary" ? 0.5 : 1;
+      const contribution = trainingContribution(discipline?.priority, log.quality);
       weighted[log.trainingDate] = Math.min(1, (weighted[log.trainingDate] ?? 0) + contribution);
     }
+    // Compatibilidad con bloques antiguos que todavía no pueden asociarse a
+    // una disciplina: cuentan como actividad sin valorar, nunca como 100.
     for (const source of [completedTrainingTasksByDate, completedTrainingEventsByDate]) {
       for (const [date, count] of Object.entries(source)) {
-        weighted[date] = Math.min(1, (weighted[date] ?? 0) + count);
+        weighted[date] = Math.min(1, (weighted[date] ?? 0) + count * 0.5);
       }
     }
     return weighted;
-  }, [data.trainingLogs, data.disciplines, completedTrainingTasksByDate, completedTrainingEventsByDate]);
+  }, [effectiveTrainingLogs, data.disciplines, completedTrainingTasksByDate, completedTrainingEventsByDate]);
   const focusByDate = useMemo(() => {
     const totals = sumByDate(uniqueFocusSessions, (row) => row.sessionDate, (row) => row.minutes);
     for (const source of [completedTaskFocusByDate, completedEventFocusByDate]) {
@@ -1263,7 +1317,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const displayName = data.profile.displayName.split(" ")[0] || "Usuario";
   const activeGoals = data.goals.filter((goal) => !goal.completedAt);
   const selectedDiscipline = data.disciplines.find((item) => item.id === selectedDisciplineId) ?? data.disciplines[0] ?? null;
-  const selectedTrainingLog = selectedDiscipline ? data.trainingLogs.find((item) => item.disciplineId === selectedDiscipline.id && item.trainingDate === trainingDate) : undefined;
+  const selectedTrainingLog = selectedDiscipline ? effectiveTrainingLogs.find((item) => item.disciplineId === selectedDiscipline.id && item.trainingDate === trainingDate) : undefined;
   const selectedExercises = selectedTrainingLog ? data.exerciseLogs.filter((item) => item.trainingLogId === selectedTrainingLog.id) : [];
   const editingExercise = selectedExercises.find((item) => item.id === editingExerciseId) ?? null;
   // Cada disciplina tiene un único detalle de sesión posible: nunca conviven
@@ -1297,9 +1351,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     () => Object.fromEntries(data.focusProjects.map((project) => [project.id, project.kind])) as Record<number, "study" | "work">,
     [data.focusProjects],
   );
+  const disciplineNames = useMemo(
+    () => Object.fromEntries(data.disciplines.map((discipline) => [discipline.id, discipline.name])) as Record<number, string>,
+    [data.disciplines],
+  );
+  const scheduledEvents = useMemo(
+    () => data.events.map((event) => ({ ...event, disciplineId: planDisciplineIdFor(event, data.disciplines) })),
+    [data.events, data.disciplines],
+  );
   const scheduleInput = useMemo(
-    () => ({ tasks: data.tasks, events: data.events, projectNames, projectKinds }),
-    [data.tasks, data.events, projectNames, projectKinds],
+    () => ({ tasks: data.tasks, events: scheduledEvents, projectNames, projectKinds, disciplineNames }),
+    [data.tasks, scheduledEvents, projectNames, projectKinds, disciplineNames],
   );
   const todayBlocks = useMemo(() => dayBlocks(scheduleInput, today), [scheduleInput, today]);
   const todayUnscheduled = useMemo(() => unscheduledTasks(scheduleInput, today), [scheduleInput, today]);
@@ -2081,13 +2143,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <button type="button" onClick={() => shiftTrainingWeek(-1)} aria-label="Semana anterior">‹</button>
         <div className="training-week-nav-title">
           <h2>{formatDate(trainingWeek[0].iso)} – {formatDate(trainingWeek[6].iso)}</h2>
-          {trainingWeekAnchor !== today ? <button type="button" className="training-week-today" onClick={() => setTrainingWeekAnchor(today)}>Volver a hoy</button> : <span className="week-pill">{data.trainingLogs.filter((log) => log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).length} sesiones esta semana</span>}
+          {trainingWeekAnchor !== today ? <button type="button" className="training-week-today" onClick={() => setTrainingWeekAnchor(today)}>Volver a hoy</button> : <span className="week-pill">{effectiveTrainingLogs.filter((log) => log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).length} sesiones esta semana</span>}
         </div>
         <button type="button" onClick={() => shiftTrainingWeek(1)} aria-label="Semana siguiente">›</button>
       </div>
       <div className="discipline-list">{data.disciplines.map((discipline) => {
-        const dates = data.trainingLogs.filter((log) => log.disciplineId === discipline.id && log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).map((log) => log.trainingDate);
-        const focusedLog = selectedDiscipline?.id === discipline.id ? data.trainingLogs.find((log) => log.disciplineId === discipline.id && log.trainingDate === trainingDate) : undefined;
+        const dates = effectiveTrainingLogs.filter((log) => log.disciplineId === discipline.id && log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).map((log) => log.trainingDate);
+        const focusedLog = selectedDiscipline?.id === discipline.id ? effectiveTrainingLogs.find((log) => log.disciplineId === discipline.id && log.trainingDate === trainingDate) : undefined;
         return <div className={"discipline-card " + (selectedDiscipline?.id === discipline.id ? "selected" : "")} key={discipline.id}>
           <div className="discipline-card-heading">
             <button type="button" className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
@@ -2103,9 +2165,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             // seleccionado marca/desmarca la sesión, para no desmarcar por
             // accidente un día que sólo querías mirar.
             const focused = selectedDiscipline?.id === discipline.id && trainingDate === day.iso;
-            return <button key={day.iso} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (focused ? " active" : "")} disabled={saving} onClick={() => { setSelectedDisciplineId(discipline.id); setTrainingDate(day.iso); if (focused) void save({ action: "toggle_training", disciplineId: discipline.id, date: day.iso }); }}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
+            return <button key={day.iso} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (focused ? " active" : "")} disabled={saving} onClick={() => { setSelectedDisciplineId(discipline.id); setTrainingDate(day.iso); if (focused) { if (focusedLog?.planEventId) void toggleEvent(focusedLog.planEventId, false); else void save({ action: "toggle_training", disciplineId: discipline.id, date: day.iso }); } }}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
           })}</div>
-          {focusedLog && <TrainingQualityBar disciplineName={discipline.name} quality={focusedLog.quality} saving={saving} onSelect={(quality) => void save({ action: "set_training_quality", disciplineId: discipline.id, date: trainingDate, quality })} />}
+          {focusedLog && <TrainingQualityBar disciplineName={discipline.name} quality={focusedLog.quality} saving={saving} onSelect={(quality) => void save(focusedLog.planEventId ? { action: "set_plan_training_quality", eventId: focusedLog.planEventId, quality } : { action: "set_training_quality", disciplineId: discipline.id, date: trainingDate, quality })} />}
         </div>;
       })}</div>
     </article>
@@ -2185,6 +2247,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     + [...focusProjectIds].reduce((sum, projectId) => sum + taskFocusMinutesFor(projectId, (date) => date === today), 0);
   const focusWeekInTab = focusSessionsInTab.filter((item) => item.sessionDate >= week[0].iso).reduce((sum, item) => sum + item.minutes, 0)
     + [...focusProjectIds].reduce((sum, projectId) => sum + taskFocusMinutesFor(projectId, (date) => date >= week[0].iso), 0);
+  const focusEntryMinutesInTab = focusSessionsInTab.filter((item) => item.sessionDate === focusEntryDate).reduce((sum, item) => sum + item.minutes, 0)
+    + [...focusProjectIds].reduce((sum, projectId) => sum + taskFocusMinutesFor(projectId, (date) => date === focusEntryDate), 0);
 
   const focusPanel = <section className="module-stack">
       <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><div className="meal-panel-actions"><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span><button type="button" className="meal-backfill-toggle" onClick={() => setFocusEntryDate((current) => current === today ? dateMinus(today, 1) : today)}>{focusEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
@@ -2197,7 +2261,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar bloque de foco" phase={savePhase("add_focus_session")} /></button>
         </form>}
       </article>
-    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE " + (focusEntryDate === today ? "HOY" : "AYER") : "TRABAJO DE " + (focusEntryDate === today ? "HOY" : "AYER")}</p><b>{formatFocusHours(focusEntryDate === today ? focusTodayInTab : focusSessionsInTab.filter((item) => item.sessionDate === focusEntryDate).reduce((sum, item) => sum + item.minutes, 0))}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatFocusHours(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
+    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE " + (focusEntryDate === today ? "HOY" : "AYER") : "TRABAJO DE " + (focusEntryDate === today ? "HOY" : "AYER")}</p><b>{formatFocusHours(focusEntryDate === today ? focusTodayInTab : focusEntryMinutesInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatFocusHours(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
       <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{tasksInTab.filter((item) => item.completedAt).length}/{tasksInTab.length} hechas</span></div>
         <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia de la tarea" : "Proyecto de la tarea"} options={projectOptions(focusProjectsInTab, focusTab === "study" ? "Sin materia" : "Sin proyecto")} /><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><Dropdown name="durationMinutes" ariaLabel="Duración" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120])} /><button disabled={saving}><SaveButtonContent label="＋" phase={savePhase("add_task")} /></button></form>
         <div className="task-list compact-task-list">{tasksInTab.map((task) => { const done = taskDone(task.id, Boolean(task.completedAt)); return <div className={done ? "completed" : ""} key={task.id}><button className="task-check" aria-pressed={done} onClick={() => void toggleTask(task.id, !done)}>{done ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? formatDate(task.dueDate) : "Sin fecha"}{task.startTime ? ` · ${task.startTime}${task.durationMinutes ? " (" + formatMinutes(task.durationMinutes) + ")" : ""}` : task.dueDate ? " · sin horario" : ""}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>; })}{!tasksInTab.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
@@ -2426,7 +2490,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   };
   const openSlotDraft = (date: string, startTime: string, editingBlock?: Block) => {
     setSlotDraft({ date, startTime, editingBlock });
-    setSlotCategory(editingBlock?.eventId ? editingBlock.category as SlotCategory : "focus");
+    setSlotCategory(editingBlock ? editingBlock.category as SlotCategory : "focus");
     setSlotDuration(String(editingBlock?.minutes ?? 60));
     setSlotCustomHours("");
   };
@@ -2443,6 +2507,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     if (block.taskId) void toggleTask(block.taskId, !block.done);
     else if (block.eventId) void toggleEvent(block.eventId, !block.done);
   };
+
+  const slotUsesProject = Boolean(!slotDraft?.editingBlock?.eventId && (slotCategory === "focus" || slotCategory === "study" || slotCategory === "work"));
+  const slotProjects = slotCategory === "study" ? data.focusProjects.filter((project) => project.kind === "study")
+    : slotCategory === "work" ? data.focusProjects.filter((project) => project.kind === "work")
+    : data.focusProjects;
+  const slotAreaOptions = slotDraft?.editingBlock?.taskId
+    ? SLOT_CATEGORY_OPTIONS.filter((option) => option.value === "focus" || option.value === "study" || option.value === "work")
+    : SLOT_CATEGORY_OPTIONS;
 
   const weekAgendaPanel = <article className="panel week-agenda">
     <div className="agenda-head">
@@ -2514,20 +2586,31 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         return;
       }
       const editingBlock = slotDraft.editingBlock;
+      const projectId = Number(form.get("projectId")) || null;
+      const disciplineId = Number(form.get("disciplineId")) || null;
+      if (slotUsesProject && !projectId) {
+        setError(slotCategory === "study" ? "Elegí la materia que querés estudiar." : slotCategory === "work" ? "Elegí el proyecto de trabajo." : "Elegí una materia o proyecto.");
+        return;
+      }
+      if (slotCategory === "training" && !disciplineId) {
+        setError("Elegí qué disciplina vas a entrenar.");
+        return;
+      }
       const payload = editingBlock
         ? editingBlock.taskId
-          ? { action: "update_task", id: editingBlock.taskId, title: form.get("title"), dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
-          : { action: "update_event", id: editingBlock.eventId, title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory }
-        : slotCategory === "focus"
-          ? { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
-          : { action: "add_event", title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory };
+          ? { action: "update_task", id: editingBlock.taskId, title: form.get("title"), projectId, dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
+          : { action: "update_event", id: editingBlock.eventId, title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory, disciplineId }
+        : slotUsesProject
+          ? { action: "add_task", title: form.get("title"), projectId, dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
+          : { action: "add_event", title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory, disciplineId };
       void save(payload).then((ok) => { if (ok) setSlotDraft(null); });
     }}>
       <p>{slotDraft.editingBlock ? "Editar bloque" : "Nuevo bloque"} · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
       <div className="slot-fields">
-        <input name="title" required autoFocus defaultValue={slotDraft.editingBlock?.title ?? ""} placeholder={slotCategory === "focus" ? "Ej. Estudiar capítulo 2" : "Ej. Gimnasio"} />
-        <Dropdown ariaLabel="Área del bloque" value={slotCategory} onChange={(value) => setSlotCategory(value as SlotCategory)} options={SLOT_CATEGORY_OPTIONS} />
-        {slotCategory === "focus" && !slotDraft.editingBlock && <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />}
+        <input name="title" required autoFocus defaultValue={slotDraft.editingBlock?.title ?? ""} placeholder={slotCategory === "study" ? "Ej. Estudiar capítulo 2" : slotCategory === "work" ? "Ej. Avanzar presentación" : "Ej. Gimnasio"} />
+        <Dropdown ariaLabel="Área del bloque" value={slotCategory} onChange={(value) => setSlotCategory(value as SlotCategory)} options={slotAreaOptions} />
+        {slotUsesProject && <Dropdown key={"slot-project-" + slotCategory} name="projectId" ariaLabel={slotCategory === "study" ? "Materia del bloque" : "Proyecto del bloque"} defaultValue={String(slotDraft.editingBlock?.projectId ?? "")} options={slotProjects.map((project) => ({ value: String(project.id), label: project.name }))} />}
+        {slotCategory === "training" && <Dropdown key={"slot-discipline-" + (slotDraft.editingBlock?.key ?? "new")} name="disciplineId" ariaLabel="Disciplina del entrenamiento" defaultValue={String(slotDraft.editingBlock?.disciplineId ?? data.disciplines[0]?.id ?? "")} options={data.disciplines.map((discipline) => ({ value: String(discipline.id), label: discipline.name + (discipline.priority === "secondary" ? " · Secundaria" : " · Importante") }))} />}
         <Dropdown ariaLabel="Duración del bloque" value={slotDuration} onChange={setSlotDuration} options={[...durationOptions([30, 45, 60, 90, 120, 180]), { value: "custom", label: "Personalizado" }]} />
         {slotDuration === "custom" && <label className="slot-custom-duration">Duración personalizada
           <div className="slot-custom-duration-input">
@@ -2577,7 +2660,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const statsStart = statsWindow.start;
   const statsEnd = statsWindow.end;
   const periodDays = Math.max(1, datesBetween(statsStart, statsEnd).length);
-  const periodTraining = data.trainingLogs.filter((item) => item.trainingDate >= statsStart && item.trainingDate <= statsEnd);
+  const periodTraining = effectiveTrainingLogs.filter((item) => item.trainingDate >= statsStart && item.trainingDate <= statsEnd);
   const periodFocus = uniqueFocusSessions.filter((item) => item.sessionDate >= statsStart && item.sessionDate <= statsEnd);
   const periodTaskFocusMinutes = Object.entries(completedTaskFocusByDate)
     .filter(([date]) => date >= statsStart && date <= statsEnd)
@@ -3643,7 +3726,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
           ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
           ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
-        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. Alimentación se calcula contra tu objetivo diario de calorías: dentro de un 10% suma 100 y cuanto más te alejás, menos suma. Las áreas con “Prioridad” pesan 3, las “Importantes” 2 y las “Secundarias” 1. Inicio y Progreso muestran esos mismos datos y no se cuentan dos veces.</p></article></div>
+        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. En Entrenamiento pesan la disciplina y la calidad: Malo 40%, Regular 60%, Bueno 80% y Muy bueno 100%; una disciplina secundaria aporta la mitad que una importante. Alimentación se calcula contra tu objetivo diario de calorías: dentro de un 10% suma 100 y cuanto más te alejás, menos suma. Las áreas con “Prioridad” pesan 3, las “Importantes” 2 y las “Secundarias” 1. Inicio, Plan y Progreso usan los mismos datos y no se cuentan dos veces.</p></article></div>
         {priorityEditor}
       </section>}
       {section === "physical" && <>
