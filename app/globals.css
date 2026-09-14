@@ -1991,3 +1991,39 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .agenda-block.nutrition{background:#fff0e8;border-left-color:#d98a6f;color:#814a38}
 .agenda-block.sleep{background:#eee9ff;border-left-color:#8874bf;color:#5c4a8b}
 .agenda-block.reading{background:#e8f0ff;border-left-color:#6d8ec5;color:#45628f}
+
+/* Controles numéricos táctiles para Foco y Lectura */
+.stepper-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border: 1px solid #d8e1da;
+  border-radius: 9px;
+  background: #f1f5f2;
+  color: var(--green);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 500;
+  cursor: pointer;
+}
+.stepper-button:active:not(:disabled) { transform: scale(.94); }
+.stepper-button:disabled { opacity: .35; cursor: not-allowed; }
+.focus-duration-control {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px auto;
+  align-items: center;
+  gap: 7px;
+}
+.focus-duration-control input { min-width: 0; text-align: center; }
+.page-counter div { gap: 6px; flex-wrap: nowrap; }
+.page-counter .stepper-button { flex: 0 0 30px; width: 30px; }
+.page-counter input { width: 64px; min-width: 0; }
+@media (max-width: 760px) {
+  .focus-duration-control { grid-template-columns: 32px minmax(0, 1fr) 32px auto; gap: 6px; }
+  .focus-duration-control .stepper-button { width: 32px; min-width: 32px; height: 32px; }
+  .page-counter .stepper-button { width: 32px; min-width: 32px; height: 32px; }
+  .page-counter input { width: 64px; height: 32px; }
+}
