@@ -8,6 +8,8 @@ create table if not exists public.profiles (
   main_goals_json text not null default '[]',
   usage_preferences_json text not null default '[]',
   pro_since text not null default '',
+  focus_daily_target_minutes integer not null default 120
+    check (focus_daily_target_minutes between 30 and 720),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -108,6 +110,14 @@ create table if not exists public.calendar_events (
 );
 
 -- Mantiene instalaciones existentes alineadas con el esquema actual.
+alter table public.profiles
+  add column if not exists focus_daily_target_minutes integer not null default 120;
+alter table public.profiles
+  drop constraint if exists profiles_focus_daily_target_minutes_check;
+alter table public.profiles
+  add constraint profiles_focus_daily_target_minutes_check
+    check (focus_daily_target_minutes between 30 and 720);
+
 alter table public.calendar_events
   add column if not exists discipline_id bigint references public.training_disciplines(id) on delete set null;
 alter table public.calendar_events
