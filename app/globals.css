@@ -2047,4 +2047,6 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .block-action-sheet button.danger{border-color:#efd2ca;background:#fff4f0;color:#a4503a}
 .block-action-sheet button.cancel{background:#fff;color:#7a867e}
 
-/* Sincronización de despliegue early adopters. */
+
+/* El gesto prolongado debe funcionar de forma estable en Safari/iPhone. */
+.agenda-block{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
