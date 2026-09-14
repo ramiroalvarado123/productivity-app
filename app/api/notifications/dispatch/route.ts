@@ -1,7 +1,7 @@
 import webpush from "web-push";
 import { SUPABASE_URL } from "../../../lib/supabase-auth";
 import { inferTaskCategory } from "../../../lib/schedule";
-import { scoreForDay, type DayRecord, type ScoreWeights } from "../../../lib/score";
+import { scoreForDay, trainingContribution, type DayRecord, type ScoreWeights } from "../../../lib/score";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -144,6 +144,7 @@ function daysInMonth(year: string, month: string) {
 type DailyScoreRows = {
   disciplines: Row[];
   trainingLogs: Row[];
+  calendarEvents: Row[];
   tasks: Row[];
   meals: Row[];
   dietPlans: Row[];
@@ -165,6 +166,29 @@ const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
 
 function localDatePart(value: unknown) {
   return typeof value === "string" ? value.slice(0, 10) : "";
+}
+
+function normalizedPlanText(value: string) {
+  return value.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+}
+
+function planDisciplineIdForRow(event: Row, disciplines: Row[]) {
+  const explicit = numberValue(event, "discipline_id");
+  if (explicit && disciplines.some((row) => numberValue(row, "id") === explicit)) return explicit;
+  const title = normalizedPlanText(stringValue(event, "title"));
+  if (title.length < 3) return 0;
+  const named = disciplines.find((row) => {
+    const name = normalizedPlanText(stringValue(row, "name"));
+    return name.includes(title) || title.includes(name) || name.startsWith(title) || title.startsWith(name);
+  });
+  if (named) return numberValue(named, "id");
+  const inferredKind = /gim|gym|pesas|fuerza/.test(title) ? "strength"
+    : /correr|running/.test(title) ? "running"
+    : /bici|ciclismo/.test(title) ? "cycling"
+    : /nadar|natacion/.test(title) ? "swimming"
+    : "";
+  const candidates = inferredKind ? disciplines.filter((row) => stringValue(row, "kind") === inferredKind) : [];
+  return candidates.length === 1 ? numberValue(candidates[0], "id") : 0;
 }
 
 function weightsFromRow(row: Row | undefined): ScoreWeights {
@@ -191,6 +215,11 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
   const trainingLogs = source.trainingLogs.filter((row) =>
     stringValue(row, "user_email") === email && stringValue(row, "training_date") === date,
   );
+  const calendarEvents = source.calendarEvents.filter((row) =>
+    stringValue(row, "user_email") === email
+    && stringValue(row, "event_date") === date
+    && localDatePart(value(row, "completed_at")) !== "",
+  );
   const tasks = source.tasks.filter((row) =>
     stringValue(row, "user_email") === email && stringValue(row, "due_date") === date,
   );
@@ -204,12 +233,33 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
   const seenTraining = new Set<string>();
   let trainingScore = 0;
   for (const row of trainingLogs) {
-    const key = stringValue(row, "training_date") + ":" + numberValue(row, "discipline_id");
+    const disciplineId = numberValue(row, "discipline_id");
+    const key = date + ":" + disciplineId;
     if (seenTraining.has(key)) continue;
     seenTraining.add(key);
-    trainingScore += disciplinePriority.get(numberValue(row, "discipline_id")) === "secondary" ? 0.5 : 1;
+    trainingScore += trainingContribution(
+      disciplinePriority.get(disciplineId) === "secondary" ? "secondary" : "important",
+      value(row, "quality") == null ? null : numberValue(row, "quality"),
+    );
   }
-  trainingScore = Math.min(1, trainingScore + completedTrainingTasks.length);
+  let completedPlanTraining = 0;
+  for (const event of calendarEvents.filter((row) => stringValue(row, "category") === "training")) {
+    const disciplineId = planDisciplineIdForRow(event, disciplines);
+    if (!disciplineId) {
+      trainingScore += 0.5;
+      completedPlanTraining += 1;
+      continue;
+    }
+    const key = date + ":" + disciplineId;
+    if (seenTraining.has(key)) continue;
+    seenTraining.add(key);
+    completedPlanTraining += 1;
+    trainingScore += trainingContribution(
+      disciplinePriority.get(disciplineId) === "secondary" ? "secondary" : "important",
+      value(event, "quality") == null ? null : numberValue(event, "quality"),
+    );
+  }
+  trainingScore = Math.min(1, trainingScore + completedTrainingTasks.length * 0.5);
 
   const seenFocus = new Set<string>();
   let focusMinutes = 0;
@@ -226,6 +276,9 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
       && localDatePart(value(row, "completed_at")) !== ""
       && numberValue(row, "duration_minutes") > 0,
     )
+    .reduce((sum, row) => sum + numberValue(row, "duration_minutes"), 0);
+  focusMinutes += calendarEvents
+    .filter((row) => stringValue(row, "category") === "study" || stringValue(row, "category") === "work")
     .reduce((sum, row) => sum + numberValue(row, "duration_minutes"), 0);
 
   const sleepMinutes = source.dailyCheckins
@@ -245,9 +298,8 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
   );
   const completedSomething = source.goals.some((row) =>
     stringValue(row, "user_email") === email && localDatePart(value(row, "completed_at")) === date,
-  ) || source.tasks.some((row) =>
-    stringValue(row, "user_email") === email && localDatePart(value(row, "completed_at")) === date,
-  );
+  ) || tasks.some((row) => localDatePart(value(row, "completed_at")) !== "")
+    || calendarEvents.length > 0;
   const hasOpenGoals = source.goals.some((row) => {
     if (stringValue(row, "user_email") !== email) return false;
     const created = localDatePart(value(row, "created_at"));
@@ -258,7 +310,7 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
     stringValue(row, "user_email") === email && stringValue(row, "month_key") === date.slice(0, 7),
   );
   const day: DayRecord = {
-    trainingSessions: trainingLogs.length + completedTrainingTasks.length,
+    trainingSessions: seenTraining.size + completedTrainingTasks.length + completedPlanTraining,
     trainingScore: trainingScore * 100,
     meals,
     calories,
@@ -455,9 +507,10 @@ export async function POST(request: Request) {
 
     let dailyScoreRows: DailyScoreRows | null = null;
     try {
-      const [disciplines, trainingLogs, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
-        adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,priority" }).toString()),
-        adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date" }).toString()),
+      const [disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
+        adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,name,kind,priority" }).toString()),
+        adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date,quality" }).toString()),
+        adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,duration_minutes,category,completed_at,discipline_id,quality" }).toString()),
         adminRequest("tasks", new URLSearchParams({ select: "id,user_email,project_id,due_date,duration_minutes,completed_at,title" }).toString()),
         adminRequest("meals", new URLSearchParams({ select: "id,user_email,meal_date,calories" }).toString()),
         adminRequest("diet_plans", new URLSearchParams({ select: "id,user_email,target_calories" }).toString()),
@@ -467,7 +520,7 @@ export async function POST(request: Request) {
         adminRequest("goals", new URLSearchParams({ select: "id,user_email,created_at,completed_at" }).toString()),
         adminRequest("monthly_priorities", new URLSearchParams({ select: "id,user_email,month_key,gym_weight,nutrition_weight,sleep_weight,focus_weight,reading_weight,goals_weight" }).toString()),
       ]);
-      dailyScoreRows = { disciplines, trainingLogs, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities };
+      dailyScoreRows = { disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities };
     } catch (error) {
       // La alerta nueva no debe interrumpir calendario, balance ni resúmenes
       // si la migración de permisos todavía no fue ejecutada en Supabase.
