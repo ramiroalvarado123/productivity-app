@@ -2037,3 +2037,12 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .sleep-quality-options button.active{color:#fff}
 .sleep-quality-options button.good.active{background:#578c72;border-color:#578c72}
 .sleep-quality-options button.bad.active{background:#b66a58;border-color:#b66a58}
+
+
+/* Acciones de un bloque del cronograma en pulsación prolongada. */
+.block-action-overlay{position:fixed;inset:0;z-index:120;background:#10281f66;display:grid;place-items:end center;padding:18px}
+.block-action-sheet{width:min(100%,420px);background:#fff;border-radius:18px;padding:18px;box-shadow:0 16px 50px #10281f33;display:grid;gap:8px}
+.block-action-sheet p{margin:0 0 5px;font-size:14px;font-weight:800;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.block-action-sheet button{border:1px solid #dbe5dd;border-radius:11px;background:#f5f8f5;color:var(--green);padding:12px;font-size:12px;font-weight:800;cursor:pointer}
+.block-action-sheet button.danger{border-color:#efd2ca;background:#fff4f0;color:#a4503a}
+.block-action-sheet button.cancel{background:#fff;color:#7a867e}
