@@ -19,6 +19,7 @@ type ProgressRow = Record<string, unknown> & {
   mainGoalsJson: string;
   usagePreferencesJson: string;
   proSince: string | null;
+  focusDailyTargetMinutes: number;
   disciplineId: number;
   trainingDate: string;
   durationMinutes: number;
@@ -131,7 +132,7 @@ export async function GET(request: Request) {
     );
     const strength = disciplines.find((row) => row.kind === "strength");
     return Response.json({
-      profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? stringArray(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "" },
+      profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? stringArray(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "", focusDailyTargetMinutes: Math.max(30, Math.min(720, Math.round(Number(profile?.focusDailyTargetMinutes) || 120))) },
       gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
       disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books: visibleBooks, readingLogs, readingHistory, notes,
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
@@ -157,6 +158,12 @@ export async function POST(request: Request) {
       return ok();
     }
     if (action === "set_pro") { const active = Boolean(p.active); await updateRows("profiles", { email }, { proSince: active ? today() : "", updatedAt: now() }); return ok({ isPro: active }); }
+    if (action === "set_focus_daily_target") {
+      const minutes = Math.round(Number(p.minutes));
+      if (!Number.isFinite(minutes) || minutes < 30 || minutes > 720) return fail("Elegí un objetivo diario entre 30 minutos y 12 horas.");
+      await updateRows("profiles", { email }, { focusDailyTargetMinutes: minutes, updatedAt: now() });
+      return ok({ focusDailyTargetMinutes: minutes });
+    }
     // El nombre de usuario reemplaza al email para invitar amigos desde
     // adentro de la app. `avora_find_email_by_username` es security definer
     // porque la política de `profiles` sólo deja ver la fila propia.
