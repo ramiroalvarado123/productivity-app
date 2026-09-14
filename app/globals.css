@@ -2027,3 +2027,13 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .page-counter .stepper-button { width: 32px; min-width: 32px; height: 32px; }
   .page-counter input { width: 64px; height: 32px; }
 }
+
+
+/* Calidad del sueño: se habilita cuando ya hay una duración calculada. */
+.sleep-quality-picker{border:0;padding:0;margin:16px 0 0}
+.sleep-quality-picker legend{font-size:11px;font-weight:700;color:var(--ink);margin-bottom:8px}
+.sleep-quality-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sleep-quality-options button{border:1px solid #dbe4dd;background:#f4f7f3;color:#68756d;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.sleep-quality-options button.active{color:#fff}
+.sleep-quality-options button.good.active{background:#578c72;border-color:#578c72}
+.sleep-quality-options button.bad.active{background:#b66a58;border-color:#b66a58}
