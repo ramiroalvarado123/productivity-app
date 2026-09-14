@@ -248,6 +248,13 @@ export async function POST(request: Request) {
       const title = String(p.title ?? "").trim().slice(0, 180), projectId = Number(p.projectId) || null, dueDate = String(p.dueDate ?? ""), startTime = cleanTime(p.startTime), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))); if (!title || (dueDate && !DATE.test(dueDate))) return fail("Completá una tarea y fecha válida."); if (startTime === null) return fail("La hora no es válida."); if (startTime && !dueDate) return fail("Para darle un horario, la tarea necesita una fecha."); if (projectId && !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Proyecto no encontrado.", 404); await insertRows("tasks", { userEmail: email, projectId, title, dueDate: dueDate || null, startTime, durationMinutes: startTime ? duration || 60 : duration }); return ok();
     }
     if (action === "schedule_task") { const id = Number(p.id), startTime = cleanTime(p.startTime), dueDate = String(p.dueDate ?? ""), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))), row = (await owned("tasks", email, { id }))[0]; if (!row) return fail("Tarea no encontrada.", 404); if (startTime === null || (dueDate && !DATE.test(dueDate))) return fail("Fecha u hora inválida."); const nextDate = dueDate || row.dueDate; if (startTime && !nextDate) return fail("La tarea necesita una fecha."); await updateRows("tasks", { id, userEmail: email }, { startTime, dueDate: nextDate, durationMinutes: startTime ? duration || 60 : 0 }); return ok(); }
+    if (action === "update_task") {
+      const id = Number(p.id), title = String(p.title ?? "").trim().slice(0, 180), dueDate = String(p.dueDate ?? ""), startTime = cleanTime(p.startTime), duration = Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60)));
+      if (!(await owned("tasks", email, { id }))[0]) return fail("Tarea no encontrada.", 404);
+      if (!title || !DATE.test(dueDate) || startTime === null) return fail("Completá una tarea válida.");
+      await updateRows("tasks", { id, userEmail: email }, { title, dueDate, startTime, durationMinutes: duration });
+      return ok();
+    }
     if (action === "toggle_task") {
       const id = Number(p.id);
       if (!(await owned("tasks", email, { id }))[0]) return fail("Tarea no encontrada.", 404);
@@ -262,6 +269,13 @@ export async function POST(request: Request) {
     }
     if (action === "delete_task") { await deleteRows("tasks", { id: Number(p.id), userEmail: email }); return ok(); }
     if (action === "add_event") { const title = String(p.title ?? "").trim().slice(0, 180), eventDate = String(p.eventDate ?? ""), eventTime = cleanTime(p.eventTime), category = String(p.category ?? "personal"); if (!title || !DATE.test(eventDate) || eventTime === null || !["personal", "study", "work", "training", "nutrition", "sleep", "reading", "health", "other"].includes(category)) return fail("Completá un evento válido."); await insertRows("calendar_events", { userEmail: email, title, eventDate, eventTime, durationMinutes: Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60))), category, notes: String(p.notes ?? "").slice(0, 1500) }); return ok(); }
+    if (action === "update_event") {
+      const id = Number(p.id), title = String(p.title ?? "").trim().slice(0, 180), eventDate = String(p.eventDate ?? ""), eventTime = cleanTime(p.eventTime), category = String(p.category ?? "personal"), duration = Math.max(15, Math.min(1440, Math.round(Number(p.durationMinutes) || 60)));
+      if (!(await owned("calendar_events", email, { id }))[0]) return fail("Evento no encontrado.", 404);
+      if (!title || !DATE.test(eventDate) || eventTime === null || !["personal", "study", "work", "training", "nutrition", "sleep", "reading", "health", "other"].includes(category)) return fail("Completá un evento válido.");
+      await updateRows("calendar_events", { id, userEmail: email }, { title, eventDate, eventTime, durationMinutes: duration, category });
+      return ok();
+    }
     if (action === "delete_event") { await deleteRows("calendar_events", { id: Number(p.id), userEmail: email }); return ok(); }
     if (action === "add_meal") { const date = String(p.date ?? ""), name = String(p.name ?? "").trim(); if (!DATE.test(date) || !name) return fail("Completá el nombre y la fecha."); await insertRows("meals", { userEmail: email, mealDate: date, name, detail: String(p.detail ?? "").trim(), calories: Math.max(0, Math.min(10000, Number(p.calories) || 0)), protein: Math.max(0, Math.min(1000, Number(p.protein) || 0)), carbs: Math.max(0, Math.min(2000, Number(p.carbs) || 0)), fat: Math.max(0, Math.min(1000, Number(p.fat) || 0)) }); return ok(); }
     if (action === "delete_meal") { await deleteRows("meals", { id: Number(p.id), userEmail: email }); return ok(); }
