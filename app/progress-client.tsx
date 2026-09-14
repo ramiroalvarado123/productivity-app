@@ -661,7 +661,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [pendingEvents, setPendingEvents] = useState<Record<number, boolean>>({});
   const [agendaView, setAgendaView] = useState<"week" | "month">("week");
   const [weekAnchor, setWeekAnchor] = useState(today);
-  const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string } | null>(null);
+  const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string; editingBlock?: Block } | null>(null);
+  const [blockMenu, setBlockMenu] = useState<{ block: Block; date: string } | null>(null);
+  const agendaLongPressRef = useRef<number | null>(null);
+  const suppressAgendaClickRef = useRef(false);
   const [slotCategory, setSlotCategory] = useState<SlotCategory>("focus");
   const [slotDuration, setSlotDuration] = useState("60");
   const [slotCustomHours, setSlotCustomHours] = useState("");
@@ -2380,11 +2383,38 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const agendaEndHour = Math.ceil(Math.max(todayWindow.end, ...agendaAllBlocks.map((block) => block.end), 21 * 60) / 60);
   const agendaHours = Array.from({ length: Math.max(1, agendaEndHour - agendaStartHour) }, (_, index) => agendaStartHour + index);
   const shiftWeek = (amount: number) => setWeekAnchor((current) => dateMinus(current, -amount * 7));
-  const openSlotDraft = (date: string, startTime: string) => {
-    setSlotDraft({ date, startTime });
-    setSlotCategory("focus");
-    setSlotDuration("60");
+  const clearAgendaLongPress = () => {
+    if (agendaLongPressRef.current !== null) {
+      window.clearTimeout(agendaLongPressRef.current);
+      agendaLongPressRef.current = null;
+    }
+  };
+  const beginAgendaLongPress = (block: Block, date: string) => {
+    clearAgendaLongPress();
+    suppressAgendaClickRef.current = false;
+    agendaLongPressRef.current = window.setTimeout(() => {
+      suppressAgendaClickRef.current = true;
+      setBlockMenu({ block, date });
+    }, 550);
+  };
+  const openSlotDraft = (date: string, startTime: string, editingBlock?: Block) => {
+    setSlotDraft({ date, startTime, editingBlock });
+    setSlotCategory(editingBlock?.eventId ? editingBlock.category as SlotCategory : "focus");
+    setSlotDuration(String(editingBlock?.minutes ?? 60));
     setSlotCustomHours("");
+  };
+  const deleteAgendaBlock = (block: Block) => save(block.taskId
+    ? { action: "delete_task", id: block.taskId }
+    : { action: "delete_event", id: block.eventId }
+  );
+  const handleAgendaBlockClick = (block: Block) => {
+    clearAgendaLongPress();
+    if (suppressAgendaClickRef.current) {
+      suppressAgendaClickRef.current = false;
+      return;
+    }
+    if (block.taskId) void toggleTask(block.taskId, !block.done);
+    else if (block.eventId) void toggleEvent(block.eventId, !block.done);
   };
 
   const weekAgendaPanel = <article className="panel week-agenda">
@@ -2422,11 +2452,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
                 style={{ top: "calc(" + Math.max(0, top) + " * var(--hour-height)", height: "calc(" + Math.min(height, agendaHours.length - top) + " * var(--hour-height) - 3px)" }}
                 title={block.title + " · " + clockFromMinutes(block.start) + "–" + clockFromMinutes(block.end)}
                 aria-pressed={block.done}
-                onClick={() => block.taskId
-                  ? void toggleTask(block.taskId, !block.done)
-                  : block.eventId
-                    ? void toggleEvent(block.eventId, !block.done)
-                    : undefined}
+                onClick={() => handleAgendaBlockClick(block)}
+                onPointerDown={() => beginAgendaLongPress(block, day.iso)}
+                onPointerUp={clearAgendaLongPress}
+                onPointerCancel={clearAgendaLongPress}
+                onPointerLeave={clearAgendaLongPress}
+                onContextMenu={(event) => { event.preventDefault(); clearAgendaLongPress(); setBlockMenu({ block, date: day.iso }); }}
               >
                 <b>{block.title}</b>
                 <small>{clockFromMinutes(block.start)}</small>
@@ -2440,7 +2471,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         })}
       </div>
     </div>
-    {slotDraft && <form className="slot-form" onSubmit={(event) => {
+    {slotDraft && <form key={`${slotDraft.editingBlock?.key ?? "new"}-${slotDraft.date}-${slotDraft.startTime}`} className="slot-form" onSubmit={(event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       const customHours = parseDecimalInput(slotCustomHours);
@@ -2449,29 +2480,21 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         setError("Indicá una duración válida (entre 15 minutos y 24 horas).");
         return;
       }
-      void save(slotCategory === "focus"
-        ? {
-            action: "add_task",
-            title: form.get("title"),
-            projectId: form.get("projectId"),
-            dueDate: slotDraft.date,
-            startTime: slotDraft.startTime,
-            durationMinutes,
-          }
-        : {
-            action: "add_event",
-            title: form.get("title"),
-            eventDate: slotDraft.date,
-            eventTime: slotDraft.startTime,
-            durationMinutes,
-            category: slotCategory,
-          }).then((ok) => { if (ok) setSlotDraft(null); });
+      const editingBlock = slotDraft.editingBlock;
+      const payload = editingBlock
+        ? editingBlock.taskId
+          ? { action: "update_task", id: editingBlock.taskId, title: form.get("title"), dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
+          : { action: "update_event", id: editingBlock.eventId, title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory }
+        : slotCategory === "focus"
+          ? { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
+          : { action: "add_event", title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory };
+      void save(payload).then((ok) => { if (ok) setSlotDraft(null); });
     }}>
-      <p>Nuevo bloque · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
+      <p>{slotDraft.editingBlock ? "Editar bloque" : "Nuevo bloque"} · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
       <div className="slot-fields">
-        <input name="title" required autoFocus placeholder={slotCategory === "focus" ? "Ej. Estudiar capítulo 2" : "Ej. Gimnasio"} />
+        <input name="title" required autoFocus defaultValue={slotDraft.editingBlock?.title ?? ""} placeholder={slotCategory === "focus" ? "Ej. Estudiar capítulo 2" : "Ej. Gimnasio"} />
         <Dropdown ariaLabel="Área del bloque" value={slotCategory} onChange={(value) => setSlotCategory(value as SlotCategory)} options={SLOT_CATEGORY_OPTIONS} />
-        {slotCategory === "focus" && <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />}
+        {slotCategory === "focus" && !slotDraft.editingBlock && <Dropdown name="projectId" ariaLabel="Proyecto del bloque" options={projectOptions(data.focusProjects)} />}
         <Dropdown ariaLabel="Duración del bloque" value={slotDuration} onChange={setSlotDuration} options={[...durationOptions([30, 45, 60, 90, 120, 180]), { value: "custom", label: "Personalizado" }]} />
         {slotDuration === "custom" && <label className="slot-custom-duration">Duración personalizada
           <div className="slot-custom-duration-input">
@@ -2491,7 +2514,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       </div>
       <div className="slot-actions">
         <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
-        <button className="primary-action" disabled={saving}><SaveButtonContent label="Agregar bloque" phase={savePhase(slotCategory === "focus" ? "add_task" : "add_event")} /></button>
+        <button className="primary-action" disabled={saving}><SaveButtonContent label={slotDraft.editingBlock ? "Guardar cambios" : "Agregar bloque"} phase={savePhase(slotDraft.editingBlock ? (slotDraft.editingBlock.taskId ? "update_task" : "update_event") : (slotCategory === "focus" ? "add_task" : "add_event"))} /></button>
       </div>
     </form>}
     <p className="agenda-hint">Tocá cualquier franja vacía para poner un bloque ahí.</p>
@@ -3630,6 +3653,14 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <button className="voice-dialog-close" type="button" onClick={() => setVoiceOpen(false)} aria-label="Cerrar">×</button>
         {dayClosePanel}
         {voiceRecorder}
+      </section>
+    </div>}
+    {blockMenu && <div className="block-action-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBlockMenu(null); }}>
+      <section className="block-action-sheet" role="dialog" aria-modal="true" aria-label={"Opciones para " + blockMenu.block.title}>
+        <p>{blockMenu.block.title}</p>
+        <button type="button" onClick={() => { const current = blockMenu; setBlockMenu(null); openSlotDraft(current.date, clockFromMinutes(current.block.start), current.block); }}>Editar</button>
+        <button type="button" className="danger" onClick={() => { const current = blockMenu; setBlockMenu(null); if (window.confirm("¿Eliminar este bloque?")) void deleteAgendaBlock(current.block); }}>Eliminar</button>
+        <button type="button" className="cancel" onClick={() => setBlockMenu(null)}>Cancelar</button>
       </section>
     </div>}
     {bookToDelete && <div className="delete-book-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookToDelete(null); }}><section className="delete-book-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-book-title"><span className="delete-book-icon" aria-hidden="true">⌫</span><p>ELIMINAR DE TU BIBLIOTECA</p><h2 id="delete-book-title">¿Eliminar “{bookToDelete.title}”?</h2><small>También se eliminarán sus páginas registradas y sus notas. Esta acción no se puede deshacer.</small><div><button type="button" className="delete-book-cancel" disabled={saving} onClick={() => setBookToDelete(null)}>Cancelar</button><button type="button" className="delete-book-confirm" disabled={saving} onClick={() => { const bookId = bookToDelete.id; void save({ action: "delete_book", bookId }).then((ok) => { if (ok) { setBookToDelete(null); setSelectedBookId(null); setBookShelfPage(0); setPagesInput(0); setNote(""); } }); }}>{saving ? "Eliminando…" : "Sí, eliminar libro"}</button></div></section></div>}
