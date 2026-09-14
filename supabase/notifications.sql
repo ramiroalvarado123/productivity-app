@@ -113,8 +113,10 @@ grant usage, select on sequence public.notification_deliveries_id_seq to authent
 -- navegador.
 grant usage on schema public to service_role;
 grant select on table
+  public.profiles,
   public.training_disciplines,
   public.training_logs,
+  public.calendar_events,
   public.tasks,
   public.meals,
   public.diet_plans,
@@ -124,3 +126,9 @@ grant select on table
   public.goals,
   public.monthly_priorities
 to service_role;
+grant select, insert, update, delete on table
+  public.notification_preferences,
+  public.push_subscriptions,
+  public.notification_deliveries
+to service_role;
+grant usage, select on all sequences in schema public to service_role;
