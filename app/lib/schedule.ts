@@ -20,6 +20,8 @@ export type Block = {
   end: number;
   taskId?: number;
   eventId?: number;
+  projectId?: number | null;
+  disciplineId?: number | null;
   done: boolean;
 };
 
@@ -27,9 +29,10 @@ export type Slot = { start: number; end: number; minutes: number };
 
 export type ScheduleInput = {
   tasks: Array<{ id: number; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null; projectId: number | null }>;
-  events: Array<{ id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: string; notes: string; completedAt: string | null }>;
+  events: Array<{ id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: string; notes: string; completedAt: string | null; disciplineId?: number | null }>;
   projectNames: Record<number, string>;
   projectKinds?: Record<number, "study" | "work">;
+  disciplineNames?: Record<number, string>;
 };
 
 export const DEFAULT_DAY_START = 7 * 60;
@@ -71,6 +74,7 @@ export function dayBlocks(input: ScheduleInput, date: string): Block[] {
       minutes,
       end: start + minutes,
       taskId: task.id,
+      projectId: task.projectId,
       done: Boolean(task.completedAt),
     });
   }
@@ -85,11 +89,12 @@ export function dayBlocks(input: ScheduleInput, date: string): Block[] {
       kind: "event",
       category: event.category,
       title: event.title,
-      detail: event.notes,
+      detail: event.disciplineId ? input.disciplineNames?.[event.disciplineId] ?? event.notes : event.notes,
       start,
       minutes,
       end: start + minutes,
       eventId: event.id,
+      disciplineId: event.disciplineId ?? null,
       done: Boolean(event.completedAt),
     });
   }
