@@ -242,18 +242,17 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
       value(row, "quality") == null ? null : numberValue(row, "quality"),
     );
   }
-  let completedPlanTraining = 0;
+  let unlinkedPlanTraining = 0;
   for (const event of calendarEvents.filter((row) => stringValue(row, "category") === "training")) {
     const disciplineId = planDisciplineIdForRow(event, disciplines);
     if (!disciplineId) {
       trainingScore += 0.5;
-      completedPlanTraining += 1;
+      unlinkedPlanTraining += 1;
       continue;
     }
     const key = date + ":" + disciplineId;
     if (seenTraining.has(key)) continue;
     seenTraining.add(key);
-    completedPlanTraining += 1;
     trainingScore += trainingContribution(
       disciplinePriority.get(disciplineId) === "secondary" ? "secondary" : "important",
       value(event, "quality") == null ? null : numberValue(event, "quality"),
@@ -310,7 +309,7 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
     stringValue(row, "user_email") === email && stringValue(row, "month_key") === date.slice(0, 7),
   );
   const day: DayRecord = {
-    trainingSessions: seenTraining.size + completedTrainingTasks.length + completedPlanTraining,
+    trainingSessions: seenTraining.size + completedTrainingTasks.length + unlinkedPlanTraining,
     trainingScore: trainingScore * 100,
     meals,
     calories,
