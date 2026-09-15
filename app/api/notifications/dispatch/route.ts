@@ -284,9 +284,12 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
     .filter((row) => stringValue(row, "category") === "study" || stringValue(row, "category") === "work")
     .reduce((sum, row) => sum + numberValue(row, "duration_minutes"), 0);
 
-  const sleepMinutes = source.dailyCheckins
-    .filter((row) => stringValue(row, "user_email") === email && stringValue(row, "entry_date") === date && numberValue(row, "sleep_minutes") > 0)
-    .reduce((sum, row) => sum + numberValue(row, "sleep_minutes"), 0);
+  const sleepCheckin = source.dailyCheckins.find((row) =>
+    stringValue(row, "user_email") === email && stringValue(row, "entry_date") === date,
+  );
+  const sleepMinutes = numberValue(sleepCheckin ?? {}, "sleep_minutes");
+  const savedSleepQuality = stringValue(sleepCheckin ?? {}, "sleep_quality");
+  const sleepQuality = savedSleepQuality === "good" || savedSleepQuality === "bad" ? savedSleepQuality : null;
   const pages = source.readingLogs
     .filter((row) => stringValue(row, "user_email") === email && stringValue(row, "log_date") === date)
     .reduce((sum, row) => sum + numberValue(row, "pages"), 0);
@@ -321,6 +324,7 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
     calories,
     targetCalories,
     sleepMinutes,
+    sleepQuality,
     focusMinutes,
     focusTargetMinutes,
     pages,
@@ -522,7 +526,17 @@ export async function POST(request: Request) {
         adminRequest("tasks", new URLSearchParams({ select: "id,user_email,project_id,due_date,duration_minutes,completed_at,title" }).toString()),
         adminRequest("meals", new URLSearchParams({ select: "id,user_email,meal_date,calories" }).toString()),
         adminRequest("diet_plans", new URLSearchParams({ select: "id,user_email,target_calories" }).toString()),
-        adminRequest("daily_checkins", new URLSearchParams({ select: "id,user_email,entry_date,sleep_minutes" }).toString()),
+        (async () => {
+          try {
+            return await adminRequest("daily_checkins", new URLSearchParams({ select: "id,user_email,entry_date,sleep_minutes,sleep_quality" }).toString());
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!/sleep_quality|column.*does not exist/i.test(message)) throw error;
+            // Compatibilidad temporal con instalaciones que todavía no
+            // ejecutaron la migración: no corta las demás notificaciones.
+            return adminRequest("daily_checkins", new URLSearchParams({ select: "id,user_email,entry_date,sleep_minutes" }).toString());
+          }
+        })(),
         adminRequest("reading_logs", new URLSearchParams({ select: "id,user_email,log_date,pages" }).toString()),
         adminRequest("focus_sessions", new URLSearchParams({ select: "id,user_email,session_date,minutes" }).toString()),
         adminRequest("goals", new URLSearchParams({ select: "id,user_email,created_at,completed_at" }).toString()),
