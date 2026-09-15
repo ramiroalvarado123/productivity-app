@@ -31,6 +31,8 @@ export type DayRecord = {
   calories?: number;
   targetCalories?: number;
   sleepMinutes: number;
+  /** Valoración subjetiva guardada por el usuario. */
+  sleepQuality?: "good" | "bad" | null;
   focusMinutes: number;
   /** Objetivo personal de Estudio/Trabajo para ese día; 2 h si aún no se configuró. */
   focusTargetMinutes?: number;
@@ -64,6 +66,17 @@ export function trainingContribution(priority: "important" | "secondary" | undef
   return (priority === "secondary" ? 0.5 : 1) * qualityMultiplier;
 }
 
+/**
+ * La duración marca el máximo posible y la calidad lo ajusta.
+ * "Malo" conserva parte del mérito por haber descansado, pero nunca puede
+ * valer lo mismo que una noche reparadora. Sin valoración se mantiene el
+ * cálculo histórico para no alterar registros anteriores.
+ */
+export function sleepScoreFromDuration(minutes: number, quality: "good" | "bad" | null | undefined) {
+  const durationScore = Math.min(100, Math.round(Math.max(0, minutes) / FULL_SLEEP_MINUTES * 100));
+  return quality === "bad" ? Math.round(durationScore * 0.4) : durationScore;
+}
+
 export function nutritionScoreFromCalories(calories: number, targetCalories: number): number | null {
   if (!Number.isFinite(targetCalories) || targetCalories <= 0) return null;
   const actual = Math.max(0, Number.isFinite(calories) ? calories : 0);
@@ -83,7 +96,7 @@ export function dayFactors(day: DayRecord): ScoreFactors {
       : day.trainingSessions > 0 ? 100 : 0,
     nutrition: nutritionScoreFromCalories(day.calories ?? 0, day.targetCalories ?? 0)
       ?? Math.min(100, Math.round(day.meals / FULL_MEALS * 100)),
-    sleep: day.sleepMinutes ? Math.min(100, Math.round(day.sleepMinutes / FULL_SLEEP_MINUTES * 100)) : 0,
+    sleep: sleepScoreFromDuration(day.sleepMinutes, day.sleepQuality),
     focus: Math.min(100, Math.round(day.focusMinutes / focusTargetMinutes * 100)),
     reading: Math.min(100, day.pages * FULL_PAGES),
     goals: day.completedSomething ? 100 : day.hasOpenGoals ? 50 : 0,
