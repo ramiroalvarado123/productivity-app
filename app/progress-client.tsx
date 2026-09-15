@@ -1282,6 +1282,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const caloriesByDay = sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories);
   const mealCountByDate = sumByDate(data.mealHistory, (row) => row.mealDate, () => 1);
   const sleepMinutesByDate = sumByDate(data.dailyCheckins.filter((row) => row.sleepMinutes > 0), (row) => row.entryDate, (row) => row.sleepMinutes);
+  const sleepQualityByDate = Object.fromEntries(
+    data.dailyCheckins.map((row) => [row.entryDate, row.sleepQuality === "good" || row.sleepQuality === "bad" ? row.sleepQuality : null]),
+  ) as Record<string, "good" | "bad" | null>;
 
   // Fechas en las que cerraste algo. Se arma una vez porque el histórico del
   // Daily Score pregunta por cientos de días seguidos.
@@ -1300,6 +1303,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     calories: caloriesByDay[date] ?? 0,
     targetCalories: nutritionTargetCalories,
     sleepMinutes: sleepMinutesByDate[date] ?? 0,
+    sleepQuality: sleepQualityByDate[date] ?? null,
     focusMinutes: focusByDate[date] ?? 0,
     focusTargetMinutes: data.profile.focusDailyTargetMinutes || 120,
     pages: readingByDate[date] ?? 0,
@@ -3735,7 +3739,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
           ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
           ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
-        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. En Entrenamiento pesan la disciplina y la calidad: Malo 40%, Regular 60%, Bueno 80% y Muy bueno 100%; una disciplina secundaria aporta la mitad que una importante. Alimentación se calcula contra tu objetivo diario de calorías: dentro de un 10% suma 100 y cuanto más te alejás, menos suma. Estudio/Trabajo suma en proporción a las horas realizadas frente a tu objetivo diario de foco. Las áreas con “Prioridad” pesan 3, las “Importantes” 2 y las “Secundarias” 1. Inicio, Plan y Progreso usan los mismos datos y no se cuentan dos veces.</p></article></div>
+        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. En Entrenamiento pesan la disciplina y la calidad: Malo 40%, Regular 60%, Bueno 80% y Muy bueno 100%; una disciplina secundaria aporta la mitad que una importante. Alimentación se calcula contra tu objetivo diario de calorías: dentro de un 10% suma 100 y cuanto más te alejás, menos suma. Sueño combina duración y calidad: “Bueno” conserva el puntaje por horas y “Malo” aporta el 40% de ese valor. Estudio/Trabajo suma en proporción a las horas realizadas frente a tu objetivo diario de foco. Las áreas con “Prioridad” pesan 3, las “Importantes” 2 y las “Secundarias” 1. Inicio, Plan y Progreso usan los mismos datos y no se cuentan dos veces.</p></article></div>
         {priorityEditor}
       </section>}
       {section === "physical" && <>
