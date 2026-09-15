@@ -11,7 +11,7 @@ import { dayBlocks, dayWindow, findSlot, freeSlots, overlappingBlocks, unschedul
 import { streakFor, trendFor } from "../app/lib/streaks";
 import { buildInsights, closeInsights, planInsights, type InsightInput } from "../app/lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "../app/lib/review";
-import { dayFactors, scoreFrom, scoreLabel, type DayRecord, type ScoreWeights } from "../app/lib/score";
+import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, type DayRecord, type ScoreWeights } from "../app/lib/score";
 import { quoteForDate, quotes } from "../app/lib/quotes";
 
 const TODAY = "2026-08-29";
@@ -264,6 +264,27 @@ test("las prioridades cambian el puntaje del mismo día", () => {
   const parejo = scoreFrom(factors, evenWeights);
   const priorizado = scoreFrom(factors, { ...evenWeights, gymWeight: 3, sleepWeight: 1, readingWeight: 1 });
   assert.ok(priorizado > parejo, `priorizar entrenamiento debería subir el puntaje: ${priorizado} vs ${parejo}`);
+});
+
+test("corregir ayer cambia sólo el puntaje de ayer, para bien o para mal", () => {
+  const todayRecord: DayRecord = { ...emptyDay, focusMinutes: 120 };
+  const yesterdayBefore: DayRecord = { ...emptyDay, focusMinutes: 60 };
+  const todayScore = scoreFrom(dayFactors(todayRecord), evenWeights);
+  const yesterdayScore = scoreFrom(dayFactors(yesterdayBefore), evenWeights);
+
+  assert.ok(scoreFrom(dayFactors({ ...yesterdayBefore, focusMinutes: 120 }), evenWeights) > yesterdayScore);
+  assert.ok(scoreFrom(dayFactors({ ...yesterdayBefore, focusMinutes: 15 }), evenWeights) < yesterdayScore);
+  assert.equal(scoreFrom(dayFactors(todayRecord), evenWeights), todayScore);
+});
+
+test("cada fecha usa las prioridades del mes al que pertenece", () => {
+  const september = { monthKey: "2026-09", ...evenWeights, gymWeight: 3, readingWeight: 1 };
+  const october = { monthKey: "2026-10", ...evenWeights, gymWeight: 1, readingWeight: 3 };
+  const history = [september, october];
+
+  assert.equal(scoreWeightsForDate("2026-09-30", history, october).gymWeight, 3);
+  assert.equal(scoreWeightsForDate("2026-10-01", history, september).readingWeight, 3);
+  assert.equal(scoreWeightsForDate("fecha-invalida", history, evenWeights), evenWeights);
 });
 
 test("sin peso en ninguna área el puntaje es 0 y no NaN", () => {

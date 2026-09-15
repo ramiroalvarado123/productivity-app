@@ -113,6 +113,7 @@ export async function GET(request: Request) {
       selectRows<ProgressRow>("reading_logs", { where: { userEmail: email }, gte: { logDate: start }, lte: { logDate: date }, order: [["logDate", "desc"]] }),
       selectRows<ProgressRow>("book_notes", { where: { userEmail: email }, order: [["createdAt", "desc"]] }),
       selectRows<ProgressRow>("monthly_priorities", { where: { userEmail: email, monthKey }, limit: 1 }),
+      selectRows<ProgressRow>("monthly_priorities", { where: { userEmail: email }, order: [["monthKey", "asc"]] }),
       selectRows<ProgressRow>("goals", { where: { userEmail: email }, order: [["completedAt", "asc"], ["targetDate", "asc"], ["createdAt", "desc"]] }),
       selectRows<ProgressRow>("daily_checkins", { where: { userEmail: email }, gte: { entryDate: start }, lte: { entryDate: date }, order: [["entryDate", "desc"]] }),
       selectRows<ProgressRow>("focus_projects", { where: { userEmail: email }, order: [["createdAt", "asc"]] }),
@@ -120,7 +121,7 @@ export async function GET(request: Request) {
       selectRows<ProgressRow>("tasks", { where: { userEmail: email }, order: [["completedAt", "asc"], ["dueDate", "asc"], ["createdAt", "desc"]] }),
       selectRows<ProgressRow>("calendar_events", { where: { userEmail: email }, order: [["eventDate", "asc"], ["eventTime", "asc"]] }),
     ]);
-    const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, goals, dailyCheckins, focusProjects, focusSessions, tasks, events] = result;
+    const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, priorityHistory, goals, dailyCheckins, focusProjects, focusSessions, tasks, events] = result;
     const completedBookIds = books
       .filter((book) => String(book.status) === "reading" && Number(book.totalPages) > 0 && Number(book.currentPage) >= Number(book.totalPages))
       .map((book) => book.id);
@@ -136,6 +137,7 @@ export async function GET(request: Request) {
       gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
       disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books: visibleBooks, readingLogs, readingHistory, notes,
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
+      priorityHistory,
       goals, dailyCheckin: dailyCheckins.find((row) => row.entryDate === date) ?? null, dailyCheckins, focusProjects, focusSessions, tasks, events,
     });
   } catch (cause) {

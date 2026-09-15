@@ -14,7 +14,7 @@ import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Tr
 import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
 import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
-import { dayFactors, scoreFrom, scoreLabel, trainingContribution, type DayRecord, type ScoreWeights } from "./lib/score";
+import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, trainingContribution, type DayRecord, type ScoreWeights } from "./lib/score";
 import {
   GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalPeriodLabel,
   goalSource, goalTotal, goalUnit, goalWindow, initialsFor, inviteMessage, isFresh, mailLink,
@@ -86,7 +86,7 @@ function parseDietNumber(value: string) {
 type ProgressData = {
   profile: User; gymDates: string[]; disciplines: Discipline[]; trainingLogs: TrainingLog[]; exerciseLogs: ExerciseLog[];
   meals: Meal[]; mealHistory: Meal[]; books: Book[]; readingLogs: ReadingLog[]; readingHistory: ReadingLog[]; notes: Note[];
-  goals: Goal[]; priorities: Priorities; dailyCheckin: DailyCheckin | null; dailyCheckins: DailyCheckin[];
+  goals: Goal[]; priorities: Priorities; priorityHistory?: Priorities[]; dailyCheckin: DailyCheckin | null; dailyCheckins: DailyCheckin[];
   focusProjects: FocusProject[]; focusSessions: FocusSession[]; tasks: Task[]; events: CalendarEvent[]; dietPlan: DietPlanRecord | null;
 };
 type Section = "summary" | "score" | "physical" | "focus" | "sleep" | "plan" | "stats" | "friends" | "pro";
@@ -1322,8 +1322,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const scoreWeights: ScoreWeights = priorityDraft;
   const factors = dayFactors(dayRecordFor(today));
   const score = scoreFrom(factors, scoreWeights);
-  /** El mismo puntaje, para cualquier día del historial cargado. */
-  const scoreForDate = (date: string) => scoreFrom(dayFactors(dayRecordFor(date)), scoreWeights);
+  /** Cada fecha se reconstruye con sus propios datos y las prioridades de su mes. */
+  const scoreForDate = (date: string) => scoreFrom(
+    dayFactors(dayRecordFor(date)),
+    scoreWeightsForDate(date, data.priorityHistory ?? [], scoreWeights),
+  );
   const priorityPairs: Array<[string, number]> = [["Entrenamiento", priorityDraft.gymWeight], ["Alimentación", priorityDraft.nutritionWeight], ["Sueño", priorityDraft.sleepWeight], ["Estudio / Trabajo", priorityDraft.focusWeight], ["Lectura", priorityDraft.readingWeight], ["Objetivos", priorityDraft.goalsWeight]];
   const highestPriority = Math.max(...priorityPairs.map((item) => item[1]));
   const topPriorities = priorityPairs.filter((item) => item[1] === highestPriority);
@@ -2828,7 +2831,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
         </div>
       </div>
-      <p className="formula-note">Cada barra se reconstruye con lo que registraste ese día y las prioridades que tenés hoy. Los días sin registros valen 0.</p>
+      <p className="formula-note">Cada barra se reconstruye con lo que registraste ese día y las prioridades de ese mes. Si corregís ayer, su puntaje sube o baja automáticamente sin cambiar el de hoy.</p>
     </article>
 
     <article className="panel streaks-panel">

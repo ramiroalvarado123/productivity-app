@@ -18,6 +18,8 @@ export type ScoreWeights = {
   goalsWeight: number;
 };
 
+export type MonthlyScoreWeights = ScoreWeights & { monthKey: string };
+
 /** Lo que hiciste en un día, sin interpretar. */
 export type DayRecord = {
   trainingSessions: number;
@@ -84,6 +86,16 @@ export function nutritionScoreFromCalories(calories: number, targetCalories: num
   if (relativeDifference <= CALORIE_TARGET_TOLERANCE) return 100;
   const remainingRange = Math.max(0.0001, 1 - CALORIE_TARGET_TOLERANCE);
   return Math.max(0, Math.min(100, Math.round((1 - (relativeDifference - CALORIE_TARGET_TOLERANCE) / remainingRange) * 100)));
+}
+
+/**
+ * Cada fecha conserva las prioridades del mes al que pertenece. Esto evita
+ * que corregir ayer —especialmente al cambiar de mes— lo recalcule con la
+ * configuración de hoy.
+ */
+export function scoreWeightsForDate(date: string, history: MonthlyScoreWeights[], fallback: ScoreWeights): ScoreWeights {
+  const monthKey = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.slice(0, 7) : "";
+  return history.find((item) => item.monthKey === monthKey) ?? fallback;
 }
 
 export function dayFactors(day: DayRecord): ScoreFactors {
