@@ -19,6 +19,16 @@ alter table public.profiles
   add constraint profiles_focus_daily_target_minutes_check
     check (focus_daily_target_minutes between 30 and 720);
 
+alter table public.daily_checkins
+  add column if not exists sleep_quality text;
+
+alter table public.daily_checkins
+  drop constraint if exists daily_checkins_sleep_quality_check;
+
+alter table public.daily_checkins
+  add constraint daily_checkins_sleep_quality_check
+    check (sleep_quality in ('good', 'bad') or sleep_quality is null);
+
 alter table public.calendar_events
   add column if not exists discipline_id bigint
     references public.training_disciplines(id) on delete set null;
