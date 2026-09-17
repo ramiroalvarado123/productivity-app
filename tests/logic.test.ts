@@ -13,8 +13,22 @@ import { buildInsights, closeInsights, planInsights, type InsightInput } from ".
 import { dayClose, isReviewDay, weeklyReview } from "../app/lib/review";
 import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, type DayRecord, type ScoreWeights } from "../app/lib/score";
 import { quoteForDate, quotes } from "../app/lib/quotes";
+import { readingPositionForDate, readingUpdateFromPosition } from "../app/lib/reading";
 
 const TODAY = "2026-08-29";
+
+test("la lectura se edita como página actual sin perder el avance diario", () => {
+  assert.equal(readingPositionForDate(50, [{ logDate: "2026-08-29", pages: 5 }], "2026-08-28", 100), 45);
+  assert.deepEqual(readingUpdateFromPosition({ currentPage: 37, totalPages: 665, previousPages: 0, laterPages: 0, requestedPosition: 40 }), {
+    pages: 3, currentPage: 40, completed: false,
+  });
+  assert.deepEqual(readingUpdateFromPosition({ currentPage: 322, totalPages: 323, previousPages: 4, laterPages: 0, requestedPosition: 323 }), {
+    pages: 5, currentPage: 323, completed: true,
+  });
+  assert.deepEqual(readingUpdateFromPosition({ currentPage: 323, totalPages: 323, previousPages: 0, laterPages: 0, requestedPosition: 322 }), {
+    pages: 0, currentPage: 322, completed: false,
+  });
+});
 
 const task = (over: Partial<Parameters<typeof dayBlocks>[0]["tasks"][number]> = {}) => ({
   id: 1, title: "Escribir el capítulo 3", dueDate: TODAY, startTime: "08:00",
