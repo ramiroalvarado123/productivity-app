@@ -1,6 +1,7 @@
 import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
 import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
 import { dateInTimeZone } from "../../lib/format";
+import { readingUpdateFromPosition } from "../../lib/reading";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
@@ -312,17 +313,35 @@ export async function POST(request: Request) {
     if (action === "add_book") { const title = String(p.title ?? "").trim(); if (!title) return fail("Ingresá el título del libro."); const status = ["reading", "read", "wishlist"].includes(String(p.status)) ? String(p.status) : "reading", totalPages = Math.max(0, Math.min(20000, Number(p.totalPages) || 0)); await insertRows("books", { userEmail: email, title, author: String(p.author ?? "").trim(), status, totalPages, currentPage: status === "read" ? totalPages : 0, coverUrl: String(p.coverUrl ?? "").slice(0, 1000), externalKey: String(p.externalKey ?? "").slice(0, 300) }); return ok(); }
     if (action === "delete_book") { const bookId = Number(p.bookId); if (!(await owned("books", email, { id: bookId }))[0]) return fail("Libro no encontrado.", 404); await deleteRows("reading_logs", { bookId, userEmail: email }); await deleteRows("book_notes", { bookId, userEmail: email }); await deleteRows("books", { id: bookId, userEmail: email }); return ok(); }
     if (action === "set_pages") {
-      const bookId = Number(p.bookId), date = String(p.date ?? ""), pages = Math.max(0, Math.min(5000, Number(p.pages) || 0)), book = (await owned("books", email, { id: bookId }))[0];
+      const bookId = Number(p.bookId), date = String(p.date ?? ""), book = (await owned("books", email, { id: bookId }))[0];
       if (!book || !DATE.test(date)) return fail("Datos de lectura inválidos.");
       const previous = (await owned("reading_logs", email, { bookId, logDate: date }))[0];
       const minutes = p.minutes === undefined ? previous?.minutes ?? 0 : Math.max(0, Math.min(1440, Number(p.minutes) || 0));
-      const delta = pages - (previous?.pages ?? 0);
-      const currentPage = Math.max(0, book.totalPages ? Math.min(book.totalPages, book.currentPage + delta) : book.currentPage + delta);
-      const completed = Number(book.totalPages) > 0 && currentPage >= Number(book.totalPages);
+      let pages: number, currentPage: number, completed: boolean;
+      if (p.currentPage !== undefined) {
+        const bookLogs = await selectRows<ProgressRow>("reading_logs", { where: { userEmail: email, bookId } });
+        const laterPages = bookLogs
+          .filter((log) => String(log.logDate) > date)
+          .reduce((sum, log) => sum + Math.max(0, Number(log.pages) || 0), 0);
+        ({ pages, currentPage, completed } = readingUpdateFromPosition({
+          currentPage: Number(book.currentPage) || 0,
+          totalPages: Number(book.totalPages) || 0,
+          previousPages: Number(previous?.pages) || 0,
+          laterPages,
+          requestedPosition: Number(p.currentPage) || 0,
+        }));
+      } else {
+        // Compatibilidad con versiones anteriores de la PWA que todavía
+        // envían “páginas leídas en el día”.
+        pages = Math.max(0, Math.min(5000, Number(p.pages) || 0));
+        const delta = pages - (Number(previous?.pages) || 0);
+        currentPage = Math.max(0, Number(book.totalPages) ? Math.min(Number(book.totalPages), Number(book.currentPage) + delta) : Number(book.currentPage) + delta);
+        completed = Number(book.totalPages) > 0 && currentPage >= Number(book.totalPages);
+      }
       const nextStatus = completed ? "read" : String(book.status) === "read" ? "reading" : book.status;
       await upsert("reading_logs", { userEmail: email, bookId, logDate: date, pages, minutes }, ["userEmail", "bookId", "logDate"]);
       await updateRows("books", { id: bookId, userEmail: email }, { currentPage, status: nextStatus });
-      return ok({ completed });
+      return ok({ completed, currentPage, pages });
     }
     if (action === "add_note") { const bookId = Number(p.bookId), content = String(p.content ?? "").trim(); if (!content || !(await owned("books", email, { id: bookId }))[0]) return fail("Elegí un libro y escribí una nota."); await insertRows("book_notes", { userEmail: email, bookId, content }); return ok(); }
     if (action === "update_book_status") { const status = String(p.status); if (!["reading", "read", "wishlist"].includes(status)) return fail("Estado inválido."); await updateRows("books", { id: Number(p.bookId), userEmail: email }, { status }); return ok(); }
