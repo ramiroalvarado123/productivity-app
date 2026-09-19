@@ -68,9 +68,22 @@ function daysBefore(date: string, days: number) {
 function stringArray(value: unknown) {
   try { const parsed = JSON.parse(String(value ?? "[]")); return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []; } catch { return []; }
 }
-async function currentUser() {
+// Mide cada tramo del pedido y lo expone en el header Server-Timing (pestaña Network del navegador).
+function serverTiming() {
+  const start = performance.now();
+  let last = start;
+  const parts: string[] = [];
+  return {
+    mark(name: string) { const now = performance.now(); parts.push(`${name};dur=${Math.round(now - last)}`); last = now; },
+    header() { return [...parts, `total;dur=${Math.round(performance.now() - start)}`].join(", "); },
+  };
+}
+type Timing = ReturnType<typeof serverTiming>;
+async function currentUser(timing: Timing) {
   const user = await getChatGPTUser();
+  timing.mark("auth");
   if (user) await insertRows("profiles", { email: user.email, displayName: user.displayName }, { upsert: true, onConflict: ["email"], ignoreDuplicates: true });
+  timing.mark("profile_upsert");
   return user;
 }
 async function owned(table: string, email: string, where: Record<string, string | number | boolean | null> = {}) {
@@ -86,8 +99,15 @@ function isTransientSupabaseError(cause: unknown) {
 }
 
 export async function GET(request: Request) {
+  const timing = serverTiming();
+  const response = await handleGet(request, timing);
+  response.headers.set("Server-Timing", timing.header());
+  return response;
+}
+
+async function handleGet(request: Request, timing: Timing) {
   try {
-    const user = await currentUser();
+    const user = await currentUser(timing);
     if (!user) return fail("Necesitás iniciar sesión.", 401);
     const params = new URL(request.url).searchParams;
     const date = DATE.test(params.get("date") ?? "") ? String(params.get("date")) : today();
@@ -96,6 +116,7 @@ export async function GET(request: Request) {
     const monthKey = MONTH.test(params.get("month") ?? "") ? String(params.get("month")) : date.slice(0, 7);
     const start = daysBefore(date, 5 * 366), email = user.email;
     const profile = (await selectRows<ProgressRow>("profiles", { where: { email }, limit: 1 }))[0];
+    timing.mark("profile");
     if (profile?.onboardingCompleted && !user.onboardingCompleted) await updateChatGPTUserMetadata({ displayName: profile.displayName, onboardingCompleted: true, mainGoals: stringArray(profile.mainGoalsJson), usagePreferences: stringArray(profile.usagePreferencesJson) });
 
     let disciplines = await selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] });
@@ -103,6 +124,7 @@ export async function GET(request: Request) {
       await insertRows("training_disciplines", [{ userEmail: email, name: "Gimnasio", kind: "strength" }, { userEmail: email, name: "Running", kind: "running" }], { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true });
       disciplines = await selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] });
     }
+    timing.mark("disciplines");
     const result = await Promise.all([
       selectRows<ProgressRow>("training_logs", { where: { userEmail: email }, gte: { trainingDate: start }, lte: { trainingDate: date }, order: [["trainingDate", "desc"], ["id", "desc"]] }),
       selectRows<ProgressRow>("exercise_logs", { where: { userEmail: email }, order: [["createdAt", "desc"]] }),
@@ -122,6 +144,7 @@ export async function GET(request: Request) {
       selectRows<ProgressRow>("tasks", { where: { userEmail: email }, order: [["completedAt", "asc"], ["dueDate", "asc"], ["createdAt", "desc"]] }),
       selectRows<ProgressRow>("calendar_events", { where: { userEmail: email }, order: [["eventDate", "asc"], ["eventTime", "asc"]] }),
     ]);
+    timing.mark("queries");
     const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, priorityHistory, goals, dailyCheckins, focusProjects, focusSessions, tasks, events] = result;
     const completedBookIds = books
       .filter((book) => String(book.status) === "reading" && Number(book.totalPages) > 0 && Number(book.currentPage) >= Number(book.totalPages))
@@ -129,6 +152,7 @@ export async function GET(request: Request) {
     if (completedBookIds.length) {
       await Promise.all(completedBookIds.map((id) => updateRows("books", { id, userEmail: email }, { status: "read" })));
     }
+    timing.mark("books_update");
     const visibleBooks = books.map((book) =>
       completedBookIds.includes(book.id) ? { ...book, status: "read" } : book
     );
@@ -149,8 +173,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const timing = serverTiming();
+  const response = await handlePost(request, timing);
+  timing.mark("action");
+  response.headers.set("Server-Timing", timing.header());
+  return response;
+}
+
+async function handlePost(request: Request, timing: Timing) {
   try {
-    const user = await currentUser(); if (!user) return fail("Necesitás iniciar sesión.", 401);
+    const user = await currentUser(timing); if (!user) return fail("Necesitás iniciar sesión.", 401);
     const p = await request.json() as Record<string, unknown>, action = String(p.action ?? ""), email = user.email;
     if (action === "complete_onboarding") {
       const displayName = String(p.displayName ?? "").trim().slice(0, 60), goals = Array.isArray(p.mainGoals) ? p.mainGoals.map(String).filter((v: string) => ["training", "nutrition", "focus", "reading", "sleep", "goals"].includes(v)).slice(0, 3) : [], preferences = Array.isArray(p.usagePreferences) ? p.usagePreferences.map(String).filter((v: string) => ["quick", "weekly", "ai"].includes(v)) : [], monthKey = String(p.monthKey ?? "");
