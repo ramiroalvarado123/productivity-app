@@ -16,6 +16,7 @@ import { buildInsights, closeInsights, insightHeadline, planInsights, type Comin
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, trainingContribution, type DayRecord, type ScoreWeights } from "./lib/score";
 import { readingPositionForDate } from "./lib/reading";
+import { applyPatch, type DataPatch } from "./lib/apply-patch";
 import { useDebouncedRefresh } from "./lib/use-debounced-refresh";
 import {
   GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalPeriodLabel,
@@ -1030,8 +1031,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     setError("");
     try {
       const response = await fetch("/api/progress", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
-      const result = await readJson<{ error?: string }>(response);
+      const result = await readJson<{ error?: string; patch?: DataPatch }>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo guardar.");
+      // El servidor devuelve las filas que cambió: se ven al instante y la recarga silenciosa solo reconcilia.
+      if (result.patch) setData((current) => applyPatch(current, result.patch!, today));
       // Las cargas en vuelo son anteriores a este guardado: se descartan y la recarga silenciosa trae el dato nuevo.
       loadSeqRef.current += 1;
       void scheduleRefresh();
@@ -2028,8 +2031,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   async function toggleTask(id: number, completed: boolean) {
     setPendingTasks((current) => ({ ...current, [id]: completed }));
     const ok = await save({ action: "toggle_task", id, completed });
-    // El tildado optimista se suelta recién cuando la recarga trae el dato guardado; si no, la fila saltaría al estado viejo.
-    if (ok) await scheduleRefresh();
     setPendingTasks((current) => {
       const next = { ...current };
       delete next[id];
@@ -2044,7 +2045,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   async function toggleEvent(id: number, completed: boolean) {
     setPendingEvents((current) => ({ ...current, [id]: completed }));
     const ok = await save({ action: "toggle_event", id, completed });
-    if (ok) await scheduleRefresh();
     setPendingEvents((current) => {
       const next = { ...current };
       delete next[id];
