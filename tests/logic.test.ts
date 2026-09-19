@@ -280,14 +280,26 @@ test("las prioridades cambian el puntaje del mismo día", () => {
   assert.ok(priorizado > parejo, `priorizar entrenamiento debería subir el puntaje: ${priorizado} vs ${parejo}`);
 });
 
-test("corregir ayer cambia sólo el puntaje de ayer, para bien o para mal", () => {
-  const todayRecord: DayRecord = { ...emptyDay, focusMinutes: 120 };
-  const yesterdayBefore: DayRecord = { ...emptyDay, focusMinutes: 60 };
+test("corregir ayer recalcula todas las áreas sin modificar hoy", () => {
+  const todayRecord: DayRecord = { ...emptyDay, focusMinutes: 120, pages: 10 };
+  const yesterdayBefore: DayRecord = { ...emptyDay, focusMinutes: 60, focusTargetMinutes: 120 };
   const todayScore = scoreFrom(dayFactors(todayRecord), evenWeights);
   const yesterdayScore = scoreFrom(dayFactors(yesterdayBefore), evenWeights);
 
-  assert.ok(scoreFrom(dayFactors({ ...yesterdayBefore, focusMinutes: 120 }), evenWeights) > yesterdayScore);
+  const corrections: DayRecord[] = [
+    { ...yesterdayBefore, trainingSessions: 1, trainingScore: 80 },
+    { ...yesterdayBefore, meals: 3, calories: 2000, targetCalories: 2000 },
+    { ...yesterdayBefore, sleepMinutes: 8 * 60, sleepQuality: "good" },
+    { ...yesterdayBefore, focusMinutes: 120 },
+    { ...yesterdayBefore, pages: 10 },
+  ];
+  for (const corrected of corrections) {
+    assert.ok(scoreFrom(dayFactors(corrected), evenWeights) > yesterdayScore);
+  }
+
   assert.ok(scoreFrom(dayFactors({ ...yesterdayBefore, focusMinutes: 15 }), evenWeights) < yesterdayScore);
+  assert.ok(scoreFrom(dayFactors({ ...yesterdayBefore, sleepMinutes: 8 * 60, sleepQuality: "bad" }), evenWeights)
+    < scoreFrom(dayFactors({ ...yesterdayBefore, sleepMinutes: 8 * 60, sleepQuality: "good" }), evenWeights));
   assert.equal(scoreFrom(dayFactors(todayRecord), evenWeights), todayScore);
 });
 
