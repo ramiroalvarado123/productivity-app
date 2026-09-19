@@ -16,6 +16,8 @@ import { buildInsights, closeInsights, insightHeadline, planInsights, type Comin
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, trainingContribution, type DayRecord, type ScoreWeights } from "./lib/score";
 import { readingPositionForDate } from "./lib/reading";
+import { applyPatch, type DataPatch } from "./lib/apply-patch";
+import { useDebouncedRefresh } from "./lib/use-debounced-refresh";
 import {
   GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalPeriodLabel,
   goalSource, goalTotal, goalUnit, goalWindow, initialsFor, inviteMessage, isFresh, mailLink,
@@ -853,7 +855,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current);
   }, []);
 
-  const loadData = useCallback(async () => {
+  // Cada carga lleva un número: si llega una respuesta vieja después de una más nueva (o de un guardado), se descarta.
+  const loadSeqRef = useRef(0);
+  const silentFailuresRef = useRef(0);
+  const loadData = useCallback(async (options?: { silent?: boolean }) => {
+    const seq = ++loadSeqRef.current;
+    const silent = options?.silent === true;
     try {
       const url = "/api/progress?date=" + today + "&weekStart=" + week[0].iso + "&weekEnd=" + week[6].iso + "&month=" + monthKey;
       let response: Response | null = null;
@@ -872,6 +879,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       if (!response) throw lastError instanceof Error ? lastError : new Error("No pudimos cargar tus datos.");
       const next = await readJson<ProgressData & { error?: string }>(response);
       if (!response.ok) throw new Error(next.error || "No pudimos cargar tus datos.");
+      if (seq !== loadSeqRef.current) return;
       setData(next);
       setPriorityDraft(next.priorities);
       setSelectedDisciplineId((current) => current ?? next.disciplines[0]?.id ?? null);
@@ -898,13 +906,23 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         setSleepWaketime(normalizeClock(next.dailyCheckin.wakeTime, "07:00"));
         sleepHydratedRef.current = true;
       }
-      setError("");
+      const hadVisibleFailure = silentFailuresRef.current >= 2;
+      silentFailuresRef.current = 0;
+      if (!silent || hadVisibleFailure) setError("");
     } catch (caught) {
+      if (seq !== loadSeqRef.current) return;
+      // Una recarga silenciosa que falla una vez no molesta: el guardado ya salió bien. Recién a la segunda seguida avisamos.
+      if (silent) {
+        silentFailuresRef.current += 1;
+        if (silentFailuresRef.current < 2) return;
+      }
       setError(caught instanceof Error ? caught.message : "Ocurrió un error.");
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [today, week, monthKey]);
+  const silentReload = useCallback(() => loadData({ silent: true }), [loadData]);
+  const scheduleRefresh = useDebouncedRefresh(silentReload, 800);
   // Initial synchronization with the signed-in user's persisted workspace.
   useEffect(() => {
     if (!initialUser.onboardingCompleted) return;
@@ -1013,9 +1031,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     setError("");
     try {
       const response = await fetch("/api/progress", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
-      const result = await readJson<{ error?: string }>(response);
+      const result = await readJson<{ error?: string; patch?: DataPatch }>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo guardar.");
-      await loadData();
+      // El servidor devuelve las filas que cambió: se ven al instante y la recarga silenciosa solo reconcilia.
+      if (result.patch) setData((current) => applyPatch(current, result.patch!, today));
+      // Las cargas en vuelo son anteriores a este guardado: se descartan y la recarga silenciosa trae el dato nuevo.
+      loadSeqRef.current += 1;
+      void scheduleRefresh();
       if (payload.action === "update_exercise" || payload.action === "delete_exercise") setEditingExerciseId(null);
       finishSaveFeedback(feedbackKey, true);
       return true;
@@ -1122,6 +1144,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       window.removeEventListener("touchcancel", handleTouchCancel);
     };
   }, [refreshAll]);
+  const scheduleSocialRefresh = useDebouncedRefresh(loadSocial, 800);
   const sendSocial = useCallback(async (payload: Record<string, unknown>, feedbackKey = String(payload.action ?? "social")) => {
     beginSaveFeedback(feedbackKey);
     setSaving(true);
@@ -1129,7 +1152,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       const response = await fetch("/api/friends", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
       const result = await readJson<{ error?: string } & Record<string, unknown>>(response);
       if (!response.ok) throw new Error(result.error || "No se pudo completar la acción.");
-      await loadSocial();
+      void scheduleSocialRefresh();
       finishSaveFeedback(feedbackKey, true);
       return result;
     } catch (caught) {
@@ -1139,7 +1162,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     } finally {
       setSaving(false);
     }
-  }, [beginSaveFeedback, finishSaveFeedback, loadSocial]);
+  }, [beginSaveFeedback, finishSaveFeedback, scheduleSocialRefresh]);
 
   // Sólo saca duplicados reales (misma fila repetida): antes agrupaba por
   // proyecto+fecha y se comía sesiones legítimas cuando estudiabas la misma
