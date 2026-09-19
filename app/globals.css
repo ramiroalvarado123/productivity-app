@@ -1982,9 +1982,16 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .meal-panel-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
 .meal-backfill-toggle { border: 1px solid #d7e4da; border-radius: 9px; background: #f4f8f4; color: var(--green); padding: 7px 9px; font-size: 8px; font-weight: 800; cursor: pointer; white-space: nowrap; }
 .meal-backfill-toggle:hover { background: #e9f3eb; border-color: #a9c6b2; }
+.historical-score { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: -5px 0 18px; padding: 11px 13px; border: 1px solid #d8e6dc; border-radius: 12px; background: #f1f7f2; color: var(--green); }
+.historical-score > div { display: grid; gap: 3px; }
+.historical-score span { font-size: 8px; font-weight: 900; letter-spacing: .07em; }
+.historical-score small { color: #748079; font-size: 8px; font-weight: 500; }
+.historical-score strong { display: flex; align-items: baseline; gap: 2px; font-family: var(--font-serif); font-size: 25px; font-weight: 500; line-height: 1; }
+.historical-score strong small { color: var(--green); font-family: var(--font-sans); font-size: 9px; }
 @media (max-width: 760px) {
   .meal-panel-actions { align-items: flex-end; flex-direction: column; gap: 5px; }
   .meal-backfill-toggle { font-size: 8px; padding: 7px 8px; }
+  .historical-score { margin-top: 0; }
 }
 
 /* Colores de los bloques creados desde áreas distintas de Foco. */
