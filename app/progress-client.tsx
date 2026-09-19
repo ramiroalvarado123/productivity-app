@@ -585,7 +585,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [settingsView, setSettingsView] = useState<SettingsView>("home");
   const [settingsName, setSettingsName] = useState("");
   const [settingsUsername, setSettingsUsername] = useState("");
-  const [weeklySummary, setWeeklySummary] = useState(initialUser.usagePreferences.includes("weekly"));
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackType, setFeedbackType] = useState<FeedbackType>("idea");
   const [feedbackSection, setFeedbackSection] = useState("Inicio");
@@ -827,9 +826,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const previousTodayRef = useRef(today);
 
   // Al cambiar el día, la carga rápida de comidas vuelve a apuntar a hoy.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setMealEntryDate(today);
   }, [today]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // El menú de cuenta se comporta como un desplegable real: cualquier toque
   // exterior o Escape lo cierra, sin interferir con sus acciones internas.
@@ -916,7 +917,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     return () => window.clearInterval(timer);
   }, []);
   // Detecta el cambio de fecha en Argentina aunque la app permanezca abierta.
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const syncToday = () => {
       const nextToday = argentinaDate();
@@ -935,7 +935,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       document.removeEventListener("visibilitychange", syncToday);
     };
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(() => {
     const title = bookDraft.title.trim();
     if (!bookForm || !bookSuggestionOpen || title.length < 2) {
@@ -1616,7 +1615,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   function openSettings() {
     setSettingsName(data.profile.displayName);
     setSettingsUsername(data.profile.username);
-    setWeeklySummary(data.profile.usagePreferences.includes("weekly"));
     setSettingsView("home");
     setError("");
     setSettingsOpen(true);
@@ -1642,30 +1640,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     const trimmedUsername = settingsUsername.trim().toLowerCase();
     if (trimmedUsername !== data.profile.username && !await save({ action: "set_username", username: trimmedUsername }, "personal_settings")) return;
     setSettingsOpen(false);
-  }
-  async function saveNotifications(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const feedbackKey = "notification_settings";
-    beginSaveFeedback(feedbackKey);
-    setSaving(true);
-    setError("");
-    try {
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ displayName: data.profile.displayName, weeklySummary }),
-      });
-      const result = await readJson<{ error?: string }>(response);
-      if (!response.ok) throw new Error(result.error || "No pudimos guardar las notificaciones.");
-      await loadData();
-      finishSaveFeedback(feedbackKey, true);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "No pudimos guardar las notificaciones.");
-      finishSaveFeedback(feedbackKey, false);
-    } finally {
-      setSaving(false);
-    }
   }
   async function submitFeedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2736,10 +2710,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     });
   };
   const scoreTrendPoints = scoreBucketsFor(statsWindow);
-  const previousScorePoints = scoreBucketsFor(statsWindowFor(statsPeriod, statsOffset + 1, today));
   const scoreAverage = Math.round(averageNumbers(scoreTrendPoints.map((point) => point.value)));
-  const scorePreviousAverage = Math.round(averageNumbers(previousScorePoints.map((point) => point.value)));
-  const scoreDelta = previousScorePoints.length && scorePreviousAverage > 0 ? scoreAverage - scorePreviousAverage : null;
   // Geometría del gráfico de líneas del Daily Score.
   const scoreGradientId = useId();
   const scoreChartWidth = 600;
@@ -2750,7 +2721,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     x: scoreTrendPoints.length > 1 ? (index / (scoreTrendPoints.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
     y: scoreYFor(point.value),
   }));
-  const selectedScorePoint = scoreTrendPoints.find((point) => point.key === selectedScorePointKey) ?? null;
   const scoreLinePath = scoreChartPoints.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(1) + "," + point.y.toFixed(1)).join(" ");
   const scoreAreaPath = scoreChartPoints.length
     ? scoreLinePath + " L" + scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1) + "," + scoreChartHeight + " L" + scoreChartPoints[0].x.toFixed(1) + "," + scoreChartHeight + " Z"

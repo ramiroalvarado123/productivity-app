@@ -1,6 +1,6 @@
 /**
  * Pruebas de la lógica pura: agenda, huecos, rachas, tendencias y avisos.
- * Se ejecutan con `npm run test:logic` (tsx + el runner de Node).
+ * Se ejecutan con `npm test` (tsx + el runner de Node).
  */
 
 import assert from "node:assert/strict";

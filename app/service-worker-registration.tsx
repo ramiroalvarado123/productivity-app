@@ -57,7 +57,6 @@ export function ServiceWorkerRegistration() {
     let refreshing = false;
     let registration: ServiceWorkerRegistration | null = null;
     let serviceWorkerIntervalId: number | undefined;
-    let appVersionIntervalId: number | undefined;
     let pushSyncing = false;
     let currentAppVersion = "";
 
@@ -117,7 +116,7 @@ export function ServiceWorkerRegistration() {
     };
 
     void checkAppVersion();
-    appVersionIntervalId = window.setInterval(() => void checkAppVersion(), APP_VERSION_CHECK_INTERVAL_MS);
+    const appVersionIntervalId = window.setInterval(() => void checkAppVersion(), APP_VERSION_CHECK_INTERVAL_MS);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pageshow", handlePageShow);
     window.addEventListener("online", handlePageShow);
@@ -144,7 +143,7 @@ export function ServiceWorkerRegistration() {
       window.removeEventListener("online", handlePageShow);
       if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
       if (serviceWorkerIntervalId !== undefined) window.clearInterval(serviceWorkerIntervalId);
-      if (appVersionIntervalId !== undefined) window.clearInterval(appVersionIntervalId);
+      window.clearInterval(appVersionIntervalId);
     };
   }, []);
 

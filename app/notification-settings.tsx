@@ -65,6 +65,8 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
+  // Lee el estado del navegador (permiso, modo instalado, suscripción) al montar: no se puede derivar en el render.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let cancelled = false;
     if (typeof window !== "undefined") {
@@ -87,6 +89,7 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const pushReady = preferences.pushEnabled && permission === "granted" && subscriptionReady;
   const browserLabel = useMemo(() => {
