@@ -124,7 +124,7 @@ export function recordAppUse(stateValue: AppEngagement, date: string): { state: 
   if (state.pendingRestore) {
     const newGaps = missingDates(state.lastActiveDate, date);
     const gapDates = [...new Set([...state.pendingRestore.gapDates, ...newGaps])].sort();
-    if (gapDates.length > state.restoresAvailable) {
+    if (state.restoresAvailable < 1) {
       const next = resetAfterLoss(state, date, totalUseDays);
       return { state: next, prompt: "lost" };
     }
@@ -153,7 +153,7 @@ export function recordAppUse(stateValue: AppEngagement, date: string): { state: 
   }
 
   const gaps = missingDates(state.lastActiveDate, date);
-  if (gaps.length > 0 && state.restoresAvailable >= gaps.length) {
+  if (gaps.length > 0 && state.restoresAvailable >= 1) {
     const next = {
       ...state,
       totalUseDays,
@@ -168,18 +168,18 @@ export function recordAppUse(stateValue: AppEngagement, date: string): { state: 
   return { state: next, prompt: state.currentStreak > 0 ? "lost" : null };
 }
 
-/** Consume una vida por cada día perdido y une la racha si alcanza el saldo. */
+/** Consume una vida para recuperar la racha completa, sin importar cuántos días faltó. */
 export function restoreAppStreak(stateValue: AppEngagement): { state: AppEngagement; prompt: EngagementPrompt } {
   const state = normalizeAppEngagement(stateValue);
   const pending = state.pendingRestore;
   if (!pending || !state.lastActiveDate) return { state, prompt: state.lossNoticePending ? "lost" : null };
-  if (pending.gapDates.length > state.restoresAvailable) {
+  if (state.restoresAvailable < 1) {
     const next = { ...state, currentStreak: 1, pendingRestore: null, lossNoticePending: true };
     return { state: next, prompt: "lost" };
   }
 
   const currentStreak = pending.startStreak + Math.max(1, daysBetween(pending.startDate, state.lastActiveDate));
-  const remainingLives = state.restoresAvailable - pending.gapDates.length;
+  const remainingLives = state.restoresAvailable - 1;
   const next = {
     ...state,
     currentStreak,

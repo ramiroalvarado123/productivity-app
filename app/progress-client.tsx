@@ -3982,7 +3982,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <span className="streak-modal-flame" aria-hidden="true">🔥</span>
         <p className="streak-details-eyebrow">TU CONSTANCIA</p>
         <h2 id="streak-modal-title">¿Querés restablecer tu racha?</h2>
-        <p>La última vez llevabas {pluralize(engagement.pendingRestore.startStreak, "día seguido", "días seguidos")}. Usá {pluralize(engagement.pendingRestore.gapDates.length, "restablecedor", "restablecedores")} para recuperarla.</p>
+        <p>La última vez llevabas {pluralize(engagement.pendingRestore.startStreak, "día seguido", "días seguidos")}. Usá un restablecedor para recuperarla.</p>
         <small>Te quedan {engagement.restoresAvailable} de 3.</small>
         {streakActionError && <p className="streak-modal-error" role="alert">{streakActionError}</p>}
         <div className="streak-modal-actions">
