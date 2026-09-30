@@ -18,6 +18,7 @@ import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, trainingContribution, type DayRecord, type ScoreWeights } from "./lib/score";
 import { readingPositionForDate } from "./lib/reading";
 import { applyPatch, type DataPatch } from "./lib/apply-patch";
+import { BADGE_DEFINITIONS, type BadgeStats } from "./lib/badges";
 import { useDebouncedRefresh } from "./lib/use-debounced-refresh";
 import {
   GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalPeriodLabel,
@@ -103,26 +104,6 @@ type SettingsView = "home" | "personal" | "language" | "notifications";
 type FeedbackType = "positive" | "idea" | "bug" | "dislike";
 type SavePhase = "saving" | "saved" | null;
 type StreakAction = "visit" | "restore" | "decline" | "dismiss_loss";
-type BadgeStats = { bestStreak: number; totalUseDays: number; scoreAbove90Days: number; perfectScoreDays: number };
-type BadgeMetric = keyof BadgeStats;
-
-const BADGE_DEFINITIONS: Array<{ id: string; group: string; title: string; metric: BadgeMetric; target: number; icon: string }> = [
-  { id: "streak-50", group: "Rachas", title: "50 días seguidos", metric: "bestStreak", target: 50, icon: "🔥" },
-  { id: "streak-100", group: "Rachas", title: "100 días seguidos", metric: "bestStreak", target: 100, icon: "🌋" },
-  { id: "streak-365", group: "Rachas", title: "365 días seguidos", metric: "bestStreak", target: 365, icon: "👑" },
-  { id: "use-50", group: "Días de uso total", title: "50 días usando AVORA", metric: "totalUseDays", target: 50, icon: "🌱" },
-  { id: "use-100", group: "Días de uso total", title: "100 días usando AVORA", metric: "totalUseDays", target: 100, icon: "🧭" },
-  { id: "use-200", group: "Días de uso total", title: "200 días usando AVORA", metric: "totalUseDays", target: 200, icon: "🏅" },
-  { id: "use-500", group: "Días de uso total", title: "500 días usando AVORA", metric: "totalUseDays", target: 500, icon: "🏆" },
-  { id: "use-1000", group: "Días de uso total", title: "1000 días usando AVORA", metric: "totalUseDays", target: 1000, icon: "💎" },
-  { id: "score-90-20", group: "Daily Score mayor a 90", title: "20 días arriba de 90", metric: "scoreAbove90Days", target: 20, icon: "⭐" },
-  { id: "score-90-50", group: "Daily Score mayor a 90", title: "50 días arriba de 90", metric: "scoreAbove90Days", target: 50, icon: "🌟" },
-  { id: "score-90-100", group: "Daily Score mayor a 90", title: "100 días arriba de 90", metric: "scoreAbove90Days", target: 100, icon: "✨" },
-  { id: "score-100-20", group: "Daily Score perfecto", title: "20 días con 100 puntos", metric: "perfectScoreDays", target: 20, icon: "💯" },
-  { id: "score-100-50", group: "Daily Score perfecto", title: "50 días con 100 puntos", metric: "perfectScoreDays", target: 50, icon: "🎯" },
-  { id: "score-100-100", group: "Daily Score perfecto", title: "100 días con 100 puntos", metric: "perfectScoreDays", target: 100, icon: "🥇" },
-];
-
 function InsigniasModal({ stats, onClose }: { stats: BadgeStats; onClose: () => void }) {
   const groups = [...new Set(BADGE_DEFINITIONS.map((badge) => badge.group))];
   return <div className="insignias-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -1452,6 +1433,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     }
     return { scoreAbove90Days, perfectScoreDays };
   }, [scoreActivityDates, scoreForDate]);
+  const badgeStats = useMemo<BadgeStats>(() => ({
+    bestStreak: engagement?.bestStreak ?? 0,
+    totalUseDays: engagement?.totalUseDays ?? 0,
+    scoreAbove90Days: scoreBadgeCounts.scoreAbove90Days,
+    perfectScoreDays: scoreBadgeCounts.perfectScoreDays,
+  }), [engagement?.bestStreak, engagement?.totalUseDays, scoreBadgeCounts]);
+  const earnedBadgeIds = useMemo(
+    () => BADGE_DEFINITIONS.filter((badge) => badgeStats[badge.metric] >= badge.target).map((badge) => badge.id),
+    [badgeStats],
+  );
+  const earnedBadgeSignature = earnedBadgeIds.join(",");
   const historicalScore = (date: string) => date === today ? null : <div className="historical-score" role="status" aria-live="polite">
     <div>
       <span>{date === dateMinus(today, 1) ? "DAILY SCORE DE AYER" : `DAILY SCORE · ${formatDate(date)}`}</span>
@@ -1583,16 +1575,16 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // registros que lo componen. Se publica cuando cambia, no en cada render.
   useEffect(() => {
     if (!initialUser.onboardingCompleted || loading || !engagement) return;
-    const signature = `${today}:${score}:${engagement.currentStreak}:${engagement.bestStreak}`;
+    const signature = `${today}:${score}:${engagement.currentStreak}:${engagement.bestStreak}:${earnedBadgeSignature}`;
     if (publishedShareRef.current === signature) return;
     publishedShareRef.current = signature;
     void fetch("/api/friends", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ action: "publish_share", shareDate: today, score, streak: engagement.currentStreak, bestStreak: engagement.bestStreak }),
+      body: JSON.stringify({ action: "publish_share", shareDate: today, score, streak: engagement.currentStreak, bestStreak: engagement.bestStreak, badges: earnedBadgeIds }),
     }).catch(() => { publishedShareRef.current = ""; });
-  }, [initialUser.onboardingCompleted, loading, today, score, engagement]);
+  }, [initialUser.onboardingCompleted, loading, today, score, engagement, earnedBadgeSignature, earnedBadgeIds]);
 
   // ---------------------------------------------------------------------------
   // Objetivos de grupo que se cuentan solos. Un objetivo puede declarar de qué
@@ -2380,20 +2372,35 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const focusTodayInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date === today), 0);
   const focusWeekInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date >= week[0].iso), 0);
   const focusEntryMinutesInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date === focusEntryDate), 0);
+  const focusSessionsInEntry = uniqueFocusSessions
+    .filter((session) => focusProjectIds.has(session.projectId) && session.sessionDate === focusEntryDate)
+    .sort((left, right) => right.id - left.id);
 
   const focusPanel = <section className="module-stack">
-      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><div className="meal-panel-actions"><label className="training-target-label">Objetivo diario de foco<Dropdown className="weekly-target-dropdown" ariaLabel="Objetivo diario de estudio y trabajo" value={String(data.profile.focusDailyTargetMinutes || 120)} onChange={(value) => void save({ action: "set_focus_daily_target", minutes: Number(value) }, "focus_daily_target")} options={FOCUS_DAILY_TARGET_OPTIONS} /></label><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span><button type="button" className="meal-backfill-toggle" onClick={() => setFocusEntryDate((current) => current === today ? dateMinus(today, 1) : today)}>{focusEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
+      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><div className="meal-panel-actions"><label className="training-target-label">Objetivo diario de foco<Dropdown className="weekly-target-dropdown" ariaLabel="Objetivo diario de estudio y trabajo" value={String(data.profile.focusDailyTargetMinutes || 120)} onChange={(value) => void save({ action: "set_focus_daily_target", minutes: Number(value) }, "focus_daily_target")} options={FOCUS_DAILY_TARGET_OPTIONS} /></label><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span><label className="focus-date-label">Fecha de foco<input className="focus-date-input" type="date" required max={today} value={focusEntryDate} onChange={(event) => setFocusEntryDate(event.currentTarget.value || today)} /></label>{focusEntryDate !== today && <button type="button" className="meal-backfill-toggle" onClick={() => setFocusEntryDate(today)}>Volver a hoy</button>}</div></div>
         {historicalScore(focusEntryDate)}
         <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_focus_project")} /></button></form>
-        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = effectiveFocusMinutesFor(project.id, (date) => date === today); const weekMinutes = effectiveFocusMinutesFor(project.id, (date) => date >= week[0].iso); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
+        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = effectiveFocusMinutesFor(project.id, (date) => date === today); const weekMinutes = effectiveFocusMinutesFor(project.id, (date) => date >= week[0].iso); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p><button type="button" className="focus-project-delete" aria-label={`Eliminar ${project.kind === "study" ? "materia" : "proyecto"} ${project.name}`} disabled={saving} onClick={() => { const kind = project.kind === "study" ? "materia" : "proyecto"; if (window.confirm(`¿Eliminar ${kind} “${project.name}”? También se borrarán sus registros de horas. Las tareas vinculadas se conservarán sin asignar a un proyecto.`)) void save({ action: "delete_focus_project", projectId: project.id }); }}>×</button></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
         {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const hours = parseDecimalInput(focusHours); const minutes = Math.round(hours * 60); if (hours <= 0 || hours > 24 || minutes <= 0) { setError("Indicá una cantidad válida de horas (mayor a 0 y hasta 24)."); return; } void save({ action: "add_focus_session", projectId: form.get("projectId"), date: focusEntryDate, minutes, note: form.get("note") }).then((ok) => { if (ok) { setFocusHours(""); formElement.reset(); } }); }}>
           <label>{focusTab === "study" ? "Materia" : "Proyecto"}<Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia" : "Proyecto"} options={focusProjectsInTab.map((project) => ({ value: String(project.id), label: project.name }))} /></label>
           <label>Horas de foco<div className="focus-duration-control"><button type="button" className="stepper-button" aria-label="Restar 15 minutos de foco" onClick={() => adjustFocusHours(-0.25)} disabled={(parseDecimalInput(focusHours) || 0) <= 0}>−</button><input aria-label="Horas de foco" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={focusHours} onFocus={(event) => { if (event.currentTarget.value === "0") setFocusHours(""); }} onChange={(event) => setFocusHours(event.target.value)} placeholder="Ej. 1,2 o 1,25" /><button type="button" className="stepper-button" aria-label="Sumar 15 minutos de foco" onClick={() => adjustFocusHours(0.25)} disabled={(parseDecimalInput(focusHours) || 0) >= 24}>＋</button><span>h</span></div></label>
           <label>Qué avanzaste<input name="note" placeholder="Tema, entrega o avance…" /></label>
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar bloque de foco" phase={savePhase("add_focus_session")} /></button>
         </form>}
+        {focusProjectsInTab.length > 0 && <section className="focus-session-history" aria-label={`Registros de foco del ${formatDate(focusEntryDate)}`}>
+          <div className="focus-session-history-heading"><h3>Bloques de foco</h3><small>{formatDate(focusEntryDate)}</small></div>
+          {focusSessionsInEntry.length ? <ul className="focus-session-list">{focusSessionsInEntry.map((session) => {
+            const project = data.focusProjects.find((item) => item.id === session.projectId);
+            return <li className="focus-session-row" key={session.id}>
+              <span aria-hidden="true">◷</span>
+              <p><b>{project?.name ?? "Proyecto"}</b><small>{session.note || "Sin descripción"}</small></p>
+              <strong>{formatFocusHours(session.minutes)}</strong>
+              <button type="button" className="row-delete focus-session-delete" aria-label={`Eliminar registro de ${formatFocusHours(session.minutes)} de ${project?.name ?? "foco"}`} disabled={saving} onClick={() => { if (window.confirm(`¿Eliminar este bloque de ${formatFocusHours(session.minutes)} de ${project?.name ?? "foco"}?`)) void save({ action: "delete_focus_session", id: session.id }); }}>×</button>
+            </li>;
+          })}</ul> : <p className="focus-session-empty">Todavía no cargaste horas para esta fecha.</p>}
+        </section>}
       </article>
-    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO DE " + (focusEntryDate === today ? "HOY" : "AYER") : "TRABAJO DE " + (focusEntryDate === today ? "HOY" : "AYER")}</p><b>{formatFocusHours(focusEntryDate === today ? focusTodayInTab : focusEntryMinutesInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatFocusHours(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
+    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO" : "TRABAJO"} · {focusEntryDate === today ? "HOY" : formatDate(focusEntryDate).toUpperCase()}</p><b>{formatFocusHours(focusEntryDate === today ? focusTodayInTab : focusEntryMinutesInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatFocusHours(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
       <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{tasksInTab.filter((item) => item.completedAt).length}/{tasksInTab.length} hechas</span></div>
         <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia de la tarea" : "Proyecto de la tarea"} options={projectOptions(focusProjectsInTab, focusTab === "study" ? "Sin materia" : "Sin proyecto")} /><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><Dropdown name="durationMinutes" ariaLabel="Duración" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120])} /><button disabled={saving}><SaveButtonContent label="＋" phase={savePhase("add_task")} /></button></form>
         <div className="task-list compact-task-list">{tasksInTab.map((task) => { const done = taskDone(task.id, Boolean(task.completedAt)); return <div className={done ? "completed" : ""} key={task.id}><button className="task-check" aria-pressed={done} onClick={() => void toggleTask(task.id, !done)}>{done ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? formatDate(task.dueDate) : "Sin fecha"}{task.startTime ? ` · ${task.startTime}${task.durationMinutes ? " (" + formatMinutes(task.durationMinutes) + ")" : ""}` : task.dueDate ? " · sin horario" : ""}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>; })}{!tasksInTab.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
@@ -2589,11 +2596,9 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const streakProgress = restoreProgressFromStreak(engagement?.currentStreak ?? 0);
   const streakWidget = engagement && <div className="app-streak-wrap">
-    <button type="button" className="app-streak-chip" onClick={() => setStreakInfoOpen((open) => !open)} aria-expanded={streakInfoOpen} aria-controls="app-streak-details">
+    <button type="button" className="app-streak-chip" onClick={() => setStreakInfoOpen((open) => !open)} aria-label={`Racha de ${engagement.currentStreak} ${engagement.currentStreak === 1 ? "día" : "días"}`} aria-expanded={streakInfoOpen} aria-controls="app-streak-details">
       <span aria-hidden="true">🔥</span>
       <b>{engagement.currentStreak}</b>
-      <small>{pluralize(engagement.currentStreak, "día de racha", "días de racha")}</small>
-      <i aria-hidden="true">{streakInfoOpen ? "⌃" : "⌄"}</i>
     </button>
     {streakActionError && <div className="streak-request-error" role="status">
       <span>{streakActionError}</span>
@@ -3510,9 +3515,15 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           </div>
           <div className="friend-score-main">
             <div className="friend-score-ring" style={{ "--friend-score": `${friendScore}%` } as CSSProperties}><span><b>{fresh ? friendScore : "–"}</b><small>/100</small></span></div>
-            <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share?.streak ? `🔥 ${pluralize(share.streak, "día", "días")} de racha · mejor ${share.bestStreak}` : "Todavía sin racha"}</span></p>
+            <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share ? `🔥 ${pluralize(share.streak, "día", "días")} de racha · mejor ${share.bestStreak}` : "Todavía sin racha"}</span></p>
           </div>
-          <div className="friend-streak-bar"><small>RACHA DE USO</small><i style={{ width: `${Math.min(100, (share?.streak ?? 0) / Math.max(1, Math.max(myStreak.current, share?.streak ?? 0)) * 100)}%` }} /><b>{share?.streak ?? 0}</b></div>
+          <div className="friend-badges" aria-label={`Insignias desbloqueadas por ${friend.name}`}>
+            <small>INSIGNIAS DESBLOQUEADAS</small>
+            {share?.badges?.length ? <div className="friend-badge-list">{share.badges.map((id) => {
+              const badge = BADGE_DEFINITIONS.find((item) => item.id === id);
+              return badge ? <span className="friend-badge-chip" key={badge.id}><i aria-hidden="true">{badge.icon}</i>{badge.title}</span> : null;
+            })}</div> : <span className="friend-badges-empty">Todavía no desbloqueó insignias.</span>}
+          </div>
           <div className="friend-nudge-wrap">
             <button type="button" className="friend-nudge" onClick={() => setNudgeOpenFor(nudgeOpenFor === friend.email ? null : friend.email)}>
               <span>✉ Mandar un mensaje</span><i>{nudgeOpenFor === friend.email ? "▲" : "▼"}</i>
@@ -3849,12 +3860,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </a>
   </>;
 
-  const badgeStats: BadgeStats = {
-    bestStreak: engagement?.bestStreak ?? 0,
-    totalUseDays: engagement?.totalUseDays ?? 0,
-    scoreAbove90Days: scoreBadgeCounts.scoreAbove90Days,
-    perfectScoreDays: scoreBadgeCounts.perfectScoreDays,
-  };
   const streakPrompt = engagement?.pendingRestore ? "restore" : engagement?.lossNoticePending ? "lost" : null;
   async function submitStreakChoice(action: Exclude<StreakAction, "visit">) {
     setStreakActionBusy(true);

@@ -57,6 +57,22 @@ test("el sueño de hoy actualiza también dailyCheckin", () => {
   assert.equal(past.dailyCheckin, null);
 });
 
+test("borrar un proyecto de foco quita sus bloques y conserva sus tareas sin proyecto", () => {
+  const data = {
+    ...base(),
+    focusProjects: [{ id: 4, createdAt: "2026-09-01T00:00:00Z", name: "Física", kind: "study" }],
+    focusSessions: [{ id: 20, projectId: 4, sessionDate: TODAY, minutes: 90 }],
+    tasks: [{ id: 10, projectId: 4, completedAt: null, dueDate: TODAY, createdAt: "2026-09-01T00:00:00Z", title: "Repasar" }],
+  };
+  const next = applyPatch(data, {
+    remove: { focusProjects: [4], focusSessions: [20] },
+    upsert: { tasks: [{ id: 10, projectId: null, completedAt: null, dueDate: TODAY, createdAt: "2026-09-01T00:00:00Z", title: "Repasar" }] },
+  }, TODAY);
+  assert.deepEqual(next.focusProjects, []);
+  assert.deepEqual(next.focusSessions, []);
+  assert.equal(next.tasks[0].projectId, null);
+});
+
 test("ignora colecciones desconocidas o ausentes", () => {
   const data = base();
   const next = applyPatch(data, { upsert: { events: [{ id: 1 }] }, remove: { books: [1] } }, TODAY);
