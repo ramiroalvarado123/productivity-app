@@ -57,6 +57,20 @@ test("una vida recupera un día perdido y mantiene los días reales de uso separ
   assert.equal(restored.state.pendingRestore, null);
 });
 
+test("una sola vida recupera la racha completa aunque falten varios días", () => {
+  let state = emptyAppEngagement();
+  for (let offset = 0; offset < 7; offset += 1) state = recordAppUse(state, day(offset)).state;
+  const returned = recordAppUse(state, day(10));
+  assert.equal(returned.prompt, "restore");
+  assert.equal(returned.state.pendingRestore?.gapDates.length, 3);
+  assert.equal(returned.state.restoresAvailable, 1);
+
+  const restored = restoreAppStreak(returned.state);
+  assert.equal(restored.state.currentStreak, 11);
+  assert.equal(restored.state.restoresAvailable, 0);
+  assert.equal(restored.state.totalUseDays, 8);
+});
+
 test("si no quedan vidas, la racha se reinicia y se informa una sola vez", () => {
   let state = emptyAppEngagement();
   state = recordAppUse(state, day(0)).state;
