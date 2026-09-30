@@ -2,6 +2,12 @@ import webpush from "web-push";
 import { SUPABASE_URL } from "../../../lib/supabase-auth";
 import { inferTaskCategory } from "../../../lib/schedule";
 import { scoreForDay, trainingContribution, type DayRecord, type ScoreWeights } from "../../../lib/score";
+import {
+  EARLY_ADOPTER_ANNOUNCEMENT_ID,
+  EARLY_ADOPTER_BROADCAST_BODY,
+  EARLY_ADOPTER_BROADCAST_KIND,
+  EARLY_ADOPTER_BROADCAST_TITLE,
+} from "../../../lib/early-adopter-announcement";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -500,6 +506,11 @@ export async function POST(request: Request) {
     webpush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:notifications@avora.app", publicKey, privateKey);
 
     const searchParams = new URL(request.url).searchParams;
+    const campaign = searchParams.get("campaign");
+    if (campaign !== null && campaign !== EARLY_ADOPTER_ANNOUNCEMENT_ID) {
+      return Response.json({ error: "Campaña inválida." }, { status: 400 });
+    }
+    const isAnnouncementCampaign = campaign === EARLY_ADOPTER_ANNOUNCEMENT_ID;
     const testNow = searchParams.get("test_now");
     const testEmail = String(searchParams.get("test_email") ?? "").trim().toLowerCase();
     const onlyDailyScore = searchParams.get("only") === DAILY_SCORE_NUDGE_KIND;
@@ -512,12 +523,13 @@ export async function POST(request: Request) {
     const [preferenceRows, subscriptions, profiles, events] = await Promise.all([
       adminRequest("notification_preferences", new URLSearchParams({ push_enabled: "eq.true" }).toString()),
       adminRequest("push_subscriptions"),
-      adminRequest("profiles", new URLSearchParams({ select: "email,display_name,pro_since" }).toString()),
-      adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,event_time" }).toString()),
+      isAnnouncementCampaign ? Promise.resolve([] as Row[]) : adminRequest("profiles", new URLSearchParams({ select: "email,display_name,pro_since" }).toString()),
+      isAnnouncementCampaign ? Promise.resolve([] as Row[]) : adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,event_time" }).toString()),
     ]);
 
     let dailyScoreRows: DailyScoreRows | null = null;
-    try {
+    if (!isAnnouncementCampaign) {
+      try {
       const [scoreProfiles, disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
         adminRequest("profiles", new URLSearchParams({ select: "email,focus_daily_target_minutes" }).toString()),
         adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,name,kind,priority" }).toString()),
@@ -543,10 +555,10 @@ export async function POST(request: Request) {
         adminRequest("monthly_priorities", new URLSearchParams({ select: "id,user_email,month_key,gym_weight,nutrition_weight,sleep_weight,focus_weight,reading_weight,goals_weight" }).toString()),
       ]);
       dailyScoreRows = { profiles: scoreProfiles, disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities };
-    } catch (error) {
-      // La alerta nueva no debe interrumpir calendario, balance ni resúmenes
-      // si la migración de permisos todavía no fue ejecutada en Supabase.
-      console.warn("daily score notification source data unavailable", error);
+      } catch (error) {
+        // Una falla en las fuentes del Daily Score no interrumpe los otros avisos.
+        console.warn("daily score notification source data unavailable", error);
+      }
     }
 
     const profilesByEmail = new Map(profiles.map((row) => [stringValue(row, "email"), row]));
@@ -582,7 +594,9 @@ export async function POST(request: Request) {
       const profile = profilesByEmail.get(email) ?? {};
       const timezone = stringValue(preference, "timezone", DEFAULT_TIMEZONE);
       const clock = localClock(now, timezone);
-      const candidates = onlyDailyScore ? [] : summaryCandidates(email, profile, preference, clock);
+      const candidates: Candidate[] = isAnnouncementCampaign
+        ? [{ email, kind: EARLY_ADOPTER_BROADCAST_KIND, referenceKey: EARLY_ADOPTER_ANNOUNCEMENT_ID, title: EARLY_ADOPTER_BROADCAST_TITLE, body: EARLY_ADOPTER_BROADCAST_BODY, url: "/" }]
+        : onlyDailyScore ? [] : summaryCandidates(email, profile, preference, clock);
 
       if (!onlyDailyScore && booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
         const daysBefore = Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1))));

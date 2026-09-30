@@ -1,6 +1,11 @@
 name: AVORA notifications
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ops/early-adopters-announcement-2026-09-30
   workflow_dispatch:
     inputs:
       test_now:
@@ -20,7 +25,7 @@ concurrency:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 15
     steps:
       - name: Procesar avisos pendientes
         env:
@@ -28,19 +33,34 @@ jobs:
           APP_URL: ${{ secrets.AVORA_APP_URL }}
           TEST_NOW: ${{ inputs.test_now }}
           ONLY_DAILY_SCORE: ${{ inputs.only_daily_score }}
+          CAMPAIGN_ID: ${{ github.event_name == 'push' && 'early_adopters_announcement_2026_09_30' || '' }}
         run: |
           set -euo pipefail
           test -n "${CRON_SECRET}" || { echo "Falta configurar AVORA_CRON_SECRET"; exit 1; }
           test -n "${APP_URL}" || { echo "Falta configurar AVORA_APP_URL"; exit 1; }
           dispatch_url="${APP_URL%/}/api/notifications/dispatch"
-          if [ -n "${TEST_NOW}" ]; then
-            dispatch_url="${dispatch_url}?test_now=${TEST_NOW}"
-          fi
-          if [ "${ONLY_DAILY_SCORE}" = "true" ]; then
-            if [[ "${dispatch_url}" == *"?"* ]]; then
-              dispatch_url="${dispatch_url}&only=daily_score_nudge"
-            else
-              dispatch_url="${dispatch_url}?only=daily_score_nudge"
+          if [ -n "${CAMPAIGN_ID}" ]; then
+            ready=false
+            for attempt in $(seq 1 60); do
+              deployed_version="$(curl --fail --silent "${APP_URL%/}/api/app-version" 2>/dev/null | jq -r '.version // empty' || true)"
+              if [ "${deployed_version}" = "${GITHUB_SHA}" ]; then
+                ready=true
+                break
+              fi
+              sleep 10
+            done
+            test "${ready}" = true || { echo "La versión del anuncio no quedó disponible en AVORA; no se envió la notificación."; exit 1; }
+            dispatch_url="${dispatch_url}?campaign=${CAMPAIGN_ID}"
+          else
+            if [ -n "${TEST_NOW}" ]; then
+              dispatch_url="${dispatch_url}?test_now=${TEST_NOW}"
+            fi
+            if [ "${ONLY_DAILY_SCORE}" = "true" ]; then
+              if [[ "${dispatch_url}" == *"?"* ]]; then
+                dispatch_url="${dispatch_url}&only=daily_score_nudge"
+              else
+                dispatch_url="${dispatch_url}?only=daily_score_nudge"
+              fi
             fi
           fi
           curl --fail-with-body --silent --show-error --retry 2 --retry-delay 5 \

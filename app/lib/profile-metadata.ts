@@ -1,6 +1,7 @@
 import { emptyAppEngagement, normalizeAppEngagement, type AppEngagement } from "./app-engagement";
 
 const ENGAGEMENT_KEY = "avoraEngagement";
+const SEEN_ANNOUNCEMENTS_KEY = "seenAnnouncements";
 
 function parsedValue(value: unknown): unknown {
   try {
@@ -28,14 +29,22 @@ export function profileEngagement(value: unknown): AppEngagement {
   return normalizeAppEngagement((parsed as Record<string, unknown>)[ENGAGEMENT_KEY]);
 }
 
+/** IDs de anuncios que la persona ya cerró, compartidos entre sus dispositivos. */
+export function profileSeenAnnouncements(value: unknown): string[] {
+  const parsed = parsedValue(value);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return [];
+  return [...new Set(strings((parsed as Record<string, unknown>)[SEEN_ANNOUNCEMENTS_KEY]))];
+}
+
 /** Actualiza preferencias sin borrar el estado interno de rachas. */
 export function usagePreferencesJsonWithPreferences(rawValue: unknown, preferences: string[]) {
   const parsed = parsedValue(rawValue);
-  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) && ENGAGEMENT_KEY in parsed) {
+  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>;
     return JSON.stringify({
-      ...(parsed as Record<string, unknown>),
+      ...record,
       preferences,
-      [ENGAGEMENT_KEY]: profileEngagement(rawValue),
+      ...(ENGAGEMENT_KEY in record ? { [ENGAGEMENT_KEY]: profileEngagement(rawValue) } : {}),
     });
   }
   return JSON.stringify(preferences);
@@ -43,8 +52,24 @@ export function usagePreferencesJsonWithPreferences(rawValue: unknown, preferenc
 
 /** Guarda rachas en el campo JSON existente, preservando las preferencias. */
 export function usagePreferencesJsonWithEngagement(rawValue: unknown, engagement: AppEngagement) {
+  const parsed = parsedValue(rawValue);
   return JSON.stringify({
+    ...(typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}),
     preferences: profilePreferences(rawValue),
     [ENGAGEMENT_KEY]: normalizeAppEngagement(engagement),
+  });
+}
+
+/** Registra un anuncio sin borrar preferencias, racha ni otros metadatos. */
+export function usagePreferencesJsonWithSeenAnnouncement(rawValue: unknown, announcementId: string) {
+  const parsed = parsedValue(rawValue);
+  const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : {};
+  return JSON.stringify({
+    ...record,
+    preferences: profilePreferences(rawValue),
+    ...(ENGAGEMENT_KEY in record ? { [ENGAGEMENT_KEY]: profileEngagement(rawValue) } : {}),
+    [SEEN_ANNOUNCEMENTS_KEY]: [...new Set([...profileSeenAnnouncements(rawValue), announcementId])],
   });
 }

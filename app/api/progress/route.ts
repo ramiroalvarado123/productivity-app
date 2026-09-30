@@ -3,7 +3,7 @@ import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../l
 import { dateInTimeZone } from "../../lib/format";
 import { readingUpdateFromPosition } from "../../lib/reading";
 import type { DataPatch } from "../../lib/apply-patch";
-import { profilePreferences, usagePreferencesJsonWithPreferences } from "../../lib/profile-metadata";
+import { profilePreferences, profileSeenAnnouncements, usagePreferencesJsonWithPreferences } from "../../lib/profile-metadata";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
@@ -162,7 +162,7 @@ async function handleGet(request: Request, timing: Timing) {
     );
     const strength = disciplines.find((row) => row.kind === "strength");
     return Response.json({
-      profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? profilePreferences(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "", focusDailyTargetMinutes: Math.max(30, Math.min(720, Math.round(Number(profile?.focusDailyTargetMinutes) || 120))) },
+      profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? profilePreferences(profile.usagePreferencesJson) : user.usagePreferences, seenAnnouncements: profileSeenAnnouncements(profile?.usagePreferencesJson), isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "", focusDailyTargetMinutes: Math.max(30, Math.min(720, Math.round(Number(profile?.focusDailyTargetMinutes) || 120))) },
       gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
       disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books: visibleBooks, readingLogs, readingHistory, notes,
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
