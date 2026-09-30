@@ -21,6 +21,8 @@ export type FriendShare = {
   streak: number;
   bestStreak: number;
   headline: string;
+  /** Identificadores de las insignias desbloqueadas y publicadas. */
+  badges: string[];
 };
 
 export type InviteStatus = "pending" | "accepted" | "declined" | "revoked";

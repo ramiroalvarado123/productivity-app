@@ -6,6 +6,7 @@ import {
   type Friend, type FriendInvite, type FriendShare, type GoalMetric, type GoalSource, type Group,
   type GroupAccent, type GroupGoal, type GroupInvite, type GroupMember, type SocialData,
 } from "../../lib/social";
+import { mergeBadgeIds, normalizeBadgeIds } from "../../lib/badges";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -17,6 +18,26 @@ const clamp = (value: unknown, min: number, max: number) => Math.max(min, Math.m
 const text = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
 
 type Row = Record<string, unknown>;
+
+function unpackShareHeadline(raw: unknown, score: number) {
+  const value = String(raw ?? "");
+  try {
+    const parsed = JSON.parse(value) as { format?: unknown; headline?: unknown; badges?: unknown };
+    if (parsed?.format === "avora-share-v1") {
+      return {
+        headline: String(parsed.headline ?? shareHeadline(score)),
+        badges: normalizeBadgeIds(parsed.badges),
+      };
+    }
+  } catch {
+    // Filas de versiones anteriores guardan el titular como texto plano.
+  }
+  return { headline: value || shareHeadline(score), badges: [] as string[] };
+}
+
+function packShareHeadline(headline: string, badges: string[]) {
+  return JSON.stringify({ format: "avora-share-v1", headline, badges });
+}
 
 /**
  * Un código de invitación es una URL pública: quien lo tenga entra. Se arma con
@@ -104,14 +125,19 @@ async function readSocial(email: string): Promise<SocialData> {
   const goalIds = goalRows.map((row) => Number(row.id));
   const progressRows = await selectRows<Row>("group_goal_progress", { inList: { goalId: goalIds } });
 
-  const shares = new Map<string, FriendShare>(shareRows.map((row) => [String(row.userEmail), {
-    displayName: String(row.displayName ?? ""),
-    shareDate: String(row.shareDate ?? ""),
-    score: Number(row.score ?? 0),
-    streak: Number(row.streak ?? 0),
-    bestStreak: Number(row.bestStreak ?? 0),
-    headline: String(row.headline ?? ""),
-  }]));
+  const shares = new Map<string, FriendShare>(shareRows.map((row) => {
+    const score = Number(row.score ?? 0);
+    const detail = unpackShareHeadline(row.headline, score);
+    return [String(row.userEmail), {
+      displayName: String(row.displayName ?? ""),
+      shareDate: String(row.shareDate ?? ""),
+      score,
+      streak: Number(row.streak ?? 0),
+      bestStreak: Number(row.bestStreak ?? 0),
+      headline: detail.headline,
+      badges: detail.badges,
+    }];
+  }));
 
   const friends: Friend[] = edges.map((row) => {
     const friendEmail = String(row.friendEmail);
@@ -261,10 +287,13 @@ export async function POST(request: Request) {
       const shareDate = String(payload.shareDate ?? "");
       if (!DATE.test(shareDate)) return fail("Fecha inválida.");
       const score = clamp(payload.score, 0, 100);
+      const previous = (await selectRows<Row>("friend_shares", { where: { userEmail: email }, limit: 1 }))[0];
+      const previousShare = unpackShareHeadline(previous?.headline, Number(previous?.score ?? 0));
+      const badges = mergeBadgeIds(previousShare.badges, payload.badges);
       await insertRows("friend_shares", {
         userEmail: email, displayName: user.displayName, shareDate, score,
         streak: clamp(payload.streak, 0, 3650), bestStreak: clamp(payload.bestStreak, 0, 3650),
-        headline: shareHeadline(score), updatedAt: now(),
+        headline: packShareHeadline(shareHeadline(score), badges), updatedAt: now(),
       }, { upsert: true, onConflict: ["userEmail"] });
       return ok();
     }

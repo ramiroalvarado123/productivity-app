@@ -6,7 +6,7 @@
 
 export type CollectionKey =
   | "trainingLogs" | "exerciseLogs" | "mealHistory" | "readingHistory" | "books" | "notes"
-  | "goals" | "dailyCheckins" | "focusSessions" | "tasks" | "events";
+  | "goals" | "dailyCheckins" | "focusProjects" | "focusSessions" | "tasks" | "events";
 
 export type PatchRow = { id: number } & Record<string, unknown>;
 
@@ -29,6 +29,7 @@ const ORDER: Record<CollectionKey, Array<[string, Direction]>> = {
   notes: [["createdAt", "desc"]],
   goals: [["completedAt", "asc"], ["targetDate", "asc"], ["createdAt", "desc"]],
   dailyCheckins: [["entryDate", "desc"]],
+  focusProjects: [["createdAt", "asc"]],
   focusSessions: [["sessionDate", "desc"]],
   tasks: [["completedAt", "asc"], ["dueDate", "asc"], ["createdAt", "desc"]],
   events: [["eventDate", "asc"], ["eventTime", "asc"]],

@@ -298,6 +298,27 @@ async function handlePost(request: Request, timing: Timing) {
     // veces en un día): antes borraba el bloque anterior del mismo día y se
     // perdía tiempo real registrado.
     if (action === "add_focus_session") { const projectId = Number(p.projectId), date = String(p.date ?? ""); if (!DATE.test(date) || !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Elegí un proyecto y fecha válidos."); const rows = await insertRows<ProgressRow>("focus_sessions", { userEmail: email, projectId, sessionDate: date, minutes: Math.max(1, Math.min(1440, Math.round(Number(p.minutes) || 0))), note: String(p.note ?? "").slice(0, 1000) }, { returnRows: true }); return patched({ upsert: { focusSessions: rows } }); }
+    if (action === "delete_focus_session") {
+      const id = Number(p.id);
+      if (!Number.isSafeInteger(id) || id <= 0 || !(await owned("focus_sessions", email, { id }))[0]) return fail("Registro de foco no encontrado.", 404);
+      await deleteRows("focus_sessions", { id, userEmail: email });
+      return patched({ remove: { focusSessions: [id] } });
+    }
+    if (action === "delete_focus_project") {
+      const id = Number(p.projectId);
+      if (!Number.isSafeInteger(id) || id <= 0) return fail("Materia o proyecto no encontrado.", 404);
+      const project = (await owned("focus_projects", email, { id }))[0];
+      if (!project) return fail("Materia o proyecto no encontrado.", 404);
+      const sessions = await selectRows<ProgressRow>("focus_sessions", { where: { userEmail: email, projectId: id } });
+      // Las tareas se conservan sin asignar a un proyecto. Las sesiones ligadas
+      // desaparecen junto con la materia/proyecto (FK ON DELETE CASCADE).
+      const tasks = await updateRows<ProgressRow>("tasks", { userEmail: email, projectId: id }, { projectId: null }, true);
+      await deleteRows("focus_projects", { id, userEmail: email });
+      return patched({
+        remove: { focusProjects: [id], focusSessions: sessions.map((session) => session.id) },
+        ...(tasks.length ? { upsert: { tasks } } : {}),
+      });
+    }
     if (action === "add_task") {
       const title = String(p.title ?? "").trim().slice(0, 180), projectId = Number(p.projectId) || null, dueDate = String(p.dueDate ?? ""), startTime = cleanTime(p.startTime), duration = Math.max(0, Math.min(1440, Math.round(Number(p.durationMinutes) || 0))); if (!title || (dueDate && !DATE.test(dueDate))) return fail("Completá una tarea y fecha válida."); if (startTime === null) return fail("La hora no es válida."); if (startTime && !dueDate) return fail("Para darle un horario, la tarea necesita una fecha."); if (projectId && !(await owned("focus_projects", email, { id: projectId }))[0]) return fail("Proyecto no encontrado.", 404); const rows = await insertRows<ProgressRow>("tasks", { userEmail: email, projectId, title, dueDate: dueDate || null, startTime, durationMinutes: startTime ? duration || 60 : duration }, { returnRows: true }); return patched({ upsert: { tasks: rows } });
     }

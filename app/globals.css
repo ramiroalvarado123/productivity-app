@@ -1625,15 +1625,10 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .friend-score-card.is-me{border-color:#cfe3d7;background:#f7fbf8}
 .friend-score-card.is-stale .friend-score-ring{opacity:.55}
 .friend-score-head>button{font-size:15px;line-height:1}
-.friend-streak-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center;border-top:1px solid #edf0eb;padding-top:11px}
 .friend-nudge-wrap{position:relative;margin-top:9px}
 .friend-nudge span{display:flex;align-items:center;gap:5px}
 .friend-nudge-menu{text-align:left}
 .friend-nudge-menu .ui-dropdown-option{white-space:normal}
-.friend-streak-bar small{font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700}
-.friend-streak-bar i{display:block;height:5px;background:#edf0ec;border-radius:99px;position:relative}
-.friend-streak-bar i:after{content:"";position:absolute;inset:0;background:var(--green);border-radius:99px}
-.friend-streak-bar b{font-size:11px;color:var(--green)}
 .accountability-add.is-inline{width:auto;margin:0;padding:9px 13px}
 .group-actions .panel-heading{align-items:center;margin-bottom:14px}
 .group-join{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end;background:#f4f6f2;border:1px solid #e2e8e1;border-radius:13px;padding:13px}
@@ -2070,8 +2065,6 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .app-streak-chip:focus-visible,.app-streak-details button:focus-visible,.insignias-dialog button:focus-visible,.streak-modal button:focus-visible{outline:3px solid #9fc6a9;outline-offset:2px}
 .app-streak-chip>span{font-size:17px;line-height:1}
 .app-streak-chip>b{font-family:var(--font-serif);font-size:19px;font-weight:600;line-height:1}
-.app-streak-chip>small{font-size:10px;font-weight:700;color:#705c50}
-.app-streak-chip>i{font-size:11px;font-style:normal;color:#988275}
 .streak-request-error{display:inline-flex;align-items:center;gap:8px;margin-left:9px;color:#9b4736;font-size:10px}
 .streak-request-error button{border:0;background:transparent;color:var(--green);font-size:10px;font-weight:800;text-decoration:underline;cursor:pointer}
 .app-streak-details{position:absolute;top:calc(100% + 8px);left:0;width:min(340px,calc(100vw - 32px));padding:18px 19px 16px;border:1px solid #e2e8e1;border-radius:17px;background:#fff;box-shadow:0 16px 45px #173e2f22;z-index:20}
@@ -2133,4 +2126,38 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .insignias-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
   .insignia-card{min-height:98px;padding:9px 7px}
   .streak-modal{padding:25px 20px 21px;border-radius:21px}
+}
+
+/* Insignias visibles en las tarjetas de Amigos. */
+.friend-badges{border-top:1px solid #edf0eb;padding-top:11px;display:grid;gap:8px}
+.friend-badges>small{font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700}
+.friend-badge-list{display:flex;flex-wrap:wrap;gap:6px}
+.friend-badge-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:6px 8px;border:1px solid #e4eae4;border-radius:9px;background:#f7faf6;color:#53665a;font-size:8px;font-weight:700;line-height:1.35}
+.friend-badge-chip i{font-style:normal;font-size:12px;line-height:1}
+.friend-badges-empty{font-size:9px;color:#89918c}
+
+/* Edición de materias/proyectos y de cada bloque cargado. */
+.focus-project-card{position:relative;grid-template-columns:36px minmax(0,1fr) auto auto;padding-right:47px}
+.focus-project-delete{position:absolute;right:10px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:1px solid #f0dfdb;border-radius:9px;background:#fff8f6;color:#a85a4c;font-size:17px;line-height:1;cursor:pointer}
+.focus-project-delete:hover,.focus-session-delete:hover{background:#fff0ec;color:#923e32}
+.focus-project-delete:disabled,.focus-session-delete:disabled{opacity:.5;cursor:wait}
+.focus-date-label{display:grid;gap:4px;color:#65706a;font-size:8px;font-weight:700}
+.focus-date-input{min-height:34px;border:1px solid #dce3dd;border-radius:9px;background:#fff;padding:6px 8px;color:var(--ink);font:inherit;font-size:9px}
+.focus-session-history{border-top:1px solid #edf0eb;padding-top:15px;margin-top:16px}
+.focus-session-history-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.focus-session-history-heading h3{margin:0;font-size:11px}
+.focus-session-history-heading small{color:#89918c;font-size:8px}
+.focus-session-list{display:grid;gap:7px;margin:0;padding:0;list-style:none}
+.focus-session-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto 30px;align-items:center;gap:9px;border:1px solid #e6eae5;border-radius:11px;padding:8px 10px}
+.focus-session-row>span{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#edf4ef;color:var(--green);font-size:15px}
+.focus-session-row>p{min-width:0;display:grid;gap:3px;margin:0}
+.focus-session-row>p b{font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.focus-session-row>p small{color:#87908b;font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.focus-session-row>strong{color:var(--green);font-size:10px;white-space:nowrap}
+.focus-session-delete{width:28px;height:28px;border:1px solid #e4e9e4;border-radius:8px;background:#fff;color:#89918c;font-size:16px;line-height:1;cursor:pointer}
+.focus-session-empty{margin:0;color:#89918c;font-size:9px}
+@media(max-width:760px){
+  .focus-project-card{grid-template-columns:34px minmax(0,1fr) auto auto;padding-right:45px}
+  .focus-date-label{min-width:130px}
+  .focus-session-row{grid-template-columns:26px minmax(0,1fr) auto 28px;gap:7px;padding:8px}
 }
