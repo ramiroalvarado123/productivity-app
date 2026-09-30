@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
-import { insertRows } from "../../lib/supabase-db";
+import { insertRows, selectRows } from "../../lib/supabase-db";
+import { usagePreferencesJsonWithPreferences } from "../../lib/profile-metadata";
 
 const MONTH = /^\d{4}-\d{2}$/;
 const USERNAME = /^[a-z0-9_]{3,20}$/;
@@ -36,13 +37,14 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
     try {
+      const currentProfile = (await selectRows<Record<string, unknown> & { usagePreferencesJson?: string }>("profiles", { where: { email: user.email }, limit: 1 }))[0];
       await insertRows("profiles", {
         email: user.email,
         displayName,
         username,
         onboardingCompleted: true,
         mainGoalsJson: JSON.stringify(mainGoals),
-        usagePreferencesJson: JSON.stringify(usagePreferences),
+        usagePreferencesJson: usagePreferencesJsonWithPreferences(currentProfile?.usagePreferencesJson, usagePreferences),
         updatedAt: now,
       }, { upsert: true, onConflict: ["email"] });
     } catch (error) {

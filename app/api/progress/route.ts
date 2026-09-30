@@ -3,6 +3,7 @@ import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../l
 import { dateInTimeZone } from "../../lib/format";
 import { readingUpdateFromPosition } from "../../lib/reading";
 import type { DataPatch } from "../../lib/apply-patch";
+import { profilePreferences, usagePreferencesJsonWithPreferences } from "../../lib/profile-metadata";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
@@ -120,7 +121,7 @@ async function handleGet(request: Request, timing: Timing) {
     const start = daysBefore(date, 5 * 366), email = user.email;
     const profile = (await selectRows<ProgressRow>("profiles", { where: { email }, limit: 1 }))[0];
     timing.mark("profile");
-    if (profile?.onboardingCompleted && !user.onboardingCompleted) await updateChatGPTUserMetadata({ displayName: profile.displayName, onboardingCompleted: true, mainGoals: stringArray(profile.mainGoalsJson), usagePreferences: stringArray(profile.usagePreferencesJson) });
+    if (profile?.onboardingCompleted && !user.onboardingCompleted) await updateChatGPTUserMetadata({ displayName: profile.displayName, onboardingCompleted: true, mainGoals: stringArray(profile.mainGoalsJson), usagePreferences: profilePreferences(profile.usagePreferencesJson) });
 
     let disciplines = await selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] });
     if (!disciplines.length) {
@@ -161,7 +162,7 @@ async function handleGet(request: Request, timing: Timing) {
     );
     const strength = disciplines.find((row) => row.kind === "strength");
     return Response.json({
-      profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? stringArray(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "", focusDailyTargetMinutes: Math.max(30, Math.min(720, Math.round(Number(profile?.focusDailyTargetMinutes) || 120))) },
+      profile: { email, displayName: profile?.displayName ?? user.displayName, username: String(profile?.username ?? ""), avatarUrl: String(profile?.avatarUrl ?? ""), onboardingCompleted: Boolean(profile?.onboardingCompleted || user.onboardingCompleted), mainGoals: profile?.onboardingCompleted ? stringArray(profile.mainGoalsJson) : user.mainGoals, usagePreferences: profile?.onboardingCompleted ? profilePreferences(profile.usagePreferencesJson) : user.usagePreferences, isPro: Boolean(profile?.proSince), proSince: profile?.proSince ?? "", focusDailyTargetMinutes: Math.max(30, Math.min(720, Math.round(Number(profile?.focusDailyTargetMinutes) || 120))) },
       gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
       disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books: visibleBooks, readingLogs, readingHistory, notes,
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
@@ -190,7 +191,8 @@ async function handlePost(request: Request, timing: Timing) {
     if (action === "complete_onboarding") {
       const displayName = String(p.displayName ?? "").trim().slice(0, 60), goals = Array.isArray(p.mainGoals) ? p.mainGoals.map(String).filter((v: string) => ["training", "nutrition", "focus", "reading", "sleep", "goals"].includes(v)).slice(0, 3) : [], preferences = Array.isArray(p.usagePreferences) ? p.usagePreferences.map(String).filter((v: string) => ["quick", "weekly", "ai"].includes(v)) : [], monthKey = String(p.monthKey ?? "");
       if (displayName.length < 2) return fail("Ingresá tu nombre."); if (!goals.length) return fail("Elegí al menos un objetivo."); if (!MONTH.test(monthKey)) return fail("Mes inválido.");
-      await updateRows("profiles", { email }, { displayName, onboardingCompleted: true, mainGoalsJson: JSON.stringify(goals), usagePreferencesJson: JSON.stringify(preferences), updatedAt: now() });
+      const existingProfile = (await selectRows<ProgressRow>("profiles", { where: { email }, limit: 1 }))[0];
+      await updateRows("profiles", { email }, { displayName, onboardingCompleted: true, mainGoalsJson: JSON.stringify(goals), usagePreferencesJson: usagePreferencesJsonWithPreferences(existingProfile?.usagePreferencesJson, preferences), updatedAt: now() });
       const weight = (goal: string) => goals.includes(goal) ? 3 : 2; await upsert("monthly_priorities", { userEmail: email, monthKey, gymWeight: weight("training"), nutritionWeight: weight("nutrition"), focusWeight: weight("focus"), readingWeight: weight("reading"), sleepWeight: weight("sleep"), goalsWeight: weight("goals") }, ["userEmail", "monthKey"]);
       if (!await updateChatGPTUserMetadata({ displayName, onboardingCompleted: true, mainGoals: goals, usagePreferences: preferences })) console.warn("progress: onboarding saved but auth metadata could not be synchronized");
       return ok();

@@ -4,6 +4,7 @@ import NewUserPreview from "./new-user-preview";
 import ProgressClient from "./progress-client";
 import { selectRows } from "./lib/supabase-db";
 import { readPendingInvite } from "./lib/auth-cookies";
+import { profilePreferences } from "./lib/profile-metadata";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
       email: user.email,
       onboardingCompleted: persistedOnboarding || user.onboardingCompleted,
       mainGoals: persistedOnboarding ? stringArray(profile?.mainGoalsJson) : user.mainGoals,
-      usagePreferences: persistedOnboarding ? stringArray(profile?.usagePreferencesJson) : user.usagePreferences,
+      usagePreferences: persistedOnboarding ? profilePreferences(profile?.usagePreferencesJson) : user.usagePreferences,
       isPro: Boolean(profile?.proSince),
       proSince: profile?.proSince ?? "",
     }} initialError={params.onboarding_error ? onboardingErrors[params.onboarding_error] : undefined} />;
