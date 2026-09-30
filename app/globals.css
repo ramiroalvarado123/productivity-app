@@ -2063,7 +2063,7 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .app-streak-chip{display:inline-flex;align-items:center;gap:8px;min-height:38px;border:1px solid #eedbd0;border-radius:999px;padding:7px 12px;background:#fff9f5;color:var(--ink);cursor:pointer;box-shadow:0 3px 10px #42241308}
 .app-streak-chip:hover{border-color:#e7bba4;background:#fff4ec}
 .app-streak-chip:focus-visible,.app-streak-details button:focus-visible,.insignias-dialog button:focus-visible,.streak-modal button:focus-visible{outline:3px solid #9fc6a9;outline-offset:2px}
-.app-streak-chip>span{font-size:17px;line-height:1}
+.app-streak-flame{display:block;width:19px;height:22px;flex:0 0 auto;filter:drop-shadow(0 1px 1px #9b472633)}
 .app-streak-chip>b{font-family:var(--font-serif);font-size:19px;font-weight:600;line-height:1}
 .streak-request-error{display:inline-flex;align-items:center;gap:8px;margin-left:9px;color:#9b4736;font-size:10px}
 .streak-request-error button{border:0;background:transparent;color:var(--green);font-size:10px;font-weight:800;text-decoration:underline;cursor:pointer}
@@ -2092,8 +2092,7 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .insignia-card{min-width:0;min-height:110px;padding:11px 9px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:1px solid #e3e9e2;border-radius:14px;background:#fff;text-align:center}
 .insignia-card.locked{color:#929a95;background:#f0f2ef;border-color:#e7eae6}
 .insignia-card.unlocked{color:#275a42;border-color:#bad7c2;background:linear-gradient(145deg,#f1f9f1,#fff)}
-.insignia-icon{font-size:24px;line-height:1;filter:grayscale(1);opacity:.55}
-.insignia-card.unlocked .insignia-icon{filter:none;opacity:1}
+.insignia-icon{display:block;flex:0 0 auto;overflow:visible}
 .insignia-card>b{font-size:9px;line-height:1.35;font-weight:800}
 .insignia-card>small{color:#87928a;font-size:8px;font-weight:700}
 .insignia-card.unlocked>small{color:#578063}
@@ -2102,7 +2101,8 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .insignia-card.unlocked .insignia-progress i{background:var(--green)}
 .streak-modal-overlay{z-index:140;padding:18px}
 .streak-modal{width:min(420px,100%);padding:28px 27px 24px;border:1px solid #e1e8df;border-radius:24px;background:#fff;box-shadow:0 28px 80px #10281f4a;text-align:center}
-.streak-modal-flame{display:grid;place-items:center;width:55px;height:55px;margin:0 auto 14px;border-radius:17px;background:#fff0e8;font-size:27px}
+.streak-modal-flame{display:grid;place-items:center;width:55px;height:55px;margin:0 auto 14px;border-radius:17px;background:linear-gradient(145deg,#fff5ec,#ffeadc);box-shadow:inset 0 1px 0 #fff,0 4px 12px #9d4b1b12}
+.streak-modal-flame svg{width:29px;height:33px;filter:drop-shadow(0 2px 2px #9b472633)}
 .streak-modal-flame.muted{filter:grayscale(1);opacity:.55;background:#f0f1ed}
 .streak-modal .streak-details-eyebrow{margin-bottom:5px}
 .streak-modal h2{margin:0 auto 9px;max-width:330px;color:var(--ink);font-family:var(--font-serif);font-size:28px;font-weight:500;line-height:1.08}
@@ -2133,8 +2133,32 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .friend-badges>small{font-size:7px;letter-spacing:.12em;color:#89918c;font-weight:700}
 .friend-badge-list{display:flex;flex-wrap:wrap;gap:6px}
 .friend-badge-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:6px 8px;border:1px solid #e4eae4;border-radius:9px;background:#f7faf6;color:#53665a;font-size:8px;font-weight:700;line-height:1.35}
-.friend-badge-chip i{font-style:normal;font-size:12px;line-height:1}
+.friend-badge-emblem{display:block;flex:0 0 auto;overflow:visible}
+.friend-streak-flame{display:inline-block;width:11px;height:13px;margin-right:2px;vertical-align:-2px;filter:drop-shadow(0 1px 1px #9b472633)}
 .friend-badges-empty{font-size:9px;color:#89918c}
+
+/* Metales y relieve de las insignias; la silueta se conserva por categoría. */
+.badge-emblem{--badge-rim:#a9552f;--badge-shadow:#663821;--badge-face:#e4a16d;--badge-inner:#f6d3ad;--badge-highlight:#fff1df;--badge-ribbon:#a9552f;--badge-ribbon-fold:#663821;--badge-glyph:#65371f;--badge-glyph-soft:#fff0d9;--badge-pin:#fff4df;display:block;overflow:visible}
+.badge-tier-silver{--badge-rim:#788691;--badge-shadow:#4a5660;--badge-face:#c7d0d6;--badge-inner:#eef2f4;--badge-highlight:#fff;--badge-ribbon:#8997a1;--badge-ribbon-fold:#5f6d77;--badge-glyph:#4b5962;--badge-glyph-soft:#fff}
+.badge-tier-gold{--badge-rim:#987020;--badge-shadow:#685018;--badge-face:#e0b64f;--badge-inner:#f7df8a;--badge-highlight:#fff4c8;--badge-ribbon:#bd8d28;--badge-ribbon-fold:#805c18;--badge-glyph:#775715;--badge-glyph-soft:#fff4c4}
+.badge-tier-platinum{--badge-rim:#527b8e;--badge-shadow:#315266;--badge-face:#91b8c9;--badge-inner:#d4ebf3;--badge-highlight:#f8feff;--badge-ribbon:#628da2;--badge-ribbon-fold:#426779;--badge-glyph:#31596c;--badge-glyph-soft:#f1fcff}
+.badge-tier-diamond{--badge-rim:#39788c;--badge-shadow:#244e72;--badge-face:#73c4d2;--badge-inner:#c7f2f4;--badge-highlight:#f3ffff;--badge-ribbon:#4b9eaf;--badge-ribbon-fold:#346f83;--badge-glyph:#285b79;--badge-glyph-soft:#f2ffff}
+.badge-medal-rim{fill:var(--badge-rim);stroke:var(--badge-shadow);stroke-width:1.2}
+.badge-medal-face{fill:var(--badge-face);stroke:var(--badge-highlight);stroke-width:1.35}
+.badge-medal-inner{fill:var(--badge-inner);stroke:var(--badge-rim);stroke-width:.75}
+.badge-medal-glint{fill:none;stroke:var(--badge-highlight);stroke-width:1.6;stroke-linecap:round;opacity:.9}
+.badge-ribbon{fill:var(--badge-ribbon);stroke:var(--badge-shadow);stroke-width:1;stroke-linejoin:round}
+.badge-ribbon-fold{fill:none;stroke:var(--badge-highlight);stroke-width:1.1;stroke-linecap:round;opacity:.75}
+.badge-glyph-fill,.badge-glyph-star{fill:var(--badge-glyph);stroke:var(--badge-shadow);stroke-width:.7;stroke-linejoin:round}
+.badge-glyph-highlight{fill:var(--badge-glyph-soft)}
+.badge-glyph-stroke,.badge-glyph-arrow{fill:none;stroke:var(--badge-glyph);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.badge-glyph-dots{fill:none;stroke:var(--badge-glyph);stroke-width:1.5;stroke-linecap:round}
+.badge-medal-pin{fill:var(--badge-pin);opacity:.65}
+.badge-emblem.is-locked{filter:grayscale(1);opacity:.47}
+.friend-badge-emblem{width:15px;height:17px}
+.streak-flame-outer{fill:#f06b39;stroke:#a74326;stroke-width:1.1;stroke-linejoin:round}
+.streak-flame-inner{fill:#ffc45d;stroke:#e58a31;stroke-width:.65;stroke-linejoin:round}
+.streak-flame-glint{fill:none;stroke:#fff1c9;stroke-width:1.35;stroke-linecap:round}
 
 /* Edición de materias/proyectos y de cada bloque cargado. */
 .focus-project-card{position:relative;grid-template-columns:36px minmax(0,1fr) auto auto;padding-right:47px}

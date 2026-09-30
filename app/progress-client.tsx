@@ -19,6 +19,7 @@ import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, trainingContrib
 import { readingPositionForDate } from "./lib/reading";
 import { applyPatch, type DataPatch } from "./lib/apply-patch";
 import { BADGE_DEFINITIONS, type BadgeStats } from "./lib/badges";
+import { BadgeEmblem, StreakFlameIcon } from "./badge-icons";
 import { useDebouncedRefresh } from "./lib/use-debounced-refresh";
 import {
   GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, emptySocial, goalPercent, goalPeriodLabel,
@@ -119,7 +120,7 @@ function InsigniasModal({ stats, onClose }: { stats: BadgeStats; onClose: () => 
           const unlocked = value >= badge.target;
           const percent = Math.min(100, Math.round(value / badge.target * 100));
           return <article className={"insignia-card " + (unlocked ? "unlocked" : "locked")} key={badge.id}>
-            <span className="insignia-icon" aria-hidden="true">{badge.icon}</span>
+            <BadgeEmblem className="insignia-icon" symbol={badge.symbol} tier={badge.tier} locked={!unlocked} size={46} />
             <b>{badge.title}</b>
             <small>{unlocked ? "Completada" : `${Math.min(value, badge.target)} de ${badge.target}`}</small>
             {!unlocked && <span className="insignia-progress"><i style={{ width: `${percent}%` }} /></span>}
@@ -234,7 +235,7 @@ const FRIEND_NUDGE_MESSAGES = [
   "¡Vamos que se puede! 💪",
   "¿Cómo va tu semana?",
   "Te extrañamos por acá, ¿todo bien?",
-  "¡Gran racha! Seguí así 🔥",
+  "¡Gran racha! Seguí así.",
 ];
 const disciplineKindOptions: DropdownOption[] = Object.entries(kindLabels).map(([value, label]) => ({ value, label }));
 const TRAINING_QUALITY_OPTIONS = [
@@ -2597,7 +2598,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const streakProgress = restoreProgressFromStreak(engagement?.currentStreak ?? 0);
   const streakWidget = engagement && <div className="app-streak-wrap">
     <button type="button" className="app-streak-chip" onClick={() => setStreakInfoOpen((open) => !open)} aria-label={`Racha de ${engagement.currentStreak} ${engagement.currentStreak === 1 ? "día" : "días"}`} aria-expanded={streakInfoOpen} aria-controls="app-streak-details">
-      <span aria-hidden="true">🔥</span>
+      <StreakFlameIcon className="app-streak-flame" />
       <b>{engagement.currentStreak}</b>
     </button>
     {streakActionError && <div className="streak-request-error" role="status">
@@ -3495,7 +3496,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
     <section className="friends-score-grid">
       <article className="panel friend-score-card is-me">
-        <div className="friend-score-head"><span className="friend-avatar">{initialsFor(data.profile.displayName)}</span><p><b>Vos</b><small>{myStreak.current > 0 ? `🔥 ${pluralize(myStreak.current, "día", "días")} de racha` : "Empezá tu racha hoy"}</small></p></div>
+        <div className="friend-score-head"><span className="friend-avatar">{initialsFor(data.profile.displayName)}</span><p><b>Vos</b><small>{myStreak.current > 0 ? <><StreakFlameIcon className="friend-streak-flame" /> {pluralize(myStreak.current, "día", "días")} de racha</> : "Empezá tu racha hoy"}</small></p></div>
         <div className="friend-score-main">
           <div className="friend-score-ring" style={{ "--friend-score": `${score}%` } as CSSProperties}><span><b>{score}</b><small>/100</small></span></div>
           <p><small>DAILY SCORE</small><b>{scoreLabel(score)}</b><span>Esto es lo único que ven tus amigos: el número y la racha, nunca tus registros.</span></p>
@@ -3515,13 +3516,13 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           </div>
           <div className="friend-score-main">
             <div className="friend-score-ring" style={{ "--friend-score": `${friendScore}%` } as CSSProperties}><span><b>{fresh ? friendScore : "–"}</b><small>/100</small></span></div>
-            <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share ? `🔥 ${pluralize(share.streak, "día", "días")} de racha · mejor ${share.bestStreak}` : "Todavía sin racha"}</span></p>
+            <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share ? <><StreakFlameIcon className="friend-streak-flame" /> {pluralize(share.streak, "día", "días")} de racha · mejor {share.bestStreak}</> : "Todavía sin racha"}</span></p>
           </div>
           <div className="friend-badges" aria-label={`Insignias desbloqueadas por ${friend.name}`}>
             <small>INSIGNIAS DESBLOQUEADAS</small>
             {share?.badges?.length ? <div className="friend-badge-list">{share.badges.map((id) => {
               const badge = BADGE_DEFINITIONS.find((item) => item.id === id);
-              return badge ? <span className="friend-badge-chip" key={badge.id}><i aria-hidden="true">{badge.icon}</i>{badge.title}</span> : null;
+              return badge ? <span className="friend-badge-chip" key={badge.id}><BadgeEmblem className="friend-badge-emblem" symbol={badge.symbol} tier={badge.tier} size={20} />{badge.title}</span> : null;
             })}</div> : <span className="friend-badges-empty">Todavía no desbloqueó insignias.</span>}
           </div>
           <div className="friend-nudge-wrap">
@@ -3984,7 +3985,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {badgesOpen && <InsigniasModal stats={badgeStats} onClose={() => setBadgesOpen(false)} />}
     {streakPrompt === "restore" && engagement?.pendingRestore && <div className="streak-modal-overlay" role="presentation">
       <section className="streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title">
-        <span className="streak-modal-flame" aria-hidden="true">🔥</span>
+        <span className="streak-modal-flame"><StreakFlameIcon /></span>
         <p className="streak-details-eyebrow">TU CONSTANCIA</p>
         <h2 id="streak-modal-title">¿Querés restablecer tu racha?</h2>
         <p>La última vez llevabas {pluralize(engagement.pendingRestore.startStreak, "día seguido", "días seguidos")}. Usá un restablecedor para recuperarla.</p>
@@ -3998,7 +3999,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </div>}
     {streakPrompt === "lost" && engagement && <div className="streak-modal-overlay" role="presentation">
       <section className="streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title">
-        <span className="streak-modal-flame muted" aria-hidden="true">🔥</span>
+        <span className="streak-modal-flame muted"><StreakFlameIcon /></span>
         <p className="streak-details-eyebrow">TU CONSTANCIA</p>
         <h2 id="streak-modal-title">Perdiste tu racha</h2>
         <p>{engagement.restoresAvailable === 0 ? "No tenés restablecedores para recuperarla." : "No tenés suficientes restablecedores para recuperarla."} Tu nueva racha empezó hoy.</p>
