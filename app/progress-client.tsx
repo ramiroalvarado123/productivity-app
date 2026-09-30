@@ -11,6 +11,7 @@ import { TourOverlay, type TourStep } from "./tour-overlay";
 import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, dateInTimeZone, formatMinutes, listPhrase, minutesFromClock, pluralize } from "./lib/format";
 import { quoteForDate } from "./lib/quotes";
 import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "./lib/streaks";
+import { restoreProgressFromStreak, type AppEngagement } from "./lib/app-engagement";
 import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, unscheduledTasks, type Block } from "./lib/schedule";
 import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
@@ -101,6 +102,52 @@ type StatsPeriod = "weekly" | "monthly" | "annual";
 type SettingsView = "home" | "personal" | "language" | "notifications";
 type FeedbackType = "positive" | "idea" | "bug" | "dislike";
 type SavePhase = "saving" | "saved" | null;
+type StreakAction = "visit" | "restore" | "decline" | "dismiss_loss";
+type BadgeStats = { bestStreak: number; totalUseDays: number; scoreAbove90Days: number; perfectScoreDays: number };
+type BadgeMetric = keyof BadgeStats;
+
+const BADGE_DEFINITIONS: Array<{ id: string; group: string; title: string; metric: BadgeMetric; target: number; icon: string }> = [
+  { id: "streak-50", group: "Rachas", title: "50 días seguidos", metric: "bestStreak", target: 50, icon: "🔥" },
+  { id: "streak-100", group: "Rachas", title: "100 días seguidos", metric: "bestStreak", target: 100, icon: "🌋" },
+  { id: "streak-365", group: "Rachas", title: "365 días seguidos", metric: "bestStreak", target: 365, icon: "👑" },
+  { id: "use-50", group: "Días de uso total", title: "50 días usando AVORA", metric: "totalUseDays", target: 50, icon: "🌱" },
+  { id: "use-100", group: "Días de uso total", title: "100 días usando AVORA", metric: "totalUseDays", target: 100, icon: "🧭" },
+  { id: "use-200", group: "Días de uso total", title: "200 días usando AVORA", metric: "totalUseDays", target: 200, icon: "🏅" },
+  { id: "use-500", group: "Días de uso total", title: "500 días usando AVORA", metric: "totalUseDays", target: 500, icon: "🏆" },
+  { id: "use-1000", group: "Días de uso total", title: "1000 días usando AVORA", metric: "totalUseDays", target: 1000, icon: "💎" },
+  { id: "score-90-20", group: "Daily Score mayor a 90", title: "20 días arriba de 90", metric: "scoreAbove90Days", target: 20, icon: "⭐" },
+  { id: "score-90-50", group: "Daily Score mayor a 90", title: "50 días arriba de 90", metric: "scoreAbove90Days", target: 50, icon: "🌟" },
+  { id: "score-90-100", group: "Daily Score mayor a 90", title: "100 días arriba de 90", metric: "scoreAbove90Days", target: 100, icon: "✨" },
+  { id: "score-100-20", group: "Daily Score perfecto", title: "20 días con 100 puntos", metric: "perfectScoreDays", target: 20, icon: "💯" },
+  { id: "score-100-50", group: "Daily Score perfecto", title: "50 días con 100 puntos", metric: "perfectScoreDays", target: 50, icon: "🎯" },
+  { id: "score-100-100", group: "Daily Score perfecto", title: "100 días con 100 puntos", metric: "perfectScoreDays", target: 100, icon: "🥇" },
+];
+
+function InsigniasModal({ stats, onClose }: { stats: BadgeStats; onClose: () => void }) {
+  const groups = [...new Set(BADGE_DEFINITIONS.map((badge) => badge.group))];
+  return <div className="insignias-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="insignias-dialog" role="dialog" aria-modal="true" aria-labelledby="insignias-title">
+      <button type="button" className="insignias-close" onClick={onClose} aria-label="Cerrar insignias">×</button>
+      <p className="insignias-eyebrow">TUS LOGROS</p>
+      <h2 id="insignias-title">Mis Insignias</h2>
+      <p className="insignias-intro">Cada insignia se ilumina cuando alcanzás el objetivo.</p>
+      {groups.map((group) => <section className="insignias-group" key={group}>
+        <h3>{group}</h3>
+        <div className="insignias-grid">{BADGE_DEFINITIONS.filter((badge) => badge.group === group).map((badge) => {
+          const value = stats[badge.metric];
+          const unlocked = value >= badge.target;
+          const percent = Math.min(100, Math.round(value / badge.target * 100));
+          return <article className={"insignia-card " + (unlocked ? "unlocked" : "locked")} key={badge.id}>
+            <span className="insignia-icon" aria-hidden="true">{badge.icon}</span>
+            <b>{badge.title}</b>
+            <small>{unlocked ? "Completada" : `${Math.min(value, badge.target)} de ${badge.target}`}</small>
+            {!unlocked && <span className="insignia-progress"><i style={{ width: `${percent}%` }} /></span>}
+          </article>;
+        })}</div>
+      </section>)}
+    </section>
+  </div>;
+}
 
 type NavItem = { id: Section; icon: ReactNode; label: string; mobile: string; center?: true };
 /** Los campos de un objetivo mientras se escribe, antes de existir en el grupo. */
@@ -583,6 +630,12 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const mobileProfileRef = useRef<HTMLDivElement>(null);
+  const [badgesOpen, setBadgesOpen] = useState(false);
+  const [streakInfoOpen, setStreakInfoOpen] = useState(false);
+  const [engagement, setEngagement] = useState<AppEngagement | null>(null);
+  const [streakActionBusy, setStreakActionBusy] = useState(false);
+  const [streakActionError, setStreakActionError] = useState("");
+  const engagementVisitRef = useRef("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsView, setSettingsView] = useState<SettingsView>("home");
   const [settingsName, setSettingsName] = useState("");
@@ -923,12 +976,40 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }, [today, week, monthKey]);
   const silentReload = useCallback(() => loadData({ silent: true }), [loadData]);
   const scheduleRefresh = useDebouncedRefresh(silentReload, 800);
+  const runStreakAction = useCallback(async (action: StreakAction) => {
+    const response = await fetch("/api/streaks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action }),
+    });
+    const result = await readJson<{ state?: AppEngagement; error?: string }>(response);
+    if (!response.ok || !result.state) throw new Error(result.error || "No pudimos actualizar tu racha.");
+    setEngagement(result.state);
+    setStreakActionError("");
+    return result.state;
+  }, []);
+
   // Initial synchronization with the signed-in user's persisted workspace.
   useEffect(() => {
     if (!initialUser.onboardingCompleted) return;
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadData, initialUser.onboardingCompleted]);
+
+  // Cada cuenta registra una visita por día argentino, aunque abra AVORA desde
+  // otro teléfono. El servidor deduplica las cargas repetidas del mismo día.
+  useEffect(() => {
+    if (!data.profile.onboardingCompleted || engagementVisitRef.current === today) return;
+    engagementVisitRef.current = today;
+    let cancelled = false;
+    void runStreakAction("visit").catch((caught) => {
+      if (cancelled) return;
+      engagementVisitRef.current = "";
+      setStreakActionError(caught instanceof Error ? caught.message : "No pudimos cargar tu racha.");
+    });
+    return () => { cancelled = true; };
+  }, [data.profile.onboardingCompleted, today, runStreakAction]);
   // El plan del día marca "ahora" y no ofrece horarios que ya pasaron.
   useEffect(() => {
     const timer = window.setInterval(() => setNowMinutes(argentinaMinutes()), 60000);
@@ -1314,15 +1395,15 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   // Fechas en las que cerraste algo. Se arma una vez porque el histórico del
   // Daily Score pregunta por cientos de días seguidos.
-  const completionDates = new Set([
+  const completionDates = useMemo(() => new Set([
     ...data.goals.filter((goal) => goal.completedAt).map((goal) => (goal.completedAt as string).slice(0, 10)),
     ...data.tasks.filter((task) => task.completedAt && task.dueDate).map((task) => task.dueDate as string),
     ...data.events.filter((event) => event.completedAt).map((event) => event.eventDate),
-  ]);
+  ]), [data.goals, data.tasks, data.events]);
 
   /** Lo que registraste un día cualquiera, tal cual, sin interpretar. */
   const nutritionTargetCalories = data.dietPlan?.targetCalories ?? 0;
-  const dayRecordFor = (date: string): DayRecord => ({
+  const dayRecordFor = useCallback((date: string): DayRecord => ({
     trainingSessions: trainingByDate[date] ?? 0,
     trainingScore: (trainingScoreByDate[date] ?? 0) * 100,
     meals: mealCountByDate[date] ?? 0,
@@ -1338,7 +1419,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     // estaba cerrado: así el histórico no se contamina con objetivos que
     // creaste después.
     hasOpenGoals: data.goals.some((goal) => goal.createdAt.slice(0, 10) <= date && (!goal.completedAt || goal.completedAt.slice(0, 10) >= date)),
-  });
+  }), [trainingByDate, trainingScoreByDate, mealCountByDate, caloriesByDay, nutritionTargetCalories, sleepMinutesByDate, sleepQualityByDate, focusByDate, data.profile.focusDailyTargetMinutes, readingByDate, completionDates, data.goals]);
 
   const trainedToday = (trainingByDate[today] ?? 0) > 0;
   const calories = data.meals.reduce((sum, meal) => sum + meal.calories, 0);
@@ -1349,10 +1430,28 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const factors = dayFactors(dayRecordFor(today));
   const score = scoreFrom(factors, scoreWeights);
   /** Cada fecha se reconstruye con sus propios datos y las prioridades de su mes. */
-  const scoreForDate = (date: string) => scoreFrom(
+  const scoreForDate = useCallback((date: string) => scoreFrom(
     dayFactors(dayRecordFor(date)),
     scoreWeightsForDate(date, data.priorityHistory ?? [], scoreWeights),
-  );
+  ), [dayRecordFor, data.priorityHistory, scoreWeights]);
+  const scoreActivityDates = useMemo(() => new Set([
+    ...Object.keys(trainingByDate),
+    ...data.mealHistory.map((item) => item.mealDate),
+    ...data.dailyCheckins.map((item) => item.entryDate),
+    ...Object.keys(focusByDate),
+    ...data.readingHistory.filter((item) => item.pages > 0).map((item) => item.logDate),
+    ...completionDates,
+  ]), [trainingByDate, data.mealHistory, data.dailyCheckins, focusByDate, data.readingHistory, completionDates]);
+  const scoreBadgeCounts = useMemo(() => {
+    let scoreAbove90Days = 0;
+    let perfectScoreDays = 0;
+    for (const date of scoreActivityDates) {
+      const value = scoreForDate(date);
+      if (value > 90) scoreAbove90Days += 1;
+      if (value === 100) perfectScoreDays += 1;
+    }
+    return { scoreAbove90Days, perfectScoreDays };
+  }, [scoreActivityDates, scoreForDate]);
   const historicalScore = (date: string) => date === today ? null : <div className="historical-score" role="status" aria-live="polite">
     <div>
       <span>{date === dateMinus(today, 1) ? "DAILY SCORE DE AYER" : `DAILY SCORE · ${formatDate(date)}`}</span>
@@ -1483,17 +1582,17 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // La foto del día que ven los amigos: sólo el número y la racha, nunca los
   // registros que lo componen. Se publica cuando cambia, no en cada render.
   useEffect(() => {
-    if (!initialUser.onboardingCompleted || loading) return;
-    const signature = `${today}:${score}:${streaks.logging.current}:${streaks.logging.best}`;
+    if (!initialUser.onboardingCompleted || loading || !engagement) return;
+    const signature = `${today}:${score}:${engagement.currentStreak}:${engagement.bestStreak}`;
     if (publishedShareRef.current === signature) return;
     publishedShareRef.current = signature;
     void fetch("/api/friends", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ action: "publish_share", shareDate: today, score, streak: streaks.logging.current, bestStreak: streaks.logging.best }),
+      body: JSON.stringify({ action: "publish_share", shareDate: today, score, streak: engagement.currentStreak, bestStreak: engagement.bestStreak }),
     }).catch(() => { publishedShareRef.current = ""; });
-  }, [initialUser.onboardingCompleted, loading, today, score, streaks]);
+  }, [initialUser.onboardingCompleted, loading, today, score, engagement]);
 
   // ---------------------------------------------------------------------------
   // Objetivos de grupo que se cuentan solos. Un objetivo puede declarar de qué
@@ -2488,6 +2587,33 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </div>}
   </article>;
 
+  const streakProgress = restoreProgressFromStreak(engagement?.currentStreak ?? 0);
+  const streakWidget = engagement && <div className="app-streak-wrap">
+    <button type="button" className="app-streak-chip" onClick={() => setStreakInfoOpen((open) => !open)} aria-expanded={streakInfoOpen} aria-controls="app-streak-details">
+      <span aria-hidden="true">🔥</span>
+      <b>{engagement.currentStreak}</b>
+      <small>{pluralize(engagement.currentStreak, "día de racha", "días de racha")}</small>
+      <i aria-hidden="true">{streakInfoOpen ? "⌃" : "⌄"}</i>
+    </button>
+    {streakActionError && <div className="streak-request-error" role="status">
+      <span>{streakActionError}</span>
+      <button type="button" onClick={() => { engagementVisitRef.current = today; void runStreakAction("visit").catch((caught) => setStreakActionError(caught instanceof Error ? caught.message : "No pudimos cargar tu racha.")); }}>Reintentar</button>
+    </div>}
+    {streakInfoOpen && <article className="app-streak-details" id="app-streak-details" aria-label="Información de racha">
+      <button type="button" className="app-streak-details-close" onClick={() => setStreakInfoOpen(false)} aria-label="Cerrar información de racha">×</button>
+      <p className="streak-details-eyebrow">CONSTANCIA</p>
+      <h2>Racha</h2>
+      <p>Llevas {pluralize(engagement.currentStreak, "día seguido", "días seguidos")} usando la app.</p>
+      <div className="streak-progress-row">
+        <div className="streak-progress-gaps" role="img" aria-label={`${streakProgress} de 7 días para el próximo restablecedor`}>
+          {Array.from({ length: 7 }, (_, index) => <i className={index < streakProgress ? "filled" : ""} key={index} />)}
+        </div>
+        <span className="streak-restores" title="Restablecedores disponibles">↺ <b>{engagement.restoresAvailable}</b><small>/3</small></span>
+      </div>
+      <small className="streak-progress-caption">{engagement.restoresAvailable >= 3 ? "Máximo de restablecedores acumulados" : streakProgress === 7 ? "¡Completaste 7 días y ganaste un restablecedor!" : `${streakProgress} de 7 días para ganar un restablecedor`}</small>
+    </article>}
+  </div>;
+
   const quotePanel = <aside className="quote-strip">
     <span className="quote-mark" aria-hidden="true">“</span>
     <p>{quote.text}<span className="quote-mark" aria-hidden="true">”</span></p>
@@ -3191,7 +3317,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   // Amigos y grupos
   // ---------------------------------------------------------------------------
   const myEmail = social.me || data.profile.email.toLowerCase();
-  const myStreak = streaks.logging;
+  const myStreak = { current: engagement?.currentStreak ?? 0, best: engagement?.bestStreak ?? 0, pendingToday: false };
 
   async function inviteFriend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3364,7 +3490,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
     <section className="friends-score-grid">
       <article className="panel friend-score-card is-me">
-        <div className="friend-score-head"><span className="friend-avatar">{initialsFor(data.profile.displayName)}</span><p><b>Vos</b><small>{myStreak.current > 0 ? `${pluralize(myStreak.current, "día", "días")} de racha` : "Empezá tu racha hoy"}</small></p></div>
+        <div className="friend-score-head"><span className="friend-avatar">{initialsFor(data.profile.displayName)}</span><p><b>Vos</b><small>{myStreak.current > 0 ? `🔥 ${pluralize(myStreak.current, "día", "días")} de racha` : "Empezá tu racha hoy"}</small></p></div>
         <div className="friend-score-main">
           <div className="friend-score-ring" style={{ "--friend-score": `${score}%` } as CSSProperties}><span><b>{score}</b><small>/100</small></span></div>
           <p><small>DAILY SCORE</small><b>{scoreLabel(score)}</b><span>Esto es lo único que ven tus amigos: el número y la racha, nunca tus registros.</span></p>
@@ -3384,7 +3510,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           </div>
           <div className="friend-score-main">
             <div className="friend-score-ring" style={{ "--friend-score": `${friendScore}%` } as CSSProperties}><span><b>{fresh ? friendScore : "–"}</b><small>/100</small></span></div>
-            <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share?.streak ? `${pluralize(share.streak, "día", "días")} de racha · mejor ${share.bestStreak}` : "Todavía sin racha"}</span></p>
+            <p><small>DAILY SCORE</small><b>{fresh ? share.headline : "Sin datos de hoy"}</b><span>{share?.streak ? `🔥 ${pluralize(share.streak, "día", "días")} de racha · mejor ${share.bestStreak}` : "Todavía sin racha"}</span></p>
           </div>
           <div className="friend-streak-bar"><small>RACHA DE USO</small><i style={{ width: `${Math.min(100, (share?.streak ?? 0) / Math.max(1, Math.max(myStreak.current, share?.streak ?? 0)) * 100)}%` }} /><b>{share?.streak ?? 0}</b></div>
           <div className="friend-nudge-wrap">
@@ -3709,6 +3835,10 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <span aria-hidden="true">⚙</span>
       Configuración
     </button>
+    <button type="button" className="profile-menu-item" role="menuitem" onClick={() => { setProfileMenuOpen(false); setBadgesOpen(true); }}>
+      <span aria-hidden="true">🏅</span>
+      Mis Insignias
+    </button>
     <button type="button" className="profile-menu-item" role="menuitem" onClick={openFeedback}>
       <span aria-hidden="true">♡</span>
       Ayudanos a mejorar AVORA
@@ -3718,6 +3848,25 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       Cerrar sesión
     </a>
   </>;
+
+  const badgeStats: BadgeStats = {
+    bestStreak: engagement?.bestStreak ?? 0,
+    totalUseDays: engagement?.totalUseDays ?? 0,
+    scoreAbove90Days: scoreBadgeCounts.scoreAbove90Days,
+    perfectScoreDays: scoreBadgeCounts.perfectScoreDays,
+  };
+  const streakPrompt = engagement?.pendingRestore ? "restore" : engagement?.lossNoticePending ? "lost" : null;
+  async function submitStreakChoice(action: Exclude<StreakAction, "visit">) {
+    setStreakActionBusy(true);
+    setStreakActionError("");
+    try {
+      await runStreakAction(action);
+    } catch (caught) {
+      setStreakActionError(caught instanceof Error ? caught.message : "No pudimos actualizar tu racha.");
+    } finally {
+      setStreakActionBusy(false);
+    }
+  }
 
   const pullProgress = pullRefreshing ? 1 : Math.min(1, pullDistance / 72);
   return <>
@@ -3753,6 +3902,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       {error && <div className="error-banner">{error}{(error.includes("cargar") || error.includes("conectar tus datos")) && <button type="button" onClick={() => void loadData()}>Reintentar</button>}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
         <NotificationSettings key={refreshVersion} isPro={data.profile.isPro} compact />
+        {streakWidget}
         {quotePanel}
         <section className={"hero-row " + (loading ? "is-loading" : "")}>
           <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
@@ -3826,6 +3976,33 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {checkoutDialog}
     {settingsDialog}
     {feedbackDialog}
+    {badgesOpen && <InsigniasModal stats={badgeStats} onClose={() => setBadgesOpen(false)} />}
+    {streakPrompt === "restore" && engagement?.pendingRestore && <div className="streak-modal-overlay" role="presentation">
+      <section className="streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title">
+        <span className="streak-modal-flame" aria-hidden="true">🔥</span>
+        <p className="streak-details-eyebrow">TU CONSTANCIA</p>
+        <h2 id="streak-modal-title">¿Querés restablecer tu racha?</h2>
+        <p>La última vez llevabas {pluralize(engagement.pendingRestore.startStreak, "día seguido", "días seguidos")}. Usá {pluralize(engagement.pendingRestore.gapDates.length, "restablecedor", "restablecedores")} para recuperarla.</p>
+        <small>Te quedan {engagement.restoresAvailable} de 3.</small>
+        {streakActionError && <p className="streak-modal-error" role="alert">{streakActionError}</p>}
+        <div className="streak-modal-actions">
+          <button type="button" className="streak-modal-primary" disabled={streakActionBusy} onClick={() => void submitStreakChoice("restore")}>{streakActionBusy ? "Actualizando…" : "Restablecer racha"}</button>
+          <button type="button" className="streak-modal-secondary" disabled={streakActionBusy} onClick={() => void submitStreakChoice("decline")}>Empezar de nuevo</button>
+        </div>
+      </section>
+    </div>}
+    {streakPrompt === "lost" && engagement && <div className="streak-modal-overlay" role="presentation">
+      <section className="streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title">
+        <span className="streak-modal-flame muted" aria-hidden="true">🔥</span>
+        <p className="streak-details-eyebrow">TU CONSTANCIA</p>
+        <h2 id="streak-modal-title">Perdiste tu racha</h2>
+        <p>{engagement.restoresAvailable === 0 ? "No tenés restablecedores para recuperarla." : "No tenés suficientes restablecedores para recuperarla."} Tu nueva racha empezó hoy.</p>
+        {streakActionError && <p className="streak-modal-error" role="alert">{streakActionError}</p>}
+        <div className="streak-modal-actions">
+          <button type="button" className="streak-modal-primary" disabled={streakActionBusy} onClick={() => void submitStreakChoice("dismiss_loss")}>{streakActionBusy ? "Guardando…" : "Entendido"}</button>
+        </div>
+      </section>
+    </div>}
     {tourActive && section === "summary" && <TourOverlay steps={TOUR_STEPS} onDone={() => setTourActive(false)} />}
     {voiceOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setVoiceOpen(false); }}>
       <section className="voice-dialog" role="dialog" aria-modal="true" aria-label="Cierre del día">
