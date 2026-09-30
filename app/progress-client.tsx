@@ -394,10 +394,6 @@ function formatFocusHours(minutes: number) {
   const value = Number.isInteger(hours) ? String(hours) : hours.toLocaleString("es-AR", { maximumFractionDigits: 2 });
   return `${value} h`;
 }
-function projectOptions(projects: Array<{ id: number; name: string }>, noneLabel = "Sin proyecto"): DropdownOption[] {
-  return [{ value: "", label: noneLabel }, ...projects.map((project) => ({ value: String(project.id), label: project.name }))];
-}
-
 function normalizedPlanText(value: string) {
   return value.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 }
@@ -2401,9 +2397,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const focusProjectsInTab = data.focusProjects.filter((project) => project.kind === focusTab);
   const focusProjectIds = new Set(focusProjectsInTab.map((project) => project.id));
-  // Las tareas sin proyecto se muestran en las dos vistas: no pertenecen a
-  // ninguna de las dos y esconderlas en ambas sería peor.
-  const tasksInTab = data.tasks.filter((task) => !task.projectId || focusProjectIds.has(task.projectId));
   const focusTodayInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date === today), 0);
   const focusWeekInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date >= week[0].iso), 0);
   const focusEntryMinutesInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date === focusEntryDate), 0);
@@ -2434,12 +2427,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             </li>;
           })}</ul> : <p className="focus-session-empty">Todavía no cargaste horas para esta fecha.</p>}
         </section>}
-      </article>
+    </article>
     <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO" : "TRABAJO"} · {focusEntryDate === today ? "HOY" : formatDate(focusEntryDate).toUpperCase()}</p><b>{formatFocusHours(focusEntryDate === today ? focusTodayInTab : focusEntryMinutesInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatFocusHours(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
-      <article className="panel focus-tasks-panel"><div className="panel-heading"><div><p>TAREAS</p><h2>Próximos pasos</h2></div><span className="week-pill">{tasksInTab.filter((item) => item.completedAt).length}/{tasksInTab.length} hechas</span></div>
-        <form className="task-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_task", title: form.get("title"), projectId: form.get("projectId"), dueDate: form.get("dueDate"), startTime: form.get("startTime"), durationMinutes: form.get("durationMinutes") }); }}><input name="title" required placeholder="Nueva tarea…" /><Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia de la tarea" : "Proyecto de la tarea"} options={projectOptions(focusProjectsInTab, focusTab === "study" ? "Sin materia" : "Sin proyecto")} /><input name="dueDate" type="date" defaultValue={today} /><input name="startTime" type="time" aria-label="Hora de inicio" /><Dropdown name="durationMinutes" ariaLabel="Duración" defaultValue="60" options={durationOptions([30, 45, 60, 90, 120])} /><button disabled={saving}><SaveButtonContent label="＋" phase={savePhase("add_task")} /></button></form>
-        <div className="task-list compact-task-list">{tasksInTab.map((task) => { const done = taskDone(task.id, Boolean(task.completedAt)); return <div className={done ? "completed" : ""} key={task.id}><button className="task-check" aria-pressed={done} onClick={() => void toggleTask(task.id, !done)}>{done ? "✓" : ""}</button><p><b>{task.title}</b><small>{task.dueDate ? formatDate(task.dueDate) : "Sin fecha"}{task.startTime ? ` · ${task.startTime}${task.durationMinutes ? " (" + formatMinutes(task.durationMinutes) + ")" : ""}` : task.dueDate ? " · sin horario" : ""}{task.projectId ? " · " + (data.focusProjects.find((item) => item.id === task.projectId)?.name || "") : ""}</small></p><button className="row-delete" onClick={() => void save({ action: "delete_task", id: task.id })}>×</button></div>; })}{!tasksInTab.length && <div className="inline-empty"><span>✓</span><p><b>No hay tareas pendientes</b><small>Usá la fila de arriba para crear una.</small></p></div>}</div>
-      </article>
   </section>;
 
   const calendarStart = new Date(calendarCursor + "-01T12:00:00");
