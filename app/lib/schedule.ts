@@ -37,6 +37,8 @@ export type ScheduleInput = {
 
 export const DEFAULT_DAY_START = 7 * 60;
 export const DEFAULT_DAY_END = 23 * 60;
+/** Horas visibles en la agenda semanal de Plan; incluye un turno que empieza a las 23:00. */
+export const PLAN_AGENDA_HOURS = Array.from({ length: 19 }, (_, index) => index + 5);
 /** Un bloque más corto que esto no se ofrece como hueco útil. */
 export const MIN_USEFUL_SLOT = 30;
 

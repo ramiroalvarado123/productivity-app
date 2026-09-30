@@ -69,14 +69,14 @@ export function trainingContribution(priority: "important" | "secondary" | undef
 }
 
 /**
- * La duración marca el máximo posible y la calidad lo ajusta.
- * "Malo" conserva parte del mérito por haber descansado, pero nunca puede
- * valer lo mismo que una noche reparadora. Sin valoración se mantiene el
- * cálculo histórico para no alterar registros anteriores.
+ * La duración define el puntaje base y la valoración subjetiva lo ajusta.
+ * Una mala noche conserva el 65 % del puntaje de duración: así dormir poco
+ * sigue dando un puntaje bajo, mientras que dormir suficiente aporta crédito
+ * aunque la persona haya descansado mal. Sin valoración no se aplica ajuste.
  */
 export function sleepScoreFromDuration(minutes: number, quality: "good" | "bad" | null | undefined) {
   const durationScore = Math.min(100, Math.round(Math.max(0, minutes) / FULL_SLEEP_MINUTES * 100));
-  return quality === "bad" ? Math.round(durationScore * 0.4) : durationScore;
+  return quality === "bad" ? Math.round(durationScore * 0.65) : durationScore;
 }
 
 export function nutritionScoreFromCalories(calories: number, targetCalories: number): number | null {

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { countdownLabel, formatMinutes, listPhrase, minutesFromClock, pluralize } from "../app/lib/format";
-import { dayBlocks, dayWindow, findSlot, freeSlots, overlappingBlocks, unscheduledTasks } from "../app/lib/schedule";
+import { dayBlocks, dayWindow, findSlot, freeSlots, overlappingBlocks, PLAN_AGENDA_HOURS, unscheduledTasks } from "../app/lib/schedule";
 import { streakFor, trendFor } from "../app/lib/streaks";
 import { buildInsights, closeInsights, planInsights, type InsightInput } from "../app/lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "../app/lib/review";
@@ -111,6 +111,12 @@ test("dayWindow entiende una hora de acostarse después de medianoche", () => {
   // 01:10 pertenece al día siguiente: la ventana no puede terminar a la madrugada.
   assert.deepEqual(dayWindow("07:00", "01:10"), { start: 450, end: 1439 });
   assert.deepEqual(dayWindow("", ""), { start: 420, end: 1380 });
+});
+
+test("la agenda semanal de Plan permite bloques desde las 05:00 hasta las 23:00", () => {
+  assert.equal(PLAN_AGENDA_HOURS[0], 5);
+  assert.equal(PLAN_AGENDA_HOURS.at(-1), 23);
+  assert.equal(PLAN_AGENDA_HOURS.length, 19);
 });
 
 // --- rachas y tendencias -----------------------------------------------------
@@ -270,6 +276,17 @@ test("ningún factor pasa de 100 por más que te excedas", () => {
 test("un objetivo abierto sin cerrar nada vale la mitad", () => {
   assert.equal(dayFactors({ ...emptyDay, hasOpenGoals: true }).goals, 50);
   assert.equal(dayFactors({ ...emptyDay, hasOpenGoals: true, completedSomething: true }).goals, 100);
+});
+
+test("el puntaje de sueño combina duración y calidad", () => {
+  const fourHoursBad = dayFactors({ ...emptyDay, sleepMinutes: 4 * 60, sleepQuality: "bad" }).sleep;
+  const eightHoursBad = dayFactors({ ...emptyDay, sleepMinutes: 8 * 60, sleepQuality: "bad" }).sleep;
+  const eightHoursGood = dayFactors({ ...emptyDay, sleepMinutes: 8 * 60, sleepQuality: "good" }).sleep;
+
+  assert.ok(fourHoursBad < 40, `4 h y mala calidad deben puntuar bajo: ${fourHoursBad}`);
+  assert.ok(eightHoursBad > 40, `8 h deben conservar crédito aunque la calidad sea mala: ${eightHoursBad}`);
+  assert.ok(eightHoursBad > fourHoursBad, "dormir más debe subir el puntaje incluso con mala calidad");
+  assert.ok(eightHoursBad < eightHoursGood, "una mala calidad debe reducir el puntaje frente a una buena");
 });
 
 test("las prioridades cambian el puntaje del mismo día", () => {
