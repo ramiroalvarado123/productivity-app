@@ -281,7 +281,9 @@ export function closeInsights(insights: Insight[]) {
 export function insightHeadline(insights: Insight[], score: number, priorities: string[]) {
   const alerts = insights.filter((insight) => insight.tone === "alert").length;
   if (alerts) return `${pluralize(alerts, "cosa", "cosas")} para acomodar antes de arrancar.`;
-  if (insights.length) return `${pluralize(insights.length, "sugerencia", "sugerencias")} para que el día rinda más.`;
+  const suggestions = insights.filter((insight) => insight.tone === "suggestion").length;
+  if (suggestions) return `${pluralize(suggestions, "sugerencia", "sugerencias")} para que el día rinda más.`;
+  if (insights.length) return "Tus datos muestran cosas que van bien.";
   if (score >= 75) return "El día viene bien encaminado.";
   return priorities.length ? `Tu foco de este mes: ${listPhrase(priorities).toLowerCase()}.` : "Nada urgente. Arrancá por lo más difícil.";
 }

@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 export type ResourceKind = "article" | "podcast" | "video";
-export type StudyResource = { id: number; kind: ResourceKind; title: string; author: string; url: string; status: "pending" | "done"; createdAt: string };
+export type StudyResource = { id: number; kind: ResourceKind; title: string; author: string; url: string; status: "pending" | "done"; createdAt: string; updatedAt?: string };
 export type ResourceNote = { id: number; resourceId: number; content: string; createdAt: string };
 type NoteItem = { id: number; content: string; createdAt: string };
 type SaveFn = (payload: Record<string, unknown>, feedbackKey?: string) => Promise<boolean>;

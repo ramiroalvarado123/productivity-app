@@ -62,6 +62,14 @@ export function usagePreferencesJsonWithEngagement(rawValue: unknown, engagement
 
 /** Registra un anuncio sin borrar preferencias, racha ni otros metadatos. */
 export function usagePreferencesJsonWithSeenAnnouncement(rawValue: unknown, announcementId: string) {
+  return usagePreferencesJsonWithSeenAnnouncements(rawValue, [announcementId]);
+}
+
+/** Resúmenes semanales que se conservan como leídos (unos 14 meses). */
+const MAX_SEEN_SUMMARIES = 60;
+
+/** Varios a la vez (p. ej. "marcar todo como leído"), sin que la lista crezca para siempre. */
+export function usagePreferencesJsonWithSeenAnnouncements(rawValue: unknown, announcementIds: string[]) {
   const parsed = parsedValue(rawValue);
   const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
     ? parsed as Record<string, unknown>
@@ -70,6 +78,12 @@ export function usagePreferencesJsonWithSeenAnnouncement(rawValue: unknown, anno
     ...record,
     preferences: profilePreferences(rawValue),
     ...(ENGAGEMENT_KEY in record ? { [ENGAGEMENT_KEY]: profileEngagement(rawValue) } : {}),
-    [SEEN_ANNOUNCEMENTS_KEY]: [...new Set([...profileSeenAnnouncements(rawValue), announcementId])],
+    [SEEN_ANNOUNCEMENTS_KEY]: trimSeen([...new Set([...profileSeenAnnouncements(rawValue), ...announcementIds])]),
   });
+}
+
+function trimSeen(ids: string[]) {
+  const summaries = ids.filter((id) => id.startsWith("weekly_summary:")).sort();
+  const dropped = new Set(summaries.slice(0, Math.max(0, summaries.length - MAX_SEEN_SUMMARIES)));
+  return ids.filter((id) => !dropped.has(id));
 }

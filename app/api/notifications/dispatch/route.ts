@@ -464,9 +464,10 @@ function summaryCandidates(email: string, profile: Row, preferences: Row, clock:
       email,
       kind: "weekly_summary",
       referenceKey: clock.date,
-      title: "Tu resumen semanal",
-      body: "Mira tu progreso, tus rachas y las áreas que conviene acomodar.",
-      url: "/?section=stats",
+      title: "Tu resumen semanal está listo",
+      body: "Entrenamiento, foco, sueño, comidas y lectura de la semana, área por área.",
+      // El resumen va de lunes a domingo: la app lo abre con el lunes de esta semana.
+      url: "/?summary=" + addDays(clock.date, -6),
     });
   }
   if (booleanValue(preferences, "monthly_summary_enabled", true) && isLastDay && dueWithinWindow(clock.time, stringValue(preferences, "monthly_summary_time", "20:00"))) {
@@ -520,6 +521,18 @@ export async function POST(request: Request) {
       if (Number.isNaN(parsed.getTime())) return Response.json({ error: "test_now inválido." }, { status: 400 });
       now = parsed;
     }
+    // Invitaciones de las últimas 24 h: cada una avisa una sola vez (notification_deliveries).
+    const inviteSince = new Date(now.getTime() - 24 * 3600_000).toISOString();
+    const recentInvites = (table: string, select: string) => isAnnouncementCampaign
+      ? Promise.resolve([] as Row[])
+      : adminRequest(table, new URLSearchParams({ select, status: "eq.pending", created_at: "gte." + inviteSince }).toString()).catch((error) => {
+        console.warn("notifications invites unavailable", table, error);
+        return [] as Row[];
+      });
+    const [friendInvites, groupInvites] = await Promise.all([
+      recentInvites("friend_invites", "code,from_name,from_email,to_email,created_at"),
+      recentInvites("group_invites", "id,group_name,from_name,from_email,to_email,created_at"),
+    ]);
     const [preferenceRows, subscriptions, profiles, events] = await Promise.all([
       adminRequest("notification_preferences", new URLSearchParams({ push_enabled: "eq.true" }).toString()),
       adminRequest("push_subscriptions"),
@@ -597,6 +610,30 @@ export async function POST(request: Request) {
       const candidates: Candidate[] = isAnnouncementCampaign
         ? [{ email, kind: EARLY_ADOPTER_BROADCAST_KIND, referenceKey: EARLY_ADOPTER_ANNOUNCEMENT_ID, title: EARLY_ADOPTER_BROADCAST_TITLE, body: EARLY_ADOPTER_BROADCAST_BODY, url: "/" }]
         : onlyDailyScore ? [] : summaryCandidates(email, profile, preference, clock);
+
+      if (!onlyDailyScore && !isAnnouncementCampaign) {
+        const mine = (row: Row) => stringValue(row, "to_email").toLowerCase() === email.toLowerCase();
+        for (const invite of friendInvites.filter(mine)) {
+          candidates.push({
+            email,
+            kind: "friend_invite",
+            referenceKey: stringValue(invite, "code"),
+            title: "Nueva solicitud de amistad",
+            body: (stringValue(invite, "from_name") || stringValue(invite, "from_email")) + " quiere sumarte a su círculo en AVORA.",
+            url: "/?notifications=1",
+          });
+        }
+        for (const invite of groupInvites.filter(mine)) {
+          candidates.push({
+            email,
+            kind: "group_invite",
+            referenceKey: String(numberValue(invite, "id")),
+            title: "Te invitaron a un grupo",
+            body: (stringValue(invite, "from_name") || stringValue(invite, "from_email")) + " te invitó a " + (stringValue(invite, "group_name") || "un grupo") + ".",
+            url: "/?notifications=1",
+          });
+        }
+      }
 
       if (!onlyDailyScore && booleanValue(preference, "calendar_enabled", true) && dueWithinWindow(clock.time, stringValue(preference, "calendar_reminder_time", "18:00"))) {
         const daysBefore = Math.max(1, Math.min(30, Math.round(numberValue(preference, "calendar_reminder_days_before", 1))));

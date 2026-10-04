@@ -1,9 +1,12 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { EARLY_ADOPTER_ANNOUNCEMENT_ID } from "../../../lib/early-adopter-announcement";
-import { profileSeenAnnouncements, usagePreferencesJsonWithSeenAnnouncement } from "../../../lib/profile-metadata";
+import { profileSeenAnnouncements, usagePreferencesJsonWithSeenAnnouncements } from "../../../lib/profile-metadata";
 import { insertRows, selectRows, updateRows } from "../../../lib/supabase-db";
 
 type ProfileRow = Record<string, unknown> & { email: string; displayName: string; usagePreferencesJson: string };
+
+/** Anuncios únicos y resúmenes semanales ("weekly_summary:<lunes>") que se marcan como leídos. */
+const SEEN_ID = /^weekly_summary:\d{4}-\d{2}-\d{2}$/;
 
 function fail(message: string, status = 400) {
   return Response.json({ error: message }, { status });
@@ -14,8 +17,13 @@ export async function POST(request: Request) {
     const user = await getChatGPTUser();
     if (!user) return fail("Necesitás iniciar sesión.", 401);
 
-    const body = await request.json().catch(() => null) as { announcementId?: unknown } | null;
-    if (body?.announcementId !== EARLY_ADOPTER_ANNOUNCEMENT_ID) return fail("Anuncio inválido.");
+    const body = await request.json().catch(() => null) as { announcementId?: unknown; ids?: unknown } | null;
+    const requested = [
+      ...(body?.announcementId === undefined ? [] : [body.announcementId]),
+      ...(Array.isArray(body?.ids) ? body.ids : []),
+    ];
+    const ids = [...new Set(requested.filter((id): id is string => typeof id === "string"))];
+    if (!ids.length || ids.length > 20 || ids.some((id) => id !== EARLY_ADOPTER_ANNOUNCEMENT_ID && !SEEN_ID.test(id))) return fail("Anuncio inválido.");
 
     await insertRows("profiles", { email: user.email, displayName: user.displayName }, {
       upsert: true,
@@ -26,10 +34,10 @@ export async function POST(request: Request) {
     if (!profile) return fail("No pudimos cargar tu perfil.", 404);
 
     const seen = profileSeenAnnouncements(profile.usagePreferencesJson);
-    if (seen.includes(EARLY_ADOPTER_ANNOUNCEMENT_ID)) return Response.json({ ok: true, alreadySeen: true });
+    if (ids.every((id) => seen.includes(id))) return Response.json({ ok: true, alreadySeen: true });
 
     await updateRows("profiles", { email: user.email }, {
-      usagePreferencesJson: usagePreferencesJsonWithSeenAnnouncement(profile.usagePreferencesJson, EARLY_ADOPTER_ANNOUNCEMENT_ID),
+      usagePreferencesJson: usagePreferencesJsonWithSeenAnnouncements(profile.usagePreferencesJson, ids),
       updatedAt: new Date().toISOString(),
     });
     return Response.json({ ok: true, alreadySeen: false });

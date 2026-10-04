@@ -13,7 +13,7 @@ import { quoteForDate } from "./lib/quotes";
 import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "./lib/streaks";
 import { restoreProgressFromStreak, type AppEngagement } from "./lib/app-engagement";
 import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, PLAN_AGENDA_HOURS, unscheduledTasks, type Block } from "./lib/schedule";
-import { buildInsights, closeInsights, insightHeadline, planInsights, type ComingDay, type InsightAction } from "./lib/insights";
+import { buildInsights, closeInsights, insightHeadline, type ComingDay, type InsightAction } from "./lib/insights";
 import { dayClose, isReviewDay, weeklyReview } from "./lib/review";
 import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, trainingContribution, type DayRecord, type ScoreWeights } from "./lib/score";
 import { readingPositionForDate } from "./lib/reading";
@@ -21,6 +21,9 @@ import { applyPatch, type DataPatch } from "./lib/apply-patch";
 import { BADGE_DEFINITIONS, type BadgeStats } from "./lib/badges";
 import { BadgeEmblem, StreakFlameIcon } from "./badge-icons";
 import { NotesThread, StudyResourcesPanel, type ResourceNote, type StudyResource } from "./study-resources";
+import { NotificationsDialog, WeeklySummaryDialog, type InboxItem } from "./notifications-center";
+import { buildPatternInsights, rankInsights, type AreaKey } from "./lib/patterns";
+import { buildWeeklySummary, lastClosedWeekStart } from "./lib/weekly-summary";
 import { useDebouncedRefresh } from "./lib/use-debounced-refresh";
 import { EarlyAdopterAnnouncement } from "./early-adopter-announcement";
 import { EARLY_ADOPTER_ANNOUNCEMENT_ID } from "./lib/early-adopter-announcement";
@@ -706,6 +709,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const mobileProfileRef = useRef<HTMLDivElement>(null);
   const [badgesOpen, setBadgesOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  /** Lunes de la semana cuyo resumen está abierto; `fresh` cuando se abrió solo por estar recién listo. */
+  const [openSummary, setOpenSummary] = useState<{ weekStart: string; fresh: boolean } | null>(null);
+  const autoSummaryRef = useRef("");
+  const urlIntentRef = useRef<{ summary: string; notifications: boolean; section: string } | null>(null);
   const [streakInfoOpen, setStreakInfoOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [announcementSaving, setAnnouncementSaving] = useState(false);
@@ -1811,8 +1819,140 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     overlaps: overlappingBlocks(todayBlocks),
     comingDays,
   }), [today, nowMinutes, todayBlocks, todaySlots, todayWindow, todayUnscheduled, sleepByDate, recentSleepNights, earlierSleepNights, calories, dietTargetCalories, data.readingHistory, data.books, data.goals, activeCategories, comingDays]);
-  const planNotices = useMemo(() => planInsights(insights), [insights]);
-  const closeNotices = useMemo(() => closeInsights(insights), [insights]);
+  // Patrones del historial: cruzan áreas, siguen metas y rachas. Se suman a
+  // los avisos de la agenda y el panel muestra los más relevantes sin repetir área.
+  const patternInsights = useMemo(() => {
+    const scores: Record<string, number> = {};
+    for (let index = 0; index <= 60; index += 1) {
+      const date = dateMinus(today, index);
+      scores[date] = scoreForDate(date);
+    }
+    const sleepRows = data.dailyCheckins.filter((row) => row.sleepMinutes > 0);
+    const priorityAreas: Array<{ area: AreaKey; label: string; weight: number }> = [
+      { area: "training", label: "Entrenamiento", weight: priorityDraft.gymWeight },
+      { area: "nutrition", label: "Alimentación", weight: priorityDraft.nutritionWeight },
+      { area: "sleep", label: "Sueño", weight: priorityDraft.sleepWeight },
+      { area: "focus", label: "Estudio / Trabajo", weight: priorityDraft.focusWeight },
+      { area: "reading", label: "Lectura", weight: priorityDraft.readingWeight },
+    ];
+    return buildPatternInsights({
+      today,
+      nowMinutes,
+      training: trainingByDate,
+      focus: focusByDate,
+      sleep: sleepByDate,
+      bedtimes: Object.fromEntries(sleepRows.map((row) => [row.entryDate, row.bedtime])),
+      wakeTimes: Object.fromEntries(sleepRows.map((row) => [row.entryDate, row.wakeTime])),
+      reading: sumByDate(data.readingHistory, (row) => row.logDate, (row) => row.pages),
+      calories: sumByDate(data.mealHistory, (row) => row.mealDate, (row) => row.calories),
+      meals: sumByDate(data.mealHistory, (row) => row.mealDate, () => 1),
+      scores,
+      targetCalories: dietTargetCalories,
+      focusTargetMinutes: data.profile.focusDailyTargetMinutes || 120,
+      trainingWeeklyTarget,
+      priorities: priorityAreas,
+      books: data.books.filter((book) => book.status === "reading"),
+    });
+  }, [today, nowMinutes, scoreForDate, data.dailyCheckins, data.readingHistory, data.mealHistory, data.books, data.profile.focusDailyTargetMinutes, priorityDraft, trainingByDate, focusByDate, sleepByDate, dietTargetCalories, trainingWeeklyTarget]);
+  const planNotices = useMemo(() => rankInsights([...insights, ...patternInsights]), [insights, patternInsights]);
+  const closeNotices = useMemo(() => closeInsights(insights).filter((notice) => !planNotices.some((shown) => shown.id === notice.id)), [insights, planNotices]);
+
+  // ---------------------------------------------------------------------------
+  // Notificaciones de la cuenta: el resumen de cada semana cerrada y las
+  // invitaciones de amistad y de grupos. Lo leído se guarda en el perfil, así
+  // que un resumen visto en el celular ya figura leído en la compu.
+  // ---------------------------------------------------------------------------
+  const seenIds = useMemo(() => new Set(data.profile.seenAnnouncements ?? []), [data.profile.seenAnnouncements]);
+  const latestSummaryWeek = lastClosedWeekStart(today, nowMinutes);
+  const summaryWeeks = useMemo(() => {
+    const weeks: Array<{ weekStart: string; weekEnd: string; average: number; activeDays: number }> = [];
+    for (let index = 0; index < 8; index += 1) {
+      const weekStart = dateMinus(latestSummaryWeek, index * 7);
+      const dates = Array.from({ length: 7 }, (_, day) => datePlus(weekStart, day));
+      const activeDays = dates.filter((date) => scoreActivityDates.has(date)).length;
+      if (!activeDays) continue;
+      weeks.push({ weekStart, weekEnd: dates[6], average: Math.round(dates.reduce((sum, date) => sum + scoreForDate(date), 0) / 7), activeDays });
+    }
+    return weeks;
+  }, [latestSummaryWeek, scoreActivityDates, scoreForDate]);
+  const inboxItems = useMemo<InboxItem[]>(() => {
+    const dayMonth = (date: string) => new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short" }).format(new Date(date + "T12:00:00")).replace(".", "");
+    const items: InboxItem[] = [
+      ...social.incoming.map((invite) => ({ id: `friend_invite:${invite.code}`, kind: "friend_invite" as const, date: invite.createdAt, title: invite.fromName || invite.fromEmail, body: "Quiere sumarte a su círculo para compartir el Daily Score y las rachas.", unread: true as const, code: invite.code })),
+      ...social.groupInvites.map((invite) => ({ id: `group_invite:${invite.id}`, kind: "group_invite" as const, date: invite.createdAt, title: invite.groupName || "Un grupo", body: `Te invitó ${invite.fromName || invite.fromEmail}.`, unread: true as const, inviteId: invite.id })),
+      ...summaryWeeks.map((week) => ({ id: `weekly_summary:${week.weekStart}`, kind: "weekly_summary" as const, date: week.weekEnd, title: `Tu semana del ${dayMonth(week.weekStart)} al ${dayMonth(week.weekEnd)}`, body: `Daily Score promedio ${week.average}/100 · ${week.activeDays}/7 días con registros.`, unread: week.weekStart === latestSummaryWeek && !seenIds.has(`weekly_summary:${week.weekStart}`), weekStart: week.weekStart })),
+    ];
+    return items.sort((left, right) => right.date.localeCompare(left.date));
+  }, [social.incoming, social.groupInvites, summaryWeeks, seenIds, latestSummaryWeek]);
+  const unreadCount = inboxItems.filter((item) => item.unread).length;
+  const markSummariesSeen = useCallback((ids: string[]) => {
+    const fresh = ids.filter((id) => !(data.profile.seenAnnouncements ?? []).includes(id));
+    if (!fresh.length) return;
+    setData((current) => ({ ...current, profile: { ...current.profile, seenAnnouncements: [...new Set([...(current.profile.seenAnnouncements ?? []), ...fresh])] } }));
+    void fetch("/api/announcements/seen", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ ids: fresh }) }).catch(() => undefined);
+  }, [data.profile.seenAnnouncements]);
+  const showSummary = useCallback((weekStart: string, fresh: boolean) => {
+    const monday = weekFor(weekStart)[0].iso;
+    autoSummaryRef.current = `weekly_summary:${monday}`;
+    setOpenSummary({ weekStart: monday, fresh });
+    markSummariesSeen([`weekly_summary:${monday}`]);
+  }, [markSummariesSeen]);
+  const weeklySummary = useMemo(() => {
+    if (!openSummary) return null;
+    const weekStart = openSummary.weekStart;
+    const dates = Array.from({ length: 14 }, (_, index) => datePlus(weekStart, index - 7));
+    const weekEnd = datePlus(weekStart, 6);
+    return buildWeeklySummary({
+      weekStart,
+      scores: Object.fromEntries(dates.map((date) => [date, scoreForDate(date)])),
+      training: trainingByDate,
+      trainingWeeklyTarget,
+      disciplines: data.disciplines,
+      trainingLogs: effectiveTrainingLogs,
+      exerciseLogs: data.exerciseLogs,
+      meals: data.mealHistory,
+      targetCalories: dietTargetCalories,
+      sleep: data.dailyCheckins,
+      focus: focusByDate,
+      focusTargetMinutes: data.profile.focusDailyTargetMinutes || 120,
+      focusSessions: uniqueFocusSessions,
+      focusProjects: data.focusProjects,
+      readingLogs: data.readingHistory,
+      books: data.books,
+      notesCreated: [...data.notes.map((note) => note.createdAt), ...(data.resourceNotes ?? []).map((note) => note.createdAt)],
+      resourcesDone: (data.resources ?? []).filter((item) => item.status === "done").map((item) => ({ title: item.title, updatedAt: item.updatedAt ?? item.createdAt })),
+      goalsCompleted: data.goals.filter((goal) => goal.completedAt).map((goal) => ({ title: goal.title, completedAt: goal.completedAt as string })),
+      tasksCompleted: data.tasks.filter((task) => task.completedAt && task.dueDate && task.dueDate >= weekStart && task.dueDate <= weekEnd).length,
+    });
+  }, [openSummary, scoreForDate, trainingByDate, trainingWeeklyTarget, data, effectiveTrainingLogs, dietTargetCalories, focusByDate, uniqueFocusSessions]);
+
+  // Links de las notificaciones push: ?summary=<lunes>, ?notifications=1 o ?section=<sección>.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const summary = params.get("summary") ?? "";
+    const section = params.get("section") ?? "";
+    if (!summary && !params.has("notifications") && !section) return;
+    urlIntentRef.current = { summary: /^\d{4}-\d{2}-\d{2}$/.test(summary) ? summary : "", notifications: params.has("notifications"), section };
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+  useEffect(() => {
+    const intent = urlIntentRef.current;
+    if (!intent || loading) return;
+    urlIntentRef.current = null;
+    if (["summary", "score", "physical", "focus", "sleep", "plan", "stats", "friends", "pro"].includes(intent.section)) openSection(intent.section as Section);
+    if (intent.summary) showSummary(intent.summary, false);
+    else if (intent.notifications) setInboxOpen(true);
+  }, [loading, showSummary]);
+  // El resumen de la semana que acaba de cerrar se abre solo, una vez.
+  useEffect(() => {
+    if (loading || !initialUser.onboardingCompleted || announcementOpen || openSummary || inboxOpen || urlIntentRef.current) return;
+    if (engagement?.pendingRestore || engagement?.lossNoticePending) return;
+    const latest = summaryWeeks[0];
+    if (!latest || latest.weekStart !== latestSummaryWeek) return;
+    const id = `weekly_summary:${latest.weekStart}`;
+    if (seenIds.has(id) || autoSummaryRef.current === id) return;
+    showSummary(latest.weekStart, true);
+  }, [loading, initialUser.onboardingCompleted, announcementOpen, openSummary, inboxOpen, engagement, summaryWeeks, latestSummaryWeek, seenIds, showSummary]);
 
   const quote = useMemo(() => quoteForDate(today), [today]);
   useEffect(() => {
@@ -3973,6 +4113,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const profileMenuActions = <>
     <p>CUENTA</p>
+    <button type="button" className="profile-menu-item" role="menuitem" onClick={() => { setProfileMenuOpen(false); setInboxOpen(true); }}>
+      <span aria-hidden="true">◌</span>
+      Notificaciones
+      {unreadCount > 0 && <em className="profile-menu-count">{unreadCount}</em>}
+    </button>
     <button type="button" className="profile-menu-item" role="menuitem" onClick={() => { setProfileMenuOpen(false); openSection("pro"); }}>
       <span aria-hidden="true">★</span>
       Gestionar membresía
@@ -4035,10 +4180,11 @@ export default function ProgressClient({ initialUser, initialError = "", pending
           >
             {data.profile.avatarUrl ? <Image className="profile-chip-avatar" src={data.profile.avatarUrl} alt="" width={36} height={36} unoptimized /> : <span>{displayName.charAt(0)}</span>}
             <div><b>{displayName}</b><small>{data.profile.username ? "@" + data.profile.username : "Datos guardados"}</small></div>
+            {unreadCount > 0 && <em className="profile-unread-count" aria-label={`${unreadCount} notificaciones sin leer`}>{unreadCount}</em>}
             <i className="profile-menu-chevron" aria-hidden="true">{profileMenuOpen ? "▾" : "▴"}</i>
           </button>
         </div></aside>
-    <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
+    <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}{unreadCount > 0 && <i className="profile-unread-dot" aria-label={`${unreadCount} notificaciones sin leer`} />}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
       {error && <div className="error-banner">{error}{(error.includes("cargar") || error.includes("conectar tus datos")) && <button type="button" onClick={() => void loadData()}>Reintentar</button>}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <>
         <NotificationSettings key={refreshVersion} isPro={data.profile.isPro} compact />
@@ -4118,6 +4264,22 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     {feedbackDialog}
     {announcementOpen && <EarlyAdopterAnnouncement busy={announcementSaving} error={announcementError} onAcknowledge={() => void acknowledgeAnnouncement()} />}
     {badgesOpen && <InsigniasModal stats={badgeStats} onClose={() => setBadgesOpen(false)} />}
+    {inboxOpen && <NotificationsDialog
+      items={inboxItems}
+      today={today}
+      busy={saving}
+      onClose={() => setInboxOpen(false)}
+      onOpenSummary={(weekStart) => showSummary(weekStart, false)}
+      onFriendInvite={(code, accept) => void sendSocial({ action: accept ? "accept_invite" : "decline_invite", code })}
+      onGroupInvite={(inviteId, accept) => void sendSocial({ action: accept ? "accept_group_invite" : "decline_group_invite", inviteId })}
+      onMarkAllRead={() => markSummariesSeen(inboxItems.filter((item) => item.kind === "weekly_summary" && item.unread).map((item) => item.id))}
+    />}
+    {openSummary && weeklySummary && <WeeklySummaryDialog
+      summary={weeklySummary}
+      fresh={openSummary.fresh}
+      onClose={() => setOpenSummary(null)}
+      onOpenArea={(area) => { setOpenSummary(null); setInboxOpen(false); openArea({ training: "training", focus: "focus", sleep: "sleep", nutrition: "meals", reading: "books", goals: "goals" }[area]); }}
+    />}
     {!announcementOpen && streakPrompt === "restore" && engagement?.pendingRestore && <div className="streak-modal-overlay" role="presentation">
       <section className="streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title">
         <span className="streak-modal-flame"><StreakFlameIcon /></span>
