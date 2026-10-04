@@ -1,0 +1,2 @@
+export const MAX_VOICE_UPLOAD_BYTES = 900 * 1024;
+export const VOICE_AUTO_STOP_BYTES = 800 * 1024;

@@ -5,10 +5,10 @@ import { NotificationSettings } from "@/features/notifications/components/notifi
 import { CSSProperties, FormEvent, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BrandMark } from "@/shared/ui/brand-mark";
 import { DatePicker } from "@/shared/ui/date-picker";
-import { Dropdown, type DropdownOption } from "@/shared/ui/dropdown";
+import { Dropdown } from "@/shared/ui/dropdown";
 import { FULL_DAY_HOUR_OPTIONS, TimeFieldPicker } from "@/shared/ui/time-dropdown";
-import { TourOverlay, type TourStep } from "@/shared/ui/tour-overlay";
-import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, dateInTimeZone, formatMinutes, listPhrase, minutesFromClock, pluralize } from "@/shared/lib/format";
+import { TourOverlay } from "@/shared/ui/tour-overlay";
+import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, pluralize } from "@/shared/lib/format";
 import { quoteForDate } from "@/shared/lib/quotes";
 import { sparklinePath, streakFor, sumByDate, trendFor, weeklyStreakFor, type Trend } from "@/domain/streaks";
 import { restoreProgressFromStreak, type AppEngagement } from "@/features/engagement/logic/app-engagement";
@@ -20,7 +20,7 @@ import { readingPositionForDate } from "@/features/reading/logic/reading";
 import { applyPatch, type DataPatch } from "@/shared/data/apply-patch";
 import { BADGE_DEFINITIONS, type BadgeStats } from "@/features/engagement/logic/badges";
 import { BadgeEmblem, StreakFlameIcon } from "@/features/engagement/components/badge-icons";
-import { NotesThread, StudyResourcesPanel, type ResourceNote, type StudyResource } from "@/features/reading/components/study-resources";
+import { NotesThread, StudyResourcesPanel } from "@/features/reading/components/study-resources";
 import { NotificationsDialog, WeeklySummaryDialog, type InboxItem } from "@/features/notifications/components/notifications-center";
 import { buildPatternInsights, rankInsights, type AreaKey } from "@/features/insights/logic/patterns";
 import { buildWeeklySummary, lastClosedWeekStart } from "@/features/notifications/logic/weekly-summary";
@@ -33,655 +33,52 @@ import {
   shareStatus, whatsappLink,
   type GoalMetric, type GoalSource, type Group, type GroupAccent, type GroupGoal, type SocialData,
 } from "@/features/friends/logic/social";
+import { BEDTIME_HOUR_OPTIONS, WAKE_HOUR_OPTIONS } from "@/features/sleep/constants";
+import type { Book, BookStatus, BookSuggestion, DietForm, DietNumberDrafts, DietNumberKey, DietPlanContent, FeedbackType, FocusTab, GoalPeriod, MealEstimate, PhysicalTab, Priorities, ProgressData, SavePhase, Section, SettingsView, SlotCategory, StatsPeriod, StreakAction, TrainingLog, User, VoiceCheckin } from "@/shared/data/types";
+import { CatalogBookCover, SavedBookCover } from "@/features/reading/components/book-covers";
+import { DIET_NUMBER_LIMITS, dietNumberDraftsFrom, estimateTargetCalories, isDietNumberKey, parseDietNumber, parseDietPlan, preparePhoto } from "@/features/nutrition/logic/diet";
+import { DISCIPLINE_PRIORITY_OPTIONS, WEEKLY_TARGET_OPTIONS, disciplineKindOptions, kindLabels } from "@/features/training/constants";
+import { DayStrip } from "@/shared/ui/day-strip";
+import { DistanceSessionForm } from "@/features/training/components/distance-session-form";
+import { EVENT_CATEGORY_OPTIONS, SLOT_CATEGORY_OPTIONS } from "@/features/plan/constants";
+import { ExerciseSessionTable } from "@/features/training/components/exercise-session-table";
+import { FEEDBACK_SECTIONS, FEEDBACK_TYPES } from "@/features/settings/constants";
+import { FOCUS_DAILY_TARGET_OPTIONS, averageNumbers, durationOptions, formatDecimalInput, formatFocusHours, parseDecimalInput } from "@/shared/lib/numbers";
+import { FRIEND_NUDGE_MESSAGES } from "@/features/friends/constants";
+import type { GoalDraft, GroupPanelTab } from "@/features/friends/logic/goal-draft";
+import { InsigniasModal } from "@/features/engagement/components/insignias-modal";
+import { LockedFeature } from "@/features/pro/components/locked-feature";
+import { MAX_VOICE_UPLOAD_BYTES, VOICE_AUTO_STOP_BYTES } from "@/features/voice-checkin/constants";
+import { STAT_MONTH_NAMES, STAT_WEEKDAY_NAMES, statsWindowFor } from "@/features/stats/logic/stats-window";
+import { SaveButtonContent } from "@/shared/ui/save-button";
+import type { StatsWindow } from "@/features/stats/logic/stats-window";
+import { TOUR_STEPS, friendsIcon, gearIcon, insightTargets, mobileNavItems, navItems, plusIcon } from "@/features/app-shell/navigation";
+import { TrainingQualityBar } from "@/features/training/components/training-quality-bar";
+import { argentinaDate, argentinaMinutes, countActiveDays, dateMinus, datePlus, datesBetween, dayDistance, formatDate, goalDeadline, lastDayOfMonth, normalizeClock, shiftMonthStart, sleepDuration, weekFor, weekdayLabel } from "@/domain/dates";
+import { bookLanguageOptions, normalizeBookText } from "@/features/reading/logic/books";
+import { categoryLabels, goalAreaOptions, periodLabels } from "@/features/goals/constants";
+import { emptyData } from "@/shared/data/empty-data";
+import { emptyGoalDraft } from "@/features/friends/logic/goal-draft";
+import { getTrainingWeeklyTargetServerSnapshot, getTrainingWeeklyTargetSnapshot, setTrainingWeeklyTargetValue, subscribeTrainingWeeklyTarget } from "@/features/training/hooks/use-training-weekly-target";
+import { planDisciplineIdFor } from "@/domain/plan-disciplines";
+import { priorityLabels } from "@/features/score/constants";
+import { readJson } from "@/shared/api/read-json";
 
-type User = { displayName: string; username: string; avatarUrl: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string; focusDailyTargetMinutes?: number; seenAnnouncements?: string[] };
-type Meal = { id: number; name: string; detail: string; calories: number; protein: number; carbs: number; fat: number; mealDate: string };
-type BookStatus = "reading" | "read" | "wishlist";
-type Book = { id: number; title: string; author: string; status: BookStatus; totalPages: number; currentPage: number; coverUrl: string; externalKey: string };
-type BookSuggestion = { key: string; title: string; author: string; year: number | null; pages: number; coverUrl: string; languages: string[]; openLibraryUrl: string };
-type ReadingLog = { id: number; bookId: number; logDate: string; pages: number; minutes: number };
-type Note = { id: number; bookId: number; content: string; createdAt: string };
-type GoalPeriod = "weekly" | "monthly" | "annual" | "custom";
-type GoalCategory = "general" | "gym" | "training" | "nutrition" | "reading" | "study" | "work" | "sleep" | "score" | "calendar" | "stats" | "goals";
-type Goal = { id: number; title: string; period: GoalPeriod; category: GoalCategory; targetDate: string; completedAt: string | null; createdAt: string };
-type Priorities = { monthKey: string; gymWeight: number; nutritionWeight: number; readingWeight: number; sleepWeight: number; focusWeight: number; goalsWeight: number };
-type DailyCheckin = { id: number; entryDate: string; habitsJson: string; workoutDetail: string; studyMinutes: number; studyDetail: string; sleepMinutes: number; bedtime: string; wakeTime: string; sleepQuality?: "good" | "bad" | null; waterMl: number; journal: string; transcript: string; voiceSummary: string };
-type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other"; priority?: "important" | "secondary" };
-type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string; quality?: number | null; planEventId?: number };
-type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean };
-type FocusProject = { id: number; name: string; kind: "study" | "work" };
-type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
-type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null };
-type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "nutrition" | "sleep" | "reading" | "other"; notes: string; completedAt: string | null; disciplineId?: number | null; quality?: number | null };
-type SlotCategory = "focus" | "training" | "nutrition" | "sleep" | "study" | "work" | "reading" | "personal" | "other";
-type VoiceCheckin = { transcript: string; summary: string; gym: { attended: boolean | null; detail: string }; meals: Array<{ name: string; detail: string; calories: number; protein: number; carbs: number; fat: number }>; reading: { bookTitle: string; pages: number; minutes: number; note: string }; habits: string[]; study: { minutes: number; detail: string; tasks: string[] }; sleep: { minutes: number; bedtime: string; wakeTime: string }; waterMl: number; journal: string; goals: Array<{ title: string; period: GoalPeriod; category: GoalCategory; targetDate: string }>; confidence: "low" | "medium" | "high" };
-type MealEstimate = { mealName: string; detail: string; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
-type DietPlanContent = {
-  summary: string; targetCalories: number; calorieRangeMinimum: number; calorieRangeMaximum: number; maintenanceCalories: number;
-  goalDirection: "lose" | "maintain" | "gain"; paceText: string;
-  macros: { proteinGrams: number; carbsGrams: number; fatGrams: number };
-  meals: Array<{ slot: string; guidance: string; options: string[] }>;
-  weeklyTips: string[]; shoppingBasics: string[]; appliedRestrictions: string[]; safetyNote: string; needsProfessional: boolean;
-};
-type DietPlanRecord = {
-  id: number; age: number; sex: "female" | "male" | "unspecified"; heightCm: number; currentWeightDeciKg: number; targetWeightDeciKg: number;
-  activityLevel: "sedentary" | "light" | "moderate" | "high"; goalPace: "gentle" | "moderate"; preferences: string; details: string;
-  targetCalories: number; planJson: string; updatedAt: string;
-};
-type DietForm = {
-  age: number; sex: DietPlanRecord["sex"]; heightCm: number; currentWeightKg: number; targetWeightKg: number;
-  activityLevel: DietPlanRecord["activityLevel"]; goalPace: DietPlanRecord["goalPace"]; preferences: string; details: string;
-};
-type DietNumberKey = "age" | "heightCm" | "currentWeightKg" | "targetWeightKg";
-type DietNumberDrafts = Record<DietNumberKey, string>;
-const DIET_NUMBER_LIMITS: Record<DietNumberKey, { min: number; max: number }> = {
-  age: { min: 18, max: 100 },
-  heightCm: { min: 120, max: 230 },
-  currentWeightKg: { min: 35, max: 300 },
-  targetWeightKg: { min: 35, max: 300 },
-};
-function dietNumberDraftsFrom(form: DietForm): DietNumberDrafts {
-  return {
-    age: String(form.age),
-    heightCm: String(form.heightCm),
-    currentWeightKg: String(form.currentWeightKg),
-    targetWeightKg: String(form.targetWeightKg),
-  };
-}
-function isDietNumberKey(key: keyof DietForm): key is DietNumberKey {
-  return key === "age" || key === "heightCm" || key === "currentWeightKg" || key === "targetWeightKg";
-}
-function parseDietNumber(value: string) {
-  const parsed = Number(value.trim().replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-type ProgressData = {
-  profile: User; gymDates: string[]; disciplines: Discipline[]; trainingLogs: TrainingLog[]; exerciseLogs: ExerciseLog[];
-  meals: Meal[]; mealHistory: Meal[]; books: Book[]; readingLogs: ReadingLog[]; readingHistory: ReadingLog[]; notes: Note[];
-  goals: Goal[]; priorities: Priorities; priorityHistory?: Priorities[]; dailyCheckin: DailyCheckin | null; dailyCheckins: DailyCheckin[];
-  focusProjects: FocusProject[]; focusSessions: FocusSession[]; tasks: Task[]; events: CalendarEvent[]; dietPlan: DietPlanRecord | null;
-  resources?: StudyResource[]; resourceNotes?: ResourceNote[];
-};
-type Section = "summary" | "score" | "physical" | "focus" | "sleep" | "plan" | "stats" | "friends" | "pro";
-type PhysicalTab = "training" | "meals";
-type FocusTab = "study" | "work";
-/** Área de la vida a la que apunta un aviso, y dónde vive ahora en la interfaz. */
-type InsightTarget = { section: Section; physicalTab?: PhysicalTab; focusTab?: FocusTab };
-type StatsPeriod = "weekly" | "monthly" | "annual";
-type SettingsView = "home" | "personal" | "language" | "notifications";
-type FeedbackType = "positive" | "idea" | "bug" | "dislike";
-type SavePhase = "saving" | "saved" | null;
-type StreakAction = "visit" | "restore" | "decline" | "dismiss_loss";
-function InsigniasModal({ stats, onClose }: { stats: BadgeStats; onClose: () => void }) {
-  const groups = [...new Set(BADGE_DEFINITIONS.map((badge) => badge.group))];
-  return <div className="insignias-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="insignias-dialog" role="dialog" aria-modal="true" aria-labelledby="insignias-title">
-      <button type="button" className="insignias-close" onClick={onClose} aria-label="Cerrar insignias">×</button>
-      <p className="insignias-eyebrow">TUS LOGROS</p>
-      <h2 id="insignias-title">Mis Insignias</h2>
-      <p className="insignias-intro">Cada insignia se ilumina cuando alcanzás el objetivo.</p>
-      {groups.map((group) => <section className="insignias-group" key={group}>
-        <h3>{group}</h3>
-        <div className="insignias-grid">{BADGE_DEFINITIONS.filter((badge) => badge.group === group).map((badge) => {
-          const value = stats[badge.metric];
-          const unlocked = value >= badge.target;
-          const percent = Math.min(100, Math.round(value / badge.target * 100));
-          return <article className={"insignia-card " + (unlocked ? "unlocked" : "locked")} key={badge.id}>
-            <BadgeEmblem className="insignia-icon" symbol={badge.symbol} tier={badge.tier} locked={!unlocked} size={46} />
-            <b>{badge.title}</b>
-            <small>{unlocked ? "Completada" : `${Math.min(value, badge.target)} de ${badge.target}`}</small>
-            {!unlocked && <span className="insignia-progress"><i style={{ width: `${percent}%` }} /></span>}
-          </article>;
-        })}</div>
-      </section>)}
-    </section>
-  </div>;
-}
 
-type NavItem = { id: Section; icon: ReactNode; label: string; mobile: string; center?: true };
-/** Los campos de un objetivo mientras se escribe, antes de existir en el grupo. */
-type GoalDraft = { title: string; source: GoalSource; metric: GoalMetric; targetValue: number; period: GroupGoal["period"]; dueDate: string };
-/** Qué se está administrando de un grupo: el engranaje, el más o los amigos. */
-type GroupPanelTab = "settings" | "goals" | "members";
-const emptyGoalDraft = (): GoalDraft => ({ title: "", source: "manual", metric: "count", targetValue: 3, period: "weekly", dueDate: "" });
 
-const friendsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" /><circle cx="16.5" cy="9" r="2.5" /><path d="M2.5 19c.5-4 2.4-6 5.5-6s5 2 5.5 6M13 14.5c1-.8 2.1-1.1 3.5-1.1 2.8 0 4.4 1.8 5 5.1" /></svg>;
-const physicalIcon = <svg className="physical-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.409 13.017A5 5 0 0 1 22 15c0 3.866-4 7-9 7-4.077 0-8.153-.82-10.371-2.462-.426-.316-.631-.832-.62-1.362C2.118 12.723 2.627 2 10 2a3 3 0 0 1 3 3 2 2 0 0 1-2 2c-1.105 0-1.64-.444-2-1" /><path d="M15 14a5 5 0 0 0-7.584 2" /><path d="M9.964 6.825C8.019 7.977 9.5 13 8 15" /></svg>;
-const focusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 5.2a3.4 3.4 0 0 0-5.3 2.9c0 .5.1.9.3 1.3A3.7 3.7 0 0 0 5 16.5a3.5 3.5 0 0 0 4.2 2.3M14.8 5.2a3.4 3.4 0 0 1 5.3 2.9c0 .5-.1.9-.3 1.3a3.7 3.7 0 0 1-.8 7.1 3.5 3.5 0 0 1-4.2 2.3M12 4v16M8 9.2c1.1.1 2 .7 2.4 1.6M16 9.2c-1.1.1-2 .7-2.4 1.6M8.4 15.1c1-.1 1.7-.5 2.2-1.2M15.6 15.1c-1-.1-1.7-.5-2.2-1.2" /></svg>;
-const gearIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="m19.3 14.6.35.2a1.8 1.8 0 0 1-1.8 3.12l-.35-.2a1.8 1.8 0 0 0-2.7 1.56v.4a1.8 1.8 0 0 1-3.6 0v-.4a1.8 1.8 0 0 0-2.7-1.56l-.35.2a1.8 1.8 0 0 1-1.8-3.12l.35-.2a1.8 1.8 0 0 0 0-3.12l-.35-.2a1.8 1.8 0 1 1 1.8-3.12l.35.2a1.8 1.8 0 0 0 2.7-1.56v-.4a1.8 1.8 0 0 1 3.6 0v.4a1.8 1.8 0 0 0 2.7 1.56l.35-.2a1.8 1.8 0 0 1 1.8 3.12l-.35.2a1.8 1.8 0 0 0 0 3.12Z" /></svg>;
-const plusIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13" /></svg>;
-const statsIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 18 5-5 4 2 6-8" /><circle cx="4" cy="18" r="1.5" /><circle cx="9" cy="13" r="1.5" /><circle cx="13" cy="15" r="1.5" /><circle cx="19" cy="7" r="1.5" /></svg>;
 
-// En escritorio Inicio queda primero. En el celular usamos el mismo conjunto,
-// pero Inicio ocupa el cuarto lugar para quedar exactamente en el centro.
-const navItems: NavItem[] = [
-  { id: "summary", icon: "⌂", label: "Inicio", mobile: "Inicio" },
-  { id: "friends", icon: friendsIcon, label: "Amigos", mobile: "Amigos" },
-  { id: "physical", icon: physicalIcon, label: "Físico", mobile: "Físico" },
-  { id: "focus", icon: focusIcon, label: "Foco", mobile: "Foco" },
-  { id: "sleep", icon: "☾", label: "Sueño", mobile: "Sueño" },
-  { id: "plan", icon: "◎", label: "Plan", mobile: "Plan" },
-  { id: "stats", icon: statsIcon, label: "Progreso", mobile: "Progreso" },
-];
-const mobileNavItems: NavItem[] = [
-  navItems.find((item) => item.id === "physical")!,
-  navItems.find((item) => item.id === "focus")!,
-  navItems.find((item) => item.id === "sleep")!,
-  { ...navItems.find((item) => item.id === "summary")!, center: true },
-  navItems.find((item) => item.id === "plan")!,
-  navItems.find((item) => item.id === "stats")!,
-  navItems.find((item) => item.id === "friends")!,
-];
 
-/** Adónde lleva cada aviso ahora que las secciones se agruparon. */
-const insightTargets: Record<string, InsightTarget> = {
-  training: { section: "physical", physicalTab: "training" },
-  meals: { section: "physical", physicalTab: "meals" },
-  focus: { section: "focus" },
-  books: { section: "focus", focusTab: "study" },
-  sleep: { section: "sleep" },
-  goals: { section: "plan" },
-  calendar: { section: "plan" },
-  score: { section: "score" },
-  stats: { section: "stats" },
-};
-const priorityLabels = ["", "Secundario", "Importante", "Prioridad"];
-const FEEDBACK_TYPES: Array<[FeedbackType, string, string, string]> = [
-  ["positive", "♡", "Me gustó algo", "Algo que querés que mantengamos."],
-  ["idea", "✦", "Tengo una sugerencia", "Una idea, función o cambio que sumarías."],
-  ["bug", "!", "Encontré un problema", "Algo no funciona como debería."],
-  ["dislike", "−", "Hay algo que no me gusta", "Funciona, pero lo cambiarías."],
-];
-const FEEDBACK_SECTIONS = ["Inicio", "Daily Score", "Físico", "Foco", "Sueño", "Plan", "Progreso", "Amigos", "Cuenta / configuración", "Otra"];
-const MAX_VOICE_UPLOAD_BYTES = 900 * 1024;
-const VOICE_AUTO_STOP_BYTES = 800 * 1024;
-// Safari puede rechazar rutas relativas dentro de previews embebidos. Construir
-// la URL desde el origen evita el DOMException "expected pattern" antes de que
-// la solicitud llegue al servidor.
-const categoryLabels: Record<GoalCategory, string> = { general: "Personal", gym: "Gimnasio", training: "Entrenamiento", nutrition: "Alimentación", reading: "Lectura", study: "Estudio", work: "Trabajo", sleep: "Sueño", score: "Daily Score", calendar: "Calendario", stats: "Progreso", goals: "Objetivos" };
-const goalAreaOptions: Array<{ value: GoalCategory; label: string }> = [
-  { value: "general", label: "Personal / Inicio" }, { value: "score", label: "Daily Score" }, { value: "training", label: "Entrenamiento" },
-  { value: "nutrition", label: "Alimentación" }, { value: "sleep", label: "Sueño" }, { value: "study", label: "Estudio" },
-  { value: "work", label: "Trabajo" }, { value: "calendar", label: "Calendario / planificación" }, { value: "stats", label: "Progreso" },
-  { value: "reading", label: "Biblioteca / lectura" }, { value: "goals", label: "Objetivos" },
-];
-const periodLabels: Record<GoalPeriod, string> = { weekly: "Esta semana", monthly: "Este mes", annual: "Este año", custom: "Plazo personal" };
-// Horas que tiene sentido elegir para cada campo del selector de sueño, para
-// que la lista de horas sea corta (nadie se acuesta a las 11 de la mañana).
-const BEDTIME_HOUR_OPTIONS = ["19", "20", "21", "22", "23", "00", "01", "02", "03", "04", "05"];
-const WAKE_HOUR_OPTIONS = ["05", "06", "07", "08", "09", "10", "11", "12", "13", "14"];
-const WEEKLY_TARGET_OPTIONS: DropdownOption[] = Array.from({ length: 14 }, (_, index) => ({ value: String(index + 1), label: `${index + 1} por semana` }));
-const EVENT_CATEGORY_OPTIONS: DropdownOption[] = [
-  { value: "personal", label: "Personal" }, { value: "study", label: "Estudio" }, { value: "work", label: "Trabajo" },
-  { value: "training", label: "Entrenamiento" }, { value: "nutrition", label: "Alimentación" }, { value: "sleep", label: "Sueño" },
-  { value: "reading", label: "Lectura" }, { value: "health", label: "Salud" }, { value: "other", label: "Otro" },
-];
-const SLOT_CATEGORY_OPTIONS: DropdownOption[] = [
-  { value: "focus", label: "Estudio / trabajo · elegir proyecto" },
-  { value: "training", label: "Entrenamiento · elegir disciplina" },
-  { value: "nutrition", label: "Alimentación" },
-  { value: "sleep", label: "Sueño" },
-  { value: "study", label: "Estudio · elegir materia" },
-  { value: "work", label: "Trabajo · elegir proyecto" },
-  { value: "reading", label: "Lectura" },
-  { value: "personal", label: "Personal" },
-  { value: "other", label: "Otro" },
-];
-const kindLabels: Record<Discipline["kind"], string> = { strength: "Fuerza / gimnasio", running: "Running", cycling: "Ciclismo", swimming: "Natación", sport: "Deporte", other: "Otra" };
-// Recorrido guiado de la primera vez: sólo elementos de Inicio, para no tener
-// que navegar entre secciones mientras el tour está abierto.
-const TOUR_STEPS: TourStep[] = [
-  { selector: "[data-tour='nav']", title: "Tus áreas, siempre a mano", body: "Entrenamiento, Alimentación, Sueño, Estudio o Trabajo, Plan, Progreso y Amigos. Todo vive acá." },
-  { selector: "[data-tour='score']", title: "Tu Daily Score", body: "Un puntaje diario armado con lo que registraste y el peso que le diste a cada prioridad." },
-  { selector: "[data-tour='metrics']", title: "Lo que más te importa", body: "Estas tarjetas cambian según tus prioridades: acá vas a ver tu avance del día." },
-  { selector: "[data-tour='voice']", title: "Cerrá tu día hablando", body: "Contá qué hiciste en 60 segundos en vez de cargar cada cosa a mano." },
-  { selector: "[data-tour='profile']", title: "Tu cuenta", body: "Datos personales, membresía y cerrar sesión, todo desde acá." },
-];
-/** Mensajes cortos para el botón "Mandar un mensaje" del círculo: un empujón, no una conversación. */
-const FRIEND_NUDGE_MESSAGES = [
-  "¡Vamos que se puede! 💪",
-  "¿Cómo va tu semana?",
-  "Te extrañamos por acá, ¿todo bien?",
-  "¡Gran racha! Seguí así.",
-];
-const disciplineKindOptions: DropdownOption[] = Object.entries(kindLabels).map(([value, label]) => ({ value, label }));
-const TRAINING_QUALITY_OPTIONS = [
-  { value: 1, label: "Malo" },
-  { value: 2, label: "Regular" },
-  { value: 3, label: "Bueno" },
-  { value: 4, label: "Muy bueno" },
-] as const;
-const DISCIPLINE_PRIORITY_OPTIONS = [
-  { value: "secondary", label: "Secundaria" },
-  { value: "important", label: "Importante" },
-] as const;
-const bookLanguageOptions = [
-  ["es", "Español"], ["en", "Inglés"], ["pt", "Portugués"], ["fr", "Francés"], ["it", "Italiano"], ["de", "Alemán"],
-] as const;
 
-function argentinaDate() {
-  return dateInTimeZone("America/Argentina/Buenos_Aires");
-}
-/** Hora actual en Buenos Aires, en minutos desde medianoche. */
-function argentinaMinutes() {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-  return minutesFromClock(parts) ?? 0;
-}
 
-// Meta semanal de entrenamientos para la racha de constancia: vive en este
-// navegador (localStorage), no en el servidor, así que se lee con
-// useSyncExternalStore en vez de useState+useEffect. Evita el flash de
-// hidratación (el snapshot de servidor siempre es el default) y el
-// cascading-render de hacer setState dentro de un efecto.
-const TRAINING_WEEKLY_TARGET_KEY = "avora:training-weekly-target";
-const trainingWeeklyTargetListeners = new Set<() => void>();
-function subscribeTrainingWeeklyTarget(onChange: () => void) {
-  trainingWeeklyTargetListeners.add(onChange);
-  return () => trainingWeeklyTargetListeners.delete(onChange);
-}
-function getTrainingWeeklyTargetSnapshot() {
-  const stored = Number(window.localStorage.getItem(TRAINING_WEEKLY_TARGET_KEY));
-  return stored > 0 ? stored : 3;
-}
-function getTrainingWeeklyTargetServerSnapshot() {
-  return 3;
-}
-function setTrainingWeeklyTargetValue(value: number) {
-  const next = Math.min(14, Math.max(1, Math.round(value)));
-  window.localStorage.setItem(TRAINING_WEEKLY_TARGET_KEY, String(next));
-  trainingWeeklyTargetListeners.forEach((listener) => listener());
-}
-function weekFor(date: string) {
-  const center = new Date(date + "T12:00:00");
-  const mondayOffset = (center.getDay() + 6) % 7;
-  const monday = new Date(center);
-  monday.setDate(center.getDate() - mondayOffset);
-  return Array.from({ length: 7 }, (_, index) => {
-    const current = new Date(monday);
-    current.setDate(monday.getDate() + index);
-    return { iso: current.toISOString().slice(0, 10), short: ["L", "M", "M", "J", "V", "S", "D"][index], number: current.getDate() };
-  });
-}
 
-const STAT_WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-const STAT_MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-type StatsWindow = { start: string; end: string; title: string };
 
-function shiftMonthStart(date: string, offset: number) {
-  const value = new Date(date + "T12:00:00");
-  value.setDate(1);
-  value.setMonth(value.getMonth() + offset);
-  return value.toISOString().slice(0, 10);
-}
-function lastDayOfMonth(monthStart: string) {
-  const value = new Date(monthStart + "T12:00:00");
-  value.setMonth(value.getMonth() + 1, 0);
-  return value.toISOString().slice(0, 10);
-}
-function statsWindowFor(period: StatsPeriod, offset: number, reference: string): StatsWindow {
-  if (period === "weekly") {
-    const monday = weekFor(reference)[0].iso;
-    const start = dateMinus(monday, offset * 7);
-    const end = datePlus(start, 6);
-    return { start, end, title: "Semana del " + formatDate(start) + " al " + formatDate(end) };
-  }
-  if (period === "monthly") {
-    const start = shiftMonthStart(reference, -offset);
-    return { start, end: lastDayOfMonth(start), title: new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(start + "T12:00:00")) };
-  }
-  const year = Number(reference.slice(0, 4)) - offset;
-  const start = year + "-01-01";
-  return { start, end: year + "-12-31", title: String(year) };
-}
-function datesBetween(start: string, end: string) {
-  const dates: string[] = [];
-  const total = Math.max(0, Math.round((new Date(end + "T12:00:00").getTime() - new Date(start + "T12:00:00").getTime()) / 86400000) + 1);
-  for (let index = 0; index < total; index += 1) dates.push(datePlus(start, index));
-  return dates;
-}
-function averageNumbers(values: number[]) {
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-}
-/** Fecha objetivo para los plazos relativos. "custom" no pasa por acá: ahí el usuario elige el día exacto con el DatePicker. */
-function goalDeadline(today: string, period: Exclude<GoalPeriod, "custom">) {
-  const date = new Date(today + "T12:00:00");
-  if (period === "weekly") date.setDate(date.getDate() + ((7 - date.getDay()) % 7));
-  if (period === "monthly") date.setMonth(date.getMonth() + 1, 0);
-  if (period === "annual") date.setMonth(11, 31);
-  return date.toISOString().slice(0, 10);
-}
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(date + "T12:00:00"));
-}
-function dayDistance(from: string, to: string) {
-  return Math.ceil((new Date(to + "T12:00:00").getTime() - new Date(from + "T12:00:00").getTime()) / 86400000);
-}
-function datePlus(date: string, days: number) {
-  const value = new Date(date + "T12:00:00");
-  value.setDate(value.getDate() + days);
-  return value.toISOString().slice(0, 10);
-}
-/** "mañana" / "el miércoles": cómo se nombra un día cercano al hablar. */
-function weekdayLabel(date: string) {
-  const name = new Intl.DateTimeFormat("es-AR", { weekday: "long" }).format(new Date(date + "T12:00:00"));
-  return name === "sábado" || name === "domingo" ? `el ${name}` : `el ${name}`;
-}
-/** Días con actividad dentro de los últimos siete, para el corte semanal. */
-function countActiveDays(byDate: Record<string, number>, today: string, days = 7) {
-  let count = 0;
-  for (let offset = 0; offset < days; offset += 1) {
-    if ((byDate[dateMinus(today, offset)] ?? 0) > 0) count += 1;
-  }
-  return count;
-}
-function dateMinus(date: string, days: number) {
-  const value = new Date(date + "T12:00:00");
-  value.setDate(value.getDate() - days);
-  return value.toISOString().slice(0, 10);
-}
-/** Valida un "HH:MM" en 24 h (lo que devuelve un input type="time"); si no matchea, el fallback. */
-function normalizeClock(value: string, fallback: string) {
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : fallback;
-}
-function sleepDuration(bedtime: string, wakeTime: string) {
-  const [bedHour, bedMinute] = bedtime.split(":").map(Number);
-  const [wakeHour, wakeMinute] = wakeTime.split(":").map(Number);
-  let minutes = wakeHour * 60 + wakeMinute - (bedHour * 60 + bedMinute);
-  if (minutes <= 0) minutes += 24 * 60;
-  return Math.min(minutes, 24 * 60);
-}
-function durationOptions(minutesList: number[]): DropdownOption[] {
-  return minutesList.map((minutes) => ({ value: String(minutes), label: formatMinutes(minutes) }));
-}
-const FOCUS_DAILY_TARGET_OPTIONS = durationOptions([30, 60, 90, 120, 150, 180, 240, 300, 360, 480]);
-function formatFocusHours(minutes: number) {
-  const hours = Math.max(0, minutes) / 60;
-  const value = Number.isInteger(hours) ? String(hours) : hours.toLocaleString("es-AR", { maximumFractionDigits: 2 });
-  return `${value} h`;
-}
-function normalizedPlanText(value: string) {
-  return value.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-}
 
-/**
- * Los bloques nuevos guardan la disciplina explícita. Para los bloques viejos,
- * intenta recuperar la relación por nombre (por ejemplo "gim" → "Gimnasio")
- * para que también se sincronicen sin obligar al usuario a recrearlos.
- */
-function planDisciplineIdFor(event: CalendarEvent, disciplines: Discipline[]) {
-  if (event.disciplineId && disciplines.some((item) => item.id === event.disciplineId)) return event.disciplineId;
-  if (event.category !== "training") return null;
-  const title = normalizedPlanText(event.title);
-  if (title.length < 3) return null;
-  const named = disciplines.find((discipline) => {
-    const name = normalizedPlanText(discipline.name);
-    return name.includes(title) || title.includes(name) || name.startsWith(title) || title.startsWith(name);
-  });
-  if (named) return named.id;
-  const inferredKind = /gim|gym|pesas|fuerza/.test(title) ? "strength"
-    : /correr|running/.test(title) ? "running"
-    : /bici|ciclismo/.test(title) ? "cycling"
-    : /nadar|natacion/.test(title) ? "swimming"
-    : null;
-  const candidates = inferredKind ? disciplines.filter((item) => item.kind === inferredKind) : [];
-  return candidates.length === 1 ? candidates[0].id : null;
-}
-const DIET_ACTIVITY_MULTIPLIERS: Record<DietForm["activityLevel"], number> = { sedentary: 1.2, light: 1.375, moderate: 1.55, high: 1.725 };
-/**
- * Mismo cálculo (Mifflin-St Jeor + actividad + ritmo del objetivo) que ya usa
- * el plan con IA como punto de partida — acá es directamente el resultado,
- * sin pasar por la IA. Devuelve null si todavía faltan datos.
- */
-function estimateTargetCalories(form: Pick<DietForm, "age" | "heightCm" | "currentWeightKg" | "targetWeightKg" | "sex" | "activityLevel" | "goalPace">) {
-  const { age, heightCm, currentWeightKg, targetWeightKg, sex, activityLevel, goalPace } = form;
-  if (!age || !heightCm || !currentWeightKg || !targetWeightKg) return null;
-  const sexOffset = sex === "male" ? 5 : sex === "female" ? -161 : -78;
-  const basalEstimate = 10 * currentWeightKg + 6.25 * heightCm - 5 * age + sexOffset;
-  const maintenanceCalories = Math.round(basalEstimate * DIET_ACTIVITY_MULTIPLIERS[activityLevel]);
-  const difference = targetWeightKg - currentWeightKg;
-  const adjustment = goalPace === "moderate" ? 450 : 300;
-  const minimumCalories = sex === "male" ? 1500 : sex === "female" ? 1200 : 1350;
-  const targetCalories = Math.round(Math.max(minimumCalories, Math.min(6000, maintenanceCalories + (difference < -0.5 ? -adjustment : difference > 0.5 ? Math.min(300, adjustment) : 0))) / 10) * 10;
-  return { maintenanceCalories, targetCalories };
-}
-function parseDietPlan(value: string | undefined) {
-  try { return value ? JSON.parse(value) as DietPlanContent : null; } catch { return null; }
-}
-function normalizeBookText(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-async function preparePhoto(file: File) {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", .82));
-    return blob ? new File([blob], "comida.jpg", { type: "image/jpeg" }) : file;
-  } catch {
-    return file;
-  }
-}
 
-/**
- * Envuelve una función de pago: muestra el contenido real detrás de un velo
- * borroso con candado. El contenido queda inerte, así que no se puede tocar ni
- * llegar con el teclado; el candado lleva a la comparación de planes.
- */
-/** "5:30 min/km": el ritmo no se carga a mano, sale de tiempo y distancia. */
-function paceLabel(durationMinutes: number, distanceKm: number) {
-  if (!durationMinutes || !distanceKm) return null;
-  const totalSeconds = Math.round((durationMinutes * 60) / distanceKm);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")} min/km`;
-}
 
-function parseDecimalInput(value: string) {
-  const parsed = Number(value.trim().replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-function formatDecimalInput(value: number) {
-  return value > 0 ? String(value).replace(".", ",") : "";
-}
 
-/** Mantiene el ancho original del botón mientras muestra carga y confirmación. */
-function SaveButtonContent({ label, phase }: { label: ReactNode; phase: SavePhase }) {
-  return <span className="save-button-content">
-    <span className="save-button-label" aria-hidden={phase !== null}>{label}</span>
-    {phase === "saving" && <span className="save-button-feedback save-button-loading" role="status" aria-label="Guardando"><i /><i /><i /></span>}
-    {phase === "saved" && <span className="save-button-feedback save-button-saved" role="status" aria-label="Guardado">✓</span>}
-  </span>;
-}
 
-/**
- * Detalle de sesión para disciplinas de distancia (running, ciclismo,
- * natación): distancia + tiempo, con el ritmo calculado en vivo. Es
- * controlado (no FormData) porque necesita recalcular el ritmo mientras se
- * escribe; `key={disciplineId-date}` en el padre lo remonta al cambiar de
- * disciplina o de día, así vuelve a partir de lo que ya había ese día.
- */
-function DistanceSessionForm({ disciplineId, date, log, saving, savePhase, onSave }: {
-  disciplineId: number;
-  date: string;
-  log: TrainingLog | undefined;
-  saving: boolean;
-  savePhase: SavePhase;
-  onSave: (payload: Record<string, unknown>) => void;
-}) {
-  const [durationDraft, setDurationDraft] = useState(log?.durationMinutes ? formatDecimalInput(log.durationMinutes) : "");
-  const [distanceDraft, setDistanceDraft] = useState(log?.distanceMeters ? formatDecimalInput(log.distanceMeters / 1000) : "");
-  const pace = paceLabel(parseDecimalInput(durationDraft), parseDecimalInput(distanceDraft));
-  return <form className="data-form" onSubmit={(event) => { event.preventDefault(); onSave({ action: "save_training", disciplineId, date, durationMinutes: durationDraft, distanceKm: distanceDraft }); }}>
-    <div className="two-fields">
-      <label>Distancia (km)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={distanceDraft} onChange={(event) => setDistanceDraft(event.target.value)} /></label>
-      <label>Tiempo (min)<input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={durationDraft} onChange={(event) => setDurationDraft(event.target.value)} /></label>
-    </div>
-    <div className="pace-preview"><span>◷</span><p><small>RITMO</small><b>{pace ?? "Cargá distancia y tiempo"}</b></p></div>
-    <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase} /></button>
-  </form>;
-}
 
-/**
- * Semana navegable para elegir el día que se registra, igual que el
- * calendario de Físico: flechas para ir de semana en semana y un toque sobre
- * el día lo abre. Los días con datos se marcan con ✓ y no se puede ir al futuro.
- */
-function DayStrip({ value, today, onChange, markedDates, label }: {
-  value: string;
-  today: string;
-  onChange: (date: string) => void;
-  markedDates: Set<string>;
-  label: string;
-}) {
-  const [anchor, setAnchor] = useState(value);
-  const [previousValue, setPreviousValue] = useState(value);
-  // Si la fecha cambia desde afuera (p. ej. empieza un día nuevo), la semana visible la acompaña.
-  if (value !== previousValue) {
-    setPreviousValue(value);
-    setAnchor(value);
-  }
-  const week = weekFor(anchor);
-  const shortDay = (date: string) => new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short" }).format(new Date(date + "T12:00:00")).replace(".", "");
-  const atCurrentWeek = week[6].iso >= today;
-  const marked = week.filter((day) => markedDates.has(day.iso)).length;
-  return <div className="day-strip" role="group" aria-label={label}>
-    <div className="calendar-head training-week-nav">
-      <button type="button" onClick={() => setAnchor((current) => dateMinus(current, 7))} aria-label="Semana anterior">‹</button>
-      <div className="training-week-nav-title">
-        <h2>{shortDay(week[0].iso)} – {shortDay(week[6].iso)}</h2>
-        {value !== today ? <button type="button" className="training-week-today" onClick={() => { setAnchor(today); onChange(today); }}>Volver a hoy</button> : <span className="week-pill">{marked}/7 días registrados</span>}
-      </div>
-      <button type="button" onClick={() => setAnchor((current) => dateMinus(current, -7))} disabled={atCurrentWeek} aria-label="Semana siguiente">›</button>
-    </div>
-    <div className="week-row">{week.map((day) => {
-      const done = markedDates.has(day.iso);
-      const future = day.iso > today;
-      return <button key={day.iso} type="button" disabled={future} aria-pressed={day.iso === value} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (day.iso === value ? " active" : "")} onClick={() => onChange(day.iso)}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
-    })}</div>
-  </div>;
-}
 
-type ExerciseDraft = { key: string; id: number; exercise: string; weight: string; sets: string; reps: string; isRecord: boolean };
-let exerciseDraftSeq = 0;
-const emptyExerciseDraft = (): ExerciseDraft => ({ key: `new-${++exerciseDraftSeq}`, id: 0, exercise: "", weight: "", sets: "", reps: "", isRecord: false });
-const isBlankExerciseDraft = (row: ExerciseDraft) => !row.exercise.trim() && !row.weight.trim() && !row.sets.trim() && !row.reps.trim() && !row.isRecord;
-
-/**
- * Planilla de la sesión de gimnasio: todos los ejercicios del día en una
- * tabla editable que se guarda de una sola vez. Arranca con lo que ya estaba
- * cargado ese día; el padre la remonta (key) al cambiar de día o al volver
- * del servidor con ids nuevos.
- */
-function ExerciseSessionTable({ disciplineId, date, exercises, saving, savePhase, onSave, onError }: {
-  disciplineId: number;
-  date: string;
-  exercises: ExerciseLog[];
-  saving: boolean;
-  savePhase: SavePhase;
-  onSave: (payload: Record<string, unknown>) => void;
-  onError: (message: string) => void;
-}) {
-  const [rows, setRows] = useState<ExerciseDraft[]>(() => {
-    const existing = [...exercises].sort((left, right) => left.id - right.id).map((item) => ({
-      key: String(item.id), id: item.id, exercise: item.exercise,
-      weight: item.weightDeciKg ? formatDecimalInput(item.weightDeciKg / 10) : "",
-      sets: item.sets ? String(item.sets) : "", reps: item.reps ? String(item.reps) : "", isRecord: item.isRecord,
-    }));
-    return existing.length ? [...existing, emptyExerciseDraft()] : [emptyExerciseDraft(), emptyExerciseDraft(), emptyExerciseDraft()];
-  });
-  const update = (key: string, patch: Partial<ExerciseDraft>) => setRows((current) => current.map((row) => row.key === key ? { ...row, ...patch } : row));
-  const remove = (key: string) => setRows((current) => current.length > 1 ? current.filter((row) => row.key !== key) : [emptyExerciseDraft()]);
-  const filled = rows.filter((row) => !isBlankExerciseDraft(row));
-  return <form className="exercise-sheet" onSubmit={(event) => {
-    event.preventDefault();
-    if (filled.some((row) => !row.exercise.trim())) { onError("Completá el nombre de cada ejercicio de la tabla."); return; }
-    if (!filled.length && !exercises.length) { onError("Cargá al menos un ejercicio."); return; }
-    onSave({ action: "save_exercises", disciplineId, date, exercises: filled.map((row) => ({ id: row.id || undefined, exercise: row.exercise, weightKg: row.weight.trim().replace(",", "."), sets: row.sets, reps: row.reps, isRecord: row.isRecord })) });
-  }}>
-    <div className="exercise-sheet-head" aria-hidden="true"><span>Ejercicio</span><span>Kg</span><span>Series</span><span>Reps</span><span title="Récord personal">PR</span><span /></div>
-    {rows.map((row, index) => <div className={"exercise-sheet-row" + (row.isRecord ? " record" : "")} key={row.key}>
-      <input className="exercise-sheet-name" aria-label={`Ejercicio ${index + 1}`} placeholder={index === 0 ? "Ej. sentadilla" : "Ejercicio"} value={row.exercise} onChange={(event) => update(row.key, { exercise: event.target.value })} />
-      <label><small>Kg</small><input aria-label={`Kg del ejercicio ${index + 1}`} type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" placeholder="0" value={row.weight} onChange={(event) => update(row.key, { weight: event.target.value })} /></label>
-      <label><small>Series</small><input aria-label={`Series del ejercicio ${index + 1}`} type="number" inputMode="numeric" min="0" placeholder="0" value={row.sets} onChange={(event) => update(row.key, { sets: event.target.value })} /></label>
-      <label><small>Reps</small><input aria-label={`Repeticiones del ejercicio ${index + 1}`} type="number" inputMode="numeric" min="0" placeholder="0" value={row.reps} onChange={(event) => update(row.key, { reps: event.target.value })} /></label>
-      <button type="button" className={"exercise-sheet-record" + (row.isRecord ? " active" : "")} aria-pressed={row.isRecord} aria-label={`Marcar ejercicio ${index + 1} como récord personal`} title="Récord personal" onClick={() => update(row.key, { isRecord: !row.isRecord })}>🏆</button>
-      <button type="button" className="exercise-sheet-delete" aria-label={`Quitar fila ${index + 1}`} onClick={() => remove(row.key)}>×</button>
-    </div>)}
-    <div className="exercise-sheet-actions">
-      <button type="button" className="exercise-sheet-add" onClick={() => setRows((current) => [...current, emptyExerciseDraft()])}>＋ Agregar fila</button>
-      <button className="primary-action" disabled={saving}><SaveButtonContent label={`Guardar entrenamiento${filled.length ? ` · ${filled.length}` : ""}`} phase={savePhase} /></button>
-    </div>
-  </form>;
-}
-
-function TrainingQualityBar({ disciplineName, quality, saving, onSelect }: {
-  disciplineName: string;
-  quality: number | null | undefined;
-  saving: boolean;
-  onSelect: (quality: number) => void;
-}) {
-  return <div className="training-quality" aria-label={"Valoración del entrenamiento de " + disciplineName}>
-    <span className="training-quality-label">¿Cómo estuvo?</span>
-    <div className="training-quality-options" role="radiogroup">
-      {TRAINING_QUALITY_OPTIONS.map((option) => {
-        const selected = quality === option.value;
-        return <button key={option.value} type="button" role="radio" aria-checked={selected} className={"training-quality-option" + (selected ? " selected" : "")} disabled={saving} onClick={() => onSelect(option.value)}>{option.label}</button>;
-      })}
-    </div>
-  </div>;
-}
-
-function LockedFeature({ title, note, onOpen, children }: { title: string; note: string; onOpen: () => void; children: React.ReactNode }) {
-  return <div className="pro-locked">
-    <div className="pro-locked-content" inert>{children}</div>
-    <button type="button" className="pro-lock-veil" onClick={onOpen}>
-      <span className="pro-lock-badge" aria-hidden="true">🔒</span>
-      <b>{title}</b>
-      <small>{note}</small>
-      <span className="pro-lock-cta">Ver AVORA Pro <i>→</i></span>
-    </button>
-  </div>;
-}
-
-function SavedBookCover({ book }: { book: Book }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  if (book.coverUrl && !imageFailed) {
-    return <div className="book-cover book-cover-original"><Image src={book.coverUrl} alt={`Portada de ${book.title}`} width={70} height={98} unoptimized onError={() => setImageFailed(true)} /></div>;
-  }
-  return <div className="book-cover"><small>{book.author || "MI LIBRO"}</small><b>{book.title}</b></div>;
-}
-
-function CatalogBookCover({ book, compact = false }: { book: BookSuggestion; compact?: boolean }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  if (book.coverUrl && !imageFailed) return <Image src={book.coverUrl} alt={compact ? "" : `Portada de ${book.title}`} width={compact ? 35 : 96} height={compact ? 48 : 145} unoptimized onError={() => setImageFailed(true)} />;
-  if (compact) return <span className="mini-book-placeholder">▱</span>;
-  return <div className="result-book-placeholder"><span>▱</span><small>SIN PORTADA</small></div>;
-}
-
-const emptyData = (user: User, monthKey: string): ProgressData => ({
-  profile: user, gymDates: [], disciplines: [], trainingLogs: [], exerciseLogs: [], meals: [], mealHistory: [], books: [],
-  readingLogs: [], readingHistory: [], notes: [], goals: [], priorities: { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
-  dailyCheckin: null, dailyCheckins: [], focusProjects: [], focusSessions: [], tasks: [], events: [],
-  dietPlan: null, resources: [], resourceNotes: [],
-});
-
-async function readJson<T>(response: Response): Promise<T> {
-  const text = await response.text();
-  if (!text.trim()) {
-    if (response.status === 401) throw new Error("Tu sesión venció. Volvé a iniciar sesión.");
-    if (response.status === 413) throw new Error("El archivo es demasiado pesado. Probá nuevamente con uno más chico.");
-    throw new Error("El servidor no devolvió una respuesta. Recargá la página e intentá nuevamente.");
-  }
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new Error("No pudimos interpretar la respuesta del servidor. Recargá la página e intentá nuevamente.");
-  }
-}
 
 export default function ProgressClient({ initialUser, initialError = "", pendingInviteCode = "", inviteResult = "", showTutorial = false }: {
   initialUser: User;
