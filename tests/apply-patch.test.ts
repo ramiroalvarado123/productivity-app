@@ -79,3 +79,24 @@ test("ignora colecciones desconocidas o ausentes", () => {
   assert.equal(next.profile, data.profile);
   assert.equal("events" in next, false);
 });
+
+test("la planilla de gimnasio reemplaza la sesión: edita, agrega y borra ejercicios de una vez", () => {
+  const data = { exerciseLogs: [
+    { id: 1, trainingLogId: 9, exercise: "Sentadilla", createdAt: "2026-09-19T10:00:00Z" },
+    { id: 2, trainingLogId: 9, exercise: "Press banca", createdAt: "2026-09-19T10:01:00Z" },
+  ] };
+  const next = applyPatch(data, {
+    upsert: { exerciseLogs: [{ id: 1, trainingLogId: 9, exercise: "Sentadilla frontal", createdAt: "2026-09-19T10:00:00Z" }, { id: 3, trainingLogId: 9, exercise: "Remo", createdAt: "2026-09-19T10:05:00Z" }] },
+    remove: { exerciseLogs: [2] },
+  }, TODAY);
+  assert.deepEqual(next.exerciseLogs.map((row) => [row.id, row.exercise]), [[3, "Remo"], [1, "Sentadilla frontal"]]);
+});
+
+test("artículos, podcasts y sus notas se aplican como cualquier colección", () => {
+  const data = { resources: [{ id: 1, createdAt: "2026-09-10T00:00:00Z" }], resourceNotes: [{ id: 5, resourceId: 1, createdAt: "2026-09-11T00:00:00Z" }] };
+  const added = applyPatch(data, { upsert: { resources: [{ id: 2, createdAt: "2026-09-19T00:00:00Z" }] } }, TODAY);
+  assert.deepEqual(added.resources.map((row) => row.id), [2, 1]);
+  const removed = applyPatch(added, { remove: { resources: [1], resourceNotes: [5] } }, TODAY);
+  assert.deepEqual(removed.resources.map((row) => row.id), [2]);
+  assert.deepEqual(removed.resourceNotes, []);
+});

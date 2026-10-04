@@ -147,9 +147,12 @@ async function handleGet(request: Request, timing: Timing) {
       selectRows<ProgressRow>("focus_sessions", { where: { userEmail: email }, gte: { sessionDate: start }, lte: { sessionDate: date }, order: [["sessionDate", "desc"]] }),
       selectRows<ProgressRow>("tasks", { where: { userEmail: email }, order: [["completedAt", "asc"], ["dueDate", "asc"], ["createdAt", "desc"]] }),
       selectRows<ProgressRow>("calendar_events", { where: { userEmail: email }, order: [["eventDate", "asc"], ["eventTime", "asc"]] }),
+      // Tablas opcionales (supabase/study-resources.sql): si todavía no se crearon, la app sigue andando con la lista vacía.
+      selectRows<ProgressRow>("study_resources", { where: { userEmail: email }, order: [["createdAt", "desc"]] }).catch(() => [] as ProgressRow[]),
+      selectRows<ProgressRow>("resource_notes", { where: { userEmail: email }, order: [["createdAt", "desc"]] }).catch(() => [] as ProgressRow[]),
     ]);
     timing.mark("queries");
-    const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, priorityHistory, goals, dailyCheckins, focusProjects, focusSessions, tasks, events] = result;
+    const [trainingLogs, exerciseLogs, meals, mealHistory, dietPlans, books, readingLogs, readingHistory, notes, priorities, priorityHistory, goals, dailyCheckins, focusProjects, focusSessions, tasks, events, resources, resourceNotes] = result;
     const completedBookIds = books
       .filter((book) => String(book.status) === "reading" && Number(book.totalPages) > 0 && Number(book.currentPage) >= Number(book.totalPages))
       .map((book) => book.id);
@@ -167,7 +170,7 @@ async function handleGet(request: Request, timing: Timing) {
       disciplines, trainingLogs, exerciseLogs, meals, mealHistory, dietPlan: dietPlans[0] ?? null, books: visibleBooks, readingLogs, readingHistory, notes,
       priorities: priorities[0] ?? { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
       priorityHistory,
-      goals, dailyCheckin: dailyCheckins.find((row) => row.entryDate === date) ?? null, dailyCheckins, focusProjects, focusSessions, tasks, events,
+      goals, dailyCheckin: dailyCheckins.find((row) => row.entryDate === date) ?? null, dailyCheckins, focusProjects, focusSessions, tasks, events, resources, resourceNotes,
     });
   } catch (cause) {
     console.error("progress GET", cause);
@@ -291,6 +294,39 @@ async function handlePost(request: Request, timing: Timing) {
       }, true);
       return patched({ upsert: { exerciseLogs: rows } });
     }
+    // La planilla de gimnasio guarda la sesión completa de una vez: actualiza
+    // las filas que ya existían, inserta las nuevas y borra las que se quitaron.
+    if (action === "save_exercises") {
+      const disciplineId = Number(p.disciplineId), date = String(p.date ?? "");
+      if (!disciplineId || !DATE.test(date) || !(await owned("training_disciplines", email, { id: disciplineId }))[0]) return fail("Elegí una disciplina y fecha válidas.");
+      const incoming = (Array.isArray(p.exercises) ? p.exercises.filter(isRecord) : []).slice(0, 60).map((row) => ({
+        id: Number(row.id) || 0,
+        exercise: String(row.exercise ?? "").trim().slice(0, 80),
+        weightDeciKg: Math.max(0, Math.min(10000, Math.round(numeric(row.weightKg) * 10))),
+        sets: Math.max(0, Math.min(100, Math.round(Number(row.sets) || 0))),
+        reps: Math.max(0, Math.min(1000, Math.round(Number(row.reps) || 0))),
+        isRecord: Boolean(row.isRecord),
+      }));
+      if (incoming.some((row) => !row.exercise)) return fail("Completá el nombre de cada ejercicio.");
+      let log = (await owned("training_logs", email, { disciplineId, trainingDate: date }))[0];
+      if (!log) {
+        if (!incoming.length) return patched({});
+        log = (await insertRows<ProgressRow>("training_logs", { userEmail: email, disciplineId, trainingDate: date }, { upsert: true, onConflict: ["userEmail", "disciplineId", "trainingDate"], returnRows: true }))[0];
+      }
+      const existing = await selectRows<ProgressRow>("exercise_logs", { where: { userEmail: email, trainingLogId: log.id } });
+      const existingIds = new Set(existing.map((row) => row.id));
+      const toUpdate = incoming.filter((row) => existingIds.has(row.id));
+      const toInsert = incoming.filter((row) => !existingIds.has(row.id));
+      const keptIds = new Set(toUpdate.map((row) => row.id));
+      const toDelete = existing.filter((row) => !keptIds.has(row.id)).map((row) => row.id);
+      const fields = ({ exercise, weightDeciKg, sets, reps, isRecord }: typeof incoming[number]) => ({ exercise, weightDeciKg, sets, reps, isRecord });
+      const [updated, inserted] = await Promise.all([
+        Promise.all(toUpdate.map((row) => updateRows<ProgressRow>("exercise_logs", { id: row.id, userEmail: email }, fields(row), true))).then((rows) => rows.flat()),
+        toInsert.length ? insertRows<ProgressRow>("exercise_logs", toInsert.map((row) => ({ userEmail: email, trainingLogId: log.id, ...fields(row) })), { returnRows: true }) : Promise.resolve([] as ProgressRow[]),
+        Promise.all(toDelete.map((id) => deleteRows("exercise_logs", { id, userEmail: email }))),
+      ]);
+      return patched({ upsert: { trainingLogs: [log], exerciseLogs: [...updated, ...inserted] }, ...(toDelete.length ? { remove: { exerciseLogs: toDelete } } : {}) });
+    }
     if (action === "delete_exercise") { const id = Number(p.id); await deleteRows("exercise_logs", { id, userEmail: email }); return patched({ remove: { exerciseLogs: [id] } }); }
     if (action === "save_sleep") { const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); const sleepQuality = p.sleepQuality === "good" || p.sleepQuality === "bad" ? p.sleepQuality : null; const rows = await upsert("daily_checkins", { userEmail: email, entryDate: date, sleepMinutes: Math.max(0, Math.min(1440, Math.round(Number(p.sleepMinutes) || 0))), bedtime: String(p.bedtime ?? "").slice(0, 20), wakeTime: String(p.wakeTime ?? "").slice(0, 20), sleepQuality }, ["userEmail", "entryDate"]); return patched({ upsert: { dailyCheckins: rows } }); }
     if (action === "add_focus_project") { const name = String(p.name ?? "").trim().slice(0, 80), kind = String(p.kind ?? "study"); if (!name || !["study", "work"].includes(kind)) return fail("Completá el nombre y el tipo."); await insertRows("focus_projects", { userEmail: email, name, kind }, { upsert: true, onConflict: ["userEmail", "name"], ignoreDuplicates: true }); return ok(); }
@@ -401,7 +437,36 @@ async function handlePost(request: Request, timing: Timing) {
       const bookRows = await updateRows<ProgressRow>("books", { id: bookId, userEmail: email }, { currentPage, status: nextStatus }, true);
       return patched({ upsert: { readingHistory: logRows, books: bookRows } }, { completed, currentPage, pages });
     }
-    if (action === "add_note") { const bookId = Number(p.bookId), content = String(p.content ?? "").trim(); if (!content || !(await owned("books", email, { id: bookId }))[0]) return fail("Elegí un libro y escribí una nota."); await insertRows("book_notes", { userEmail: email, bookId, content }); return ok(); }
+    if (action === "add_note") { const bookId = Number(p.bookId), content = String(p.content ?? "").trim().slice(0, 4000); if (!content || !(await owned("books", email, { id: bookId }))[0]) return fail("Elegí un libro y escribí una nota."); const rows = await insertRows<ProgressRow>("book_notes", { userEmail: email, bookId, content }, { returnRows: true }); return patched({ upsert: { notes: rows } }); }
+    if (action === "delete_note") { const id = Number(p.id); if (!(await owned("book_notes", email, { id }))[0]) return fail("Nota no encontrada.", 404); await deleteRows("book_notes", { id, userEmail: email }); return patched({ remove: { notes: [id] } }); }
+    // Artículos, podcasts y videos de Estudio, con sus propias notas.
+    if (action === "add_resource") {
+      const kind = String(p.kind ?? ""), title = String(p.title ?? "").trim().slice(0, 200), url = String(p.url ?? "").trim().slice(0, 1000);
+      if (!["article", "podcast", "video"].includes(kind) || !title) return fail("Completá el título y el tipo.");
+      if (url && !/^https?:\/\//i.test(url)) return fail("El link tiene que empezar con http:// o https://");
+      const rows = await insertRows<ProgressRow>("study_resources", { userEmail: email, kind, title, author: String(p.author ?? "").trim().slice(0, 160), url }, { returnRows: true });
+      return patched({ upsert: { resources: rows } });
+    }
+    if (action === "set_resource_status") {
+      const id = Number(p.id), status = String(p.status ?? "");
+      if (!["pending", "done"].includes(status) || !(await owned("study_resources", email, { id }))[0]) return fail("Elemento no encontrado.", 404);
+      const rows = await updateRows<ProgressRow>("study_resources", { id, userEmail: email }, { status, updatedAt: now() }, true);
+      return patched({ upsert: { resources: rows } });
+    }
+    if (action === "delete_resource") {
+      const id = Number(p.id);
+      if (!(await owned("study_resources", email, { id }))[0]) return fail("Elemento no encontrado.", 404);
+      const resourceNotes = await selectRows<ProgressRow>("resource_notes", { where: { userEmail: email, resourceId: id } });
+      await deleteRows("study_resources", { id, userEmail: email });
+      return patched({ remove: { resources: [id], resourceNotes: resourceNotes.map((row) => row.id) } });
+    }
+    if (action === "add_resource_note") {
+      const resourceId = Number(p.resourceId), content = String(p.content ?? "").trim().slice(0, 4000);
+      if (!content || !(await owned("study_resources", email, { id: resourceId }))[0]) return fail("Elegí un elemento y escribí una nota.");
+      const rows = await insertRows<ProgressRow>("resource_notes", { userEmail: email, resourceId, content }, { returnRows: true });
+      return patched({ upsert: { resourceNotes: rows } });
+    }
+    if (action === "delete_resource_note") { const id = Number(p.id); if (!(await owned("resource_notes", email, { id }))[0]) return fail("Nota no encontrada.", 404); await deleteRows("resource_notes", { id, userEmail: email }); return patched({ remove: { resourceNotes: [id] } }); }
     if (action === "update_book_status") { const status = String(p.status); if (!["reading", "read", "wishlist"].includes(status)) return fail("Estado inválido."); await updateRows("books", { id: Number(p.bookId), userEmail: email }, { status }); return ok(); }
     if (action === "set_priorities") { const monthKey = String(p.monthKey ?? ""), weight = (v: unknown) => Math.max(1, Math.min(3, Math.round(Number(v) || 2))); if (!MONTH.test(monthKey)) return fail("Mes inválido."); await upsert("monthly_priorities", { userEmail: email, monthKey, gymWeight: weight(p.gymWeight), nutritionWeight: weight(p.nutritionWeight), readingWeight: weight(p.readingWeight), sleepWeight: weight(p.sleepWeight), focusWeight: weight(p.focusWeight), goalsWeight: weight(p.goalsWeight) }, ["userEmail", "monthKey"]); return ok(); }
     if (action === "add_goal") { const title = String(p.title ?? "").trim(), period = String(p.period), category = String(p.category), targetDate = String(p.targetDate ?? ""); if (!title || !["weekly", "monthly", "annual", "custom"].includes(period) || !DATE.test(targetDate)) return fail("Completá un objetivo válido."); const rows = await insertRows<ProgressRow>("goals", { userEmail: email, title: title.slice(0, 180), period, category, targetDate }, { returnRows: true }); return patched({ upsert: { goals: rows } }); }

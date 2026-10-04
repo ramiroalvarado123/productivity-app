@@ -51,11 +51,12 @@ export function BadgeEmblem({ symbol, tier, locked = false, size = 48, className
 
 type StreakFlameIconProps = SVGProps<SVGSVGElement>;
 
-/** Llama de marca en SVG para conservar nitidez incluso en el chip pequeño. */
+/** Llama de racha en SVG (estilo Duolingo: cuerpo naranja, gota amarilla y chispas) para conservar nitidez incluso en el chip pequeño. */
 export function StreakFlameIcon(props: StreakFlameIconProps) {
   return <svg viewBox="0 0 32 36" fill="none" focusable="false" aria-hidden="true" {...props}>
-    <path d="M17.4 2.5c1.4 5.5-1.4 7.4 1.7 10.8 1.3-1.6 1.7-3.1 1.8-5.2 4.5 3.6 7.2 8 7.2 13 0 7.6-5.3 12.4-12.3 12.4S3.5 28.8 3.5 21.5c0-5.6 3.1-9.7 7.8-14.5.3 4.4 1.5 6.4 3.1 7.9 1.3-3.4 1.5-7.1 3-12.4Z" className="streak-flame-outer" />
-    <path d="M17.1 17.3c.2 2.2-1.2 3.3-.8 5.5.9-.7 1.4-1.4 1.8-2.6 2.3 2.2 3.5 4.2 3.5 6.1a5.7 5.7 0 1 1-11.4 0c0-2.3 1.4-4.2 3.7-6.5.1 1.7.6 2.7 1.4 3.4.9-1.5 1.3-3.1 1.8-5.9Z" className="streak-flame-inner" />
-    <path d="M10.2 21.8c-.7 1-1 2.1-1 3.4" className="streak-flame-glint" />
+    <path d="M3 12.6c0-2.2 2.3-3.2 3.8-1.9l1.9 1.6 5.4-7c1-1.3 2.8-1.3 3.8 0l8.5 10.6c1.7 2.1 2.6 4.5 2.6 7.2C29 29.3 23.2 34 16 34S3 29.3 3 22.4Z" className="streak-flame-outer" />
+    <path d="M14.9 19.2c.6-.8 1.6-.8 2.2 0l3.4 4.4c.7.9 1 1.9 1 3 0 3-2.5 5.3-5.5 5.3s-5.5-2.3-5.5-5.3c0-1.1.3-2.1 1-3Z" className="streak-flame-inner" />
+    <rect x="7.2" y="2.1" width="3.2" height="3.2" rx=".8" transform="rotate(45 8.8 3.7)" className="streak-flame-spark" />
+    <circle cx="13.6" cy="1.4" r="1" className="streak-flame-spark" />
   </svg>;
 }

@@ -6,7 +6,7 @@
 
 export type CollectionKey =
   | "trainingLogs" | "exerciseLogs" | "mealHistory" | "readingHistory" | "books" | "notes"
-  | "goals" | "dailyCheckins" | "focusProjects" | "focusSessions" | "tasks" | "events";
+  | "goals" | "dailyCheckins" | "focusProjects" | "focusSessions" | "tasks" | "events" | "resources" | "resourceNotes";
 
 export type PatchRow = { id: number } & Record<string, unknown>;
 
@@ -33,6 +33,8 @@ const ORDER: Record<CollectionKey, Array<[string, Direction]>> = {
   focusSessions: [["sessionDate", "desc"]],
   tasks: [["completedAt", "asc"], ["dueDate", "asc"], ["createdAt", "desc"]],
   events: [["eventDate", "asc"], ["eventTime", "asc"]],
+  resources: [["createdAt", "desc"]],
+  resourceNotes: [["createdAt", "desc"]],
 };
 
 /** Postgres: en ascendente los nulos van al final; en descendente, al principio. */

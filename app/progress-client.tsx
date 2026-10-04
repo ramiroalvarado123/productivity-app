@@ -20,6 +20,7 @@ import { readingPositionForDate } from "./lib/reading";
 import { applyPatch, type DataPatch } from "./lib/apply-patch";
 import { BADGE_DEFINITIONS, type BadgeStats } from "./lib/badges";
 import { BadgeEmblem, StreakFlameIcon } from "./badge-icons";
+import { NotesThread, StudyResourcesPanel, type ResourceNote, type StudyResource } from "./study-resources";
 import { useDebouncedRefresh } from "./lib/use-debounced-refresh";
 import { EarlyAdopterAnnouncement } from "./early-adopter-announcement";
 import { EARLY_ADOPTER_ANNOUNCEMENT_ID } from "./lib/early-adopter-announcement";
@@ -96,6 +97,7 @@ type ProgressData = {
   meals: Meal[]; mealHistory: Meal[]; books: Book[]; readingLogs: ReadingLog[]; readingHistory: ReadingLog[]; notes: Note[];
   goals: Goal[]; priorities: Priorities; priorityHistory?: Priorities[]; dailyCheckin: DailyCheckin | null; dailyCheckins: DailyCheckin[];
   focusProjects: FocusProject[]; focusSessions: FocusSession[]; tasks: Task[]; events: CalendarEvent[]; dietPlan: DietPlanRecord | null;
+  resources?: StudyResource[]; resourceNotes?: ResourceNote[];
 };
 type Section = "summary" | "score" | "physical" | "focus" | "sleep" | "plan" | "stats" | "friends" | "pro";
 type PhysicalTab = "training" | "meals";
@@ -520,6 +522,99 @@ function DistanceSessionForm({ disciplineId, date, log, saving, savePhase, onSav
   </form>;
 }
 
+/**
+ * Semana navegable para elegir el día que se registra, igual que el
+ * calendario de Físico: flechas para ir de semana en semana y un toque sobre
+ * el día lo abre. Los días con datos se marcan con ✓ y no se puede ir al futuro.
+ */
+function DayStrip({ value, today, onChange, markedDates, label }: {
+  value: string;
+  today: string;
+  onChange: (date: string) => void;
+  markedDates: Set<string>;
+  label: string;
+}) {
+  const [anchor, setAnchor] = useState(value);
+  const [previousValue, setPreviousValue] = useState(value);
+  // Si la fecha cambia desde afuera (p. ej. empieza un día nuevo), la semana visible la acompaña.
+  if (value !== previousValue) {
+    setPreviousValue(value);
+    setAnchor(value);
+  }
+  const week = weekFor(anchor);
+  const shortDay = (date: string) => new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short" }).format(new Date(date + "T12:00:00")).replace(".", "");
+  const atCurrentWeek = week[6].iso >= today;
+  const marked = week.filter((day) => markedDates.has(day.iso)).length;
+  return <div className="day-strip" role="group" aria-label={label}>
+    <div className="calendar-head training-week-nav">
+      <button type="button" onClick={() => setAnchor((current) => dateMinus(current, 7))} aria-label="Semana anterior">‹</button>
+      <div className="training-week-nav-title">
+        <h2>{shortDay(week[0].iso)} – {shortDay(week[6].iso)}</h2>
+        {value !== today ? <button type="button" className="training-week-today" onClick={() => { setAnchor(today); onChange(today); }}>Volver a hoy</button> : <span className="week-pill">{marked}/7 días registrados</span>}
+      </div>
+      <button type="button" onClick={() => setAnchor((current) => dateMinus(current, -7))} disabled={atCurrentWeek} aria-label="Semana siguiente">›</button>
+    </div>
+    <div className="week-row">{week.map((day) => {
+      const done = markedDates.has(day.iso);
+      const future = day.iso > today;
+      return <button key={day.iso} type="button" disabled={future} aria-pressed={day.iso === value} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (day.iso === value ? " active" : "")} onClick={() => onChange(day.iso)}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
+    })}</div>
+  </div>;
+}
+
+type ExerciseDraft = { key: string; id: number; exercise: string; weight: string; sets: string; reps: string; isRecord: boolean };
+let exerciseDraftSeq = 0;
+const emptyExerciseDraft = (): ExerciseDraft => ({ key: `new-${++exerciseDraftSeq}`, id: 0, exercise: "", weight: "", sets: "", reps: "", isRecord: false });
+const isBlankExerciseDraft = (row: ExerciseDraft) => !row.exercise.trim() && !row.weight.trim() && !row.sets.trim() && !row.reps.trim() && !row.isRecord;
+
+/**
+ * Planilla de la sesión de gimnasio: todos los ejercicios del día en una
+ * tabla editable que se guarda de una sola vez. Arranca con lo que ya estaba
+ * cargado ese día; el padre la remonta (key) al cambiar de día o al volver
+ * del servidor con ids nuevos.
+ */
+function ExerciseSessionTable({ disciplineId, date, exercises, saving, savePhase, onSave, onError }: {
+  disciplineId: number;
+  date: string;
+  exercises: ExerciseLog[];
+  saving: boolean;
+  savePhase: SavePhase;
+  onSave: (payload: Record<string, unknown>) => void;
+  onError: (message: string) => void;
+}) {
+  const [rows, setRows] = useState<ExerciseDraft[]>(() => {
+    const existing = [...exercises].sort((left, right) => left.id - right.id).map((item) => ({
+      key: String(item.id), id: item.id, exercise: item.exercise,
+      weight: item.weightDeciKg ? formatDecimalInput(item.weightDeciKg / 10) : "",
+      sets: item.sets ? String(item.sets) : "", reps: item.reps ? String(item.reps) : "", isRecord: item.isRecord,
+    }));
+    return existing.length ? [...existing, emptyExerciseDraft()] : [emptyExerciseDraft(), emptyExerciseDraft(), emptyExerciseDraft()];
+  });
+  const update = (key: string, patch: Partial<ExerciseDraft>) => setRows((current) => current.map((row) => row.key === key ? { ...row, ...patch } : row));
+  const remove = (key: string) => setRows((current) => current.length > 1 ? current.filter((row) => row.key !== key) : [emptyExerciseDraft()]);
+  const filled = rows.filter((row) => !isBlankExerciseDraft(row));
+  return <form className="exercise-sheet" onSubmit={(event) => {
+    event.preventDefault();
+    if (filled.some((row) => !row.exercise.trim())) { onError("Completá el nombre de cada ejercicio de la tabla."); return; }
+    if (!filled.length && !exercises.length) { onError("Cargá al menos un ejercicio."); return; }
+    onSave({ action: "save_exercises", disciplineId, date, exercises: filled.map((row) => ({ id: row.id || undefined, exercise: row.exercise, weightKg: row.weight.trim().replace(",", "."), sets: row.sets, reps: row.reps, isRecord: row.isRecord })) });
+  }}>
+    <div className="exercise-sheet-head" aria-hidden="true"><span>Ejercicio</span><span>Kg</span><span>Series</span><span>Reps</span><span title="Récord personal">PR</span><span /></div>
+    {rows.map((row, index) => <div className={"exercise-sheet-row" + (row.isRecord ? " record" : "")} key={row.key}>
+      <input className="exercise-sheet-name" aria-label={`Ejercicio ${index + 1}`} placeholder={index === 0 ? "Ej. sentadilla" : "Ejercicio"} value={row.exercise} onChange={(event) => update(row.key, { exercise: event.target.value })} />
+      <label><small>Kg</small><input aria-label={`Kg del ejercicio ${index + 1}`} type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" placeholder="0" value={row.weight} onChange={(event) => update(row.key, { weight: event.target.value })} /></label>
+      <label><small>Series</small><input aria-label={`Series del ejercicio ${index + 1}`} type="number" inputMode="numeric" min="0" placeholder="0" value={row.sets} onChange={(event) => update(row.key, { sets: event.target.value })} /></label>
+      <label><small>Reps</small><input aria-label={`Repeticiones del ejercicio ${index + 1}`} type="number" inputMode="numeric" min="0" placeholder="0" value={row.reps} onChange={(event) => update(row.key, { reps: event.target.value })} /></label>
+      <button type="button" className={"exercise-sheet-record" + (row.isRecord ? " active" : "")} aria-pressed={row.isRecord} aria-label={`Marcar ejercicio ${index + 1} como récord personal`} title="Récord personal" onClick={() => update(row.key, { isRecord: !row.isRecord })}>🏆</button>
+      <button type="button" className="exercise-sheet-delete" aria-label={`Quitar fila ${index + 1}`} onClick={() => remove(row.key)}>×</button>
+    </div>)}
+    <div className="exercise-sheet-actions">
+      <button type="button" className="exercise-sheet-add" onClick={() => setRows((current) => [...current, emptyExerciseDraft()])}>＋ Agregar fila</button>
+      <button className="primary-action" disabled={saving}><SaveButtonContent label={`Guardar entrenamiento${filled.length ? ` · ${filled.length}` : ""}`} phase={savePhase} /></button>
+    </div>
+  </form>;
+}
+
 function TrainingQualityBar({ disciplineName, quality, saving, onSelect }: {
   disciplineName: string;
   quality: number | null | undefined;
@@ -568,7 +663,7 @@ const emptyData = (user: User, monthKey: string): ProgressData => ({
   profile: user, gymDates: [], disciplines: [], trainingLogs: [], exerciseLogs: [], meals: [], mealHistory: [], books: [],
   readingLogs: [], readingHistory: [], notes: [], goals: [], priorities: { monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 },
   dailyCheckin: null, dailyCheckins: [], focusProjects: [], focusSessions: [], tasks: [], events: [],
-  dietPlan: null,
+  dietPlan: null, resources: [], resourceNotes: [],
 });
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -676,7 +771,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [priorityDraft, setPriorityDraft] = useState<Priorities>({ monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 });
   const [selectedDisciplineId, setSelectedDisciplineId] = useState<number | null>(null);
   const [trainingDate, setTrainingDate] = useState(today);
-  const [editingExerciseId, setEditingExerciseId] = useState<number | null>(null);
   const [sleepEntryDate, setSleepEntryDate] = useState(today);
   const [focusEntryDate, setFocusEntryDate] = useState(today);
   const [readingEntryDate, setReadingEntryDate] = useState(today);
@@ -743,7 +837,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const [bookToDelete, setBookToDelete] = useState<Book | null>(null);
   const [bookShelfPage, setBookShelfPage] = useState(0);
   const [pagesInput, setPagesInput] = useState<number | "">(0);
-  const [note, setNote] = useState("");
   const [bookForm, setBookForm] = useState(false);
   const [bookDraft, setBookDraft] = useState({ title: "", author: "", totalPages: 0, status: "reading" as BookStatus, coverUrl: "", externalKey: "" });
   const [bookSuggestions, setBookSuggestions] = useState<BookSuggestion[]>([]);
@@ -1117,6 +1210,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   }, []);
 
   const savePhase = (key: string): SavePhase => saveFeedback?.key === key ? saveFeedback.phase : null;
+  const saveLabel = (label: ReactNode, key: string) => <SaveButtonContent label={label} phase={savePhase(key)} />;
 
   async function save(payload: Record<string, unknown>, feedbackKey = String(payload.action ?? "save")) {
     beginSaveFeedback(feedbackKey);
@@ -1131,7 +1225,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       // Las cargas en vuelo son anteriores a este guardado: se descartan y la recarga silenciosa trae el dato nuevo.
       loadSeqRef.current += 1;
       void scheduleRefresh();
-      if (payload.action === "update_exercise" || payload.action === "delete_exercise") setEditingExerciseId(null);
       finishSaveFeedback(feedbackKey, true);
       return true;
     } catch (caught) {
@@ -1475,6 +1568,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     [badgeStats],
   );
   const earnedBadgeSignature = earnedBadgeIds.join(",");
+  const entryDayLabel = (date: string) => date === today ? "HOY" : date === dateMinus(today, 1) ? "AYER" : formatDate(date).toUpperCase();
   const historicalScore = (date: string) => date === today ? null : <div className="historical-score" role="status" aria-live="polite">
     <div>
       <span>{date === dateMinus(today, 1) ? "DAILY SCORE DE AYER" : `DAILY SCORE · ${formatDate(date)}`}</span>
@@ -1503,7 +1597,6 @@ export default function ProgressClient({ initialUser, initialError = "", pending
   const selectedDiscipline = data.disciplines.find((item) => item.id === selectedDisciplineId) ?? data.disciplines[0] ?? null;
   const selectedTrainingLog = selectedDiscipline ? effectiveTrainingLogs.find((item) => item.disciplineId === selectedDiscipline.id && item.trainingDate === trainingDate) : undefined;
   const selectedExercises = selectedTrainingLog ? data.exerciseLogs.filter((item) => item.trainingLogId === selectedTrainingLog.id) : [];
-  const editingExercise = selectedExercises.find((item) => item.id === editingExerciseId) ?? null;
   // Cada disciplina tiene un único detalle de sesión posible: nunca conviven
   // el de pesas, el de distancia y el genérico para la misma disciplina.
   const isDistanceDiscipline = selectedDiscipline?.kind === "running" || selectedDiscipline?.kind === "cycling" || selectedDiscipline?.kind === "swimming";
@@ -2332,18 +2425,20 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     </article>
     {selectedDiscipline && <div className="training-detail-grid single-session">
       <article className="panel">
-        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><div className="meal-panel-actions"><span className="week-pill">{trainingDate === today ? "Hoy" : formatDate(trainingDate)}</span><button type="button" className="meal-backfill-toggle" onClick={() => setTrainingDate((current) => current === today ? dateMinus(today, 1) : today)}>{trainingDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
+        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><div className="meal-panel-actions"><span className="week-pill">{trainingDate === today ? "Hoy" : formatDate(trainingDate)}</span>{trainingDate !== today && <button type="button" className="meal-backfill-toggle" onClick={() => { setTrainingDate(today); setTrainingWeekAnchor(today); }}>Volver a hoy</button>}</div></div>
         {historicalScore(trainingDate)}
         {selectedDiscipline.kind === "strength" ? <>
           <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
-          <form key={`${selectedDiscipline.id}-${trainingDate}-${editingExercise?.id ?? "new"}`} className="exercise-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); const weight = String(form.get("weightKg") ?? "").trim().replace(",", "."); void submitForm(event, { action: editingExercise ? "update_exercise" : "add_exercise", id: editingExercise?.id, disciplineId: selectedDiscipline.id, date: trainingDate, exercise: form.get("exercise"), weightKg: weight, sets: form.get("sets"), reps: form.get("reps"), isRecord: form.get("isRecord") === "on" }); }}>
-            <input name="exercise" required placeholder="Ejercicio (ej. sentadilla)" defaultValue={editingExercise?.exercise ?? ""} />
-            <div className="three-fields"><label>Kg<input name="weightKg" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" placeholder="0,0" defaultValue={editingExercise ? String(editingExercise.weightDeciKg / 10).replace(".", ",") : ""} /></label><label>Series<input name="sets" type="number" min="0" defaultValue={editingExercise ? editingExercise.sets : ""} /></label><label>Reps<input name="reps" type="number" min="0" defaultValue={editingExercise ? editingExercise.reps : ""} /></label></div>
-            <label className="check-label"><input name="isRecord" type="checkbox" defaultChecked={editingExercise?.isRecord ?? false} /> Es un récord personal</label>
-            <button className="primary-action" disabled={saving}><SaveButtonContent label={editingExercise ? "Guardar cambios" : "Agregar ejercicio"} phase={savePhase(editingExercise ? "update_exercise" : "add_exercise")} /></button>
-            {editingExercise ? <button type="button" className="secondary-action" onClick={() => setEditingExerciseId(null)}>Cancelar</button> : null}
-          </form>
-          <div className="record-list">{selectedExercises.map((item) => <div key={item.id}><span>{item.isRecord ? "🏆" : "↗"}</span><p><b>{item.exercise}</b><small>{item.weightDeciKg / 10} kg · {item.sets} × {item.reps}</small></p><button type="button" onClick={() => setEditingExerciseId(item.id)}>Editar</button><button type="button" onClick={() => void save({ action: "delete_exercise", id: item.id })}>×</button></div>)}</div>
+          <ExerciseSessionTable
+            key={`${selectedDiscipline.id}-${trainingDate}-${selectedExercises.map((item) => item.id).sort((left, right) => left - right).join(".")}`}
+            disciplineId={selectedDiscipline.id}
+            date={trainingDate}
+            exercises={selectedExercises}
+            saving={saving}
+            savePhase={savePhase("save_exercises")}
+            onSave={(payload) => void save(payload)}
+            onError={setError}
+          />
         </> : isDistanceDiscipline ? <DistanceSessionForm
           key={`${selectedDiscipline.id}-${trainingDate}`}
           disciplineId={selectedDiscipline.id}
@@ -2362,7 +2457,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const sleepPanel = <section className="module-stack sleep-page">
     <div className="split-grid">
-      <article className="panel"><div className="panel-heading"><div><p>DESCANSO DE {sleepEntryDate === today ? "HOY" : "AYER"}</p><h2>Registrar sueño</h2></div><div className="meal-panel-actions"><span className="sleep-icon">☾</span><button type="button" className="meal-backfill-toggle" onClick={() => setSleepEntryDate((current) => current === today ? dateMinus(today, 1) : today)}>{sleepEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
+      <article className="panel"><div className="panel-heading"><div><p>DESCANSO DE {entryDayLabel(sleepEntryDate)}</p><h2>Registrar sueño</h2></div><div className="meal-panel-actions"><span className="sleep-icon">☾</span></div></div>
+        <DayStrip label="Elegí la noche que querés registrar" value={sleepEntryDate} today={today} onChange={setSleepEntryDate} markedDates={new Set(data.dailyCheckins.filter((item) => item.sleepMinutes > 0).map((item) => item.entryDate))} />
         {historicalScore(sleepEntryDate)}
         <form className="data-form sleep-form" onSubmit={(event) => void submitForm(event, { action: "save_sleep", date: sleepEntryDate, sleepMinutes: calculatedSleepMinutes, bedtime: sleepBedtime, wakeTime: sleepWaketime, sleepQuality })}>
           <div className="sleep-duration-badge"><span>TIEMPO CALCULADO</span><b>{Math.floor(calculatedSleepMinutes / 60)} h {calculatedSleepMinutes % 60 ? calculatedSleepMinutes % 60 + " min" : ""}</b><small>Entre la hora de acostarte y la de despertarte</small></div>
@@ -2405,7 +2501,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
     .sort((left, right) => right.id - left.id);
 
   const focusPanel = <section className="module-stack">
-      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><div className="meal-panel-actions"><label className="training-target-label">Objetivo diario de foco<Dropdown className="weekly-target-dropdown" ariaLabel="Objetivo diario de estudio y trabajo" value={String(data.profile.focusDailyTargetMinutes || 120)} onChange={(value) => void save({ action: "set_focus_daily_target", minutes: Number(value) }, "focus_daily_target")} options={FOCUS_DAILY_TARGET_OPTIONS} /></label><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span><label className="focus-date-label">Fecha de foco<input className="focus-date-input" type="date" required max={today} value={focusEntryDate} onChange={(event) => setFocusEntryDate(event.currentTarget.value || today)} /></label>{focusEntryDate !== today && <button type="button" className="meal-backfill-toggle" onClick={() => setFocusEntryDate(today)}>Volver a hoy</button>}</div></div>
+      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><div className="meal-panel-actions"><label className="training-target-label">Objetivo diario de foco<Dropdown className="weekly-target-dropdown" ariaLabel="Objetivo diario de estudio y trabajo" value={String(data.profile.focusDailyTargetMinutes || 120)} onChange={(value) => void save({ action: "set_focus_daily_target", minutes: Number(value) }, "focus_daily_target")} options={FOCUS_DAILY_TARGET_OPTIONS} /></label><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div></div>
+        <DayStrip label="Elegí el día de foco que querés registrar" value={focusEntryDate} today={today} onChange={setFocusEntryDate} markedDates={new Set(uniqueFocusSessions.filter((session) => focusProjectIds.has(session.projectId)).map((session) => session.sessionDate))} />
         {historicalScore(focusEntryDate)}
         <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_focus_project")} /></button></form>
         <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = effectiveFocusMinutesFor(project.id, (date) => date === today); const weekMinutes = effectiveFocusMinutesFor(project.id, (date) => date >= week[0].iso); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p><button type="button" className="focus-project-delete" aria-label={`Eliminar ${project.kind === "study" ? "materia" : "proyecto"} ${project.name}`} disabled={saving} onClick={() => { const kind = project.kind === "study" ? "materia" : "proyecto"; if (window.confirm(`¿Eliminar ${kind} “${project.name}”? También se borrarán sus registros de horas. Las tareas vinculadas se conservarán sin asignar a un proyecto.`)) void save({ action: "delete_focus_project", projectId: project.id }); }}>×</button></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
@@ -3059,7 +3156,8 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const mealEntryMeals = data.mealHistory.filter((meal) => meal.mealDate === mealEntryDate);
   const mealEntryCalories = mealEntryMeals.reduce((sum, meal) => sum + meal.calories, 0);
-  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE {mealEntryDate === today ? "HOY" : "AYER"}</p><h2>Comidas</h2></div><div className="meal-panel-actions"><span className="week-pill">{mealEntryDate === today ? "Hoy" : "Ayer"}</span><button type="button" className="meal-backfill-toggle" onClick={() => { setMealEntryDate((current) => current === today ? dateMinus(today, 1) : today); setEstimate(null); }}>{mealEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button></div></div>
+  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE {entryDayLabel(mealEntryDate)}</p><h2>Comidas</h2></div></div>
+    <DayStrip label="Elegí el día de comidas que querés registrar" value={mealEntryDate} today={today} onChange={(date) => { setMealEntryDate(date); setEstimate(null); }} markedDates={new Set(data.mealHistory.map((meal) => meal.mealDate))} />
     {historicalScore(mealEntryDate)}
     {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><Image src={photoPreview} alt="Comida a analizar" width={38} height={38} unoptimized /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
       {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" disabled={saving} onClick={() => void saveEstimate()}><SaveButtonContent label="Confirmar y guardar" phase={savePhase("add_meal")} /></button></div>}
@@ -3074,7 +3172,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
       <label>Calorías<input name="calories" type="number" min="0" placeholder="kcal" /></label>
       <button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_meal")} /></button>
     </form>
-    <div className="meal-list">{mealEntryMeals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!mealEntryMeals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas {mealEntryDate === today ? "hoy" : "ayer"}</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{mealEntryCalories.toLocaleString("es-AR")} kcal</b></div>
+    <div className="meal-list">{mealEntryMeals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!mealEntryMeals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas {mealEntryDate === today ? "hoy" : "este día"}</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{mealEntryCalories.toLocaleString("es-AR")} kcal</b></div>
   </article>;
 
   const dietEstimate = estimateTargetCalories(dietForm);
@@ -3119,12 +3217,15 @@ export default function ProgressClient({ initialUser, initialError = "", pending
 
   const calorieCalendarPanel = <article className="panel calorie-calendar-panel"><div className="calorie-calendar-top"><div><p>SEGUIMIENTO DE LA DIETA</p><h2>Calorías por día</h2><small>{dietTargetCalories ? <>Tu referencia actual es <b>{dietTargetCalories.toLocaleString("es-AR")} kcal diarias.</b></> : "Creá y guardá un plan para comparar cada día con tu objetivo."}</small></div><div className="calorie-calendar-nav"><button onClick={() => shiftDietCalendar(-1)}>‹</button><b>{dietCalendarMonthName}</b><button onClick={() => shiftDietCalendar(1)}>›</button></div></div><div className="calorie-calendar"><div className="calorie-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <b key={day + index}>{day}</b>)}</div><div className="calorie-calendar-cells">{Array.from({ length: dietCalendarOffset }, (_, index) => <span className="blank" key={"diet-blank-" + index} />)}{Array.from({ length: dietCalendarDays }, (_, index) => { const day = index + 1; const iso = dietCalendarCursor + "-" + String(day).padStart(2, "0"); const total = caloriesByDate[iso] ?? 0; return <div className={calorieStatus(total) + (iso === today ? " today" : "")} key={iso} title={total ? total + " kcal registradas" : "Sin comidas registradas"}><span>{day}</span><b>{total ? total.toLocaleString("es-AR") : "—"}</b><small>kcal</small></div>; })}</div></div><div className="calorie-legend"><span><i className="on-target" />En objetivo ±10%</span><span><i className="near-target" />Cerca ±20%</span><span><i className="off-target" />Fuera del rango</span><span><i className="empty" />Sin registro</span></div></article>;
 
-  const booksPanel = <section className="books-layout"><article className="panel section-panel books-panel"><div className="panel-heading"><div><p>BIBLIOTECA · {readingEntryDate === today ? "HOY" : "AYER"}</p><h2>Libros</h2></div><div className="meal-panel-actions"><button type="button" className="meal-backfill-toggle" onClick={() => setReadingEntryDate((current) => current === today ? dateMinus(today, 1) : today)}>{readingEntryDate === today ? "¿Te olvidaste de ayer? Cargar ayer" : "Volver a hoy"}</button><button className="add-button light" onClick={() => bookForm ? setBookForm(false) : openAddBook(bookTab)}>{bookForm ? "Cerrar" : "＋ Nuevo libro"}</button></div></div>
+  const booksPanel = <section className="books-layout"><article className="panel section-panel books-panel"><div className="panel-heading"><div><p>BIBLIOTECA · {entryDayLabel(readingEntryDate)}</p><h2>Libros</h2></div><div className="meal-panel-actions"><button className="add-button light" onClick={() => bookForm ? setBookForm(false) : openAddBook(bookTab)}>{bookForm ? "Cerrar" : "＋ Nuevo libro"}</button></div></div>
+    <DayStrip label="Elegí el día de lectura que querés registrar" value={readingEntryDate} today={today} onChange={setReadingEntryDate} markedDates={new Set(data.readingHistory.filter((log) => log.pages > 0 || log.minutes > 0).map((log) => log.logDate))} />
     {historicalScore(readingEntryDate)}
     {bookForm && <form className="book-form smart-book-form" onSubmit={(event) => void submitNewBook(event)}><div className="book-title-search"><input name="title" autoComplete="off" required value={bookDraft.title} onFocus={() => { if (bookSuggestions.length) setBookSuggestionOpen(true); }} onChange={(event) => { const title = event.target.value; setBookDraft({ ...bookDraft, title, coverUrl: "", externalKey: "" }); setBookSuggestionOpen(true); if (title.trim().length < 2) { setBookSuggestions([]); setBookSuggestLoading(false); } }} placeholder="Empezá a escribir el título…" />{(bookDraft.title.trim().length >= 2 && bookSuggestionOpen && (bookSuggestLoading || bookSuggestions.length > 0)) && <div className="book-autocomplete">{bookSuggestLoading && <div className="book-searching"><span className="voice-spinner" />Buscando en el catálogo…</div>}{!bookSuggestLoading && bookSuggestions.map((book) => <button type="button" key={book.key} onClick={() => chooseBookSuggestion(book)}><CatalogBookCover book={book} compact /><p><b>{book.title}</b><small>{book.author}{book.year ? ` · ${book.year}` : ""}</small></p>{book.pages > 0 && <em>{book.pages} pág.</em>}</button>)}</div>}</div><input name="author" value={bookDraft.author} onChange={(event) => setBookDraft({ ...bookDraft, author: event.target.value })} placeholder="Autor" /><input name="totalPages" value={bookDraft.totalPages || ""} onChange={(event) => setBookDraft({ ...bookDraft, totalPages: Number(event.target.value) || 0 })} type="number" min="0" placeholder="Páginas" /><Dropdown ariaLabel="Estado del libro" value={bookDraft.status} onChange={(value) => setBookDraft({ ...bookDraft, status: value as BookStatus })} options={[{ value: "reading", label: "Leyendo" }, { value: "read", label: "Leído" }, { value: "wishlist", label: "Quiero leer" }]} /><button disabled={saving || bookMatching}>{bookMatching && savePhase("add_book") === null ? "Identificando…" : <SaveButtonContent label="Guardar" phase={savePhase("add_book")} />}</button></form>}
     <div className="book-tabs">{(["reading", "read", "wishlist"] as BookStatus[]).map((tab) => <button className={bookTab === tab ? "active" : ""} key={tab} onClick={() => { setBookTab(tab); setBookShelfPage(0); setSelectedBookId(null); }}>{tab === "reading" ? "Leyendo" : tab === "read" ? "Leídos" : "Quiero leer"} <i>{data.books.filter((book) => book.status === tab).length}</i></button>)}</div>
     {booksInTab.length ? <><div className="book-shelf-list">{visibleBooks.map((book) => {
       const isSelected = selectedBook?.id === book.id;
+      const bookNotes = data.notes.filter((item) => item.bookId === book.id);
+      const bookNoteCount = bookNotes.length;
       const canEditPosition = (bookTab === "reading" || bookTab === "read") && isSelected;
       const currentInput = Number(pagesInput) || 0;
       const maximumPage = book.totalPages > 0 ? book.totalPages : 20000;
@@ -3156,10 +3257,20 @@ export default function ProgressClient({ initialUser, initialError = "", pending
             <button type="button" className="stepper-button" aria-label="Avanzar una página" onClick={() => adjustPages(1)} disabled={book.totalPages > 0 && currentInput >= book.totalPages}>＋</button>
             <button type="button" className="save-pages" onClick={() => void savePosition()}><SaveButtonContent label="Guardar" phase={savePhase("set_pages")} /></button>
           </div>
-        </div> : <button type="button" className="book-select-action" onClick={() => setSelectedBookId(book.id)}>{isSelected ? "✓ Seleccionado" : "Ver notas y detalles"}</button>}
+        </div> : <button type="button" className="book-select-action" onClick={() => setSelectedBookId(book.id)}>{isSelected ? "✓ Seleccionado" : `Ver notas y detalles${bookNoteCount ? ` · ${bookNoteCount}` : ""}`}</button>}
+        {isSelected && <div className="book-notes-slot"><NotesThread
+          key={book.id}
+          notes={bookNotes}
+          placeholder={`Idea u observación de ${book.title}…`}
+          saving={saving}
+          saveLabel={saveLabel}
+          feedbackKey="add_note"
+          onAdd={(content) => save({ action: "add_note", bookId: book.id, content })}
+          onDelete={(id) => void save({ action: "delete_note", id })}
+        /></div>}
       </article>;
     })}</div>{bookShelfPageCount > 1 && <div className="book-shelf-pagination"><button type="button" disabled={visibleBookShelfPage === 0} onClick={() => showBookShelfPage(visibleBookShelfPage - 1)}>← Anteriores</button><span>{visibleBookShelfPage + 1} de {bookShelfPageCount}</span><button type="button" disabled={visibleBookShelfPage === bookShelfPageCount - 1} onClick={() => showBookShelfPage(visibleBookShelfPage + 1)}>Siguientes →</button></div>}</> : <button type="button" className="empty-shelf" onClick={() => openAddBook(bookTab)}><span>＋</span><b>No hay libros en esta lista</b><p>Tocá acá para agregar el primero.</p></button>}
-  </article><article className="panel notes-panel section-panel"><div className="panel-heading"><div><p>IDEAS QUE QUEDAN</p><h2>Notas del libro</h2></div></div>{selectedBook ? <><form onSubmit={(event) => { event.preventDefault(); void save({ action: "add_note", bookId: selectedBook.id, content: note }).then((ok) => { if (ok) setNote(""); }); }}><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={"Idea u observación de " + selectedBook.title + "…"} /><button disabled={saving}><SaveButtonContent label="Guardar nota" phase={savePhase("add_note")} /></button></form><div className="notes-list">{data.notes.filter((item) => item.bookId === selectedBook.id).map((item) => <div key={item.id}><span>“</span><p>{item.content}</p></div>)}</div></> : <div className="inline-empty"><span>✎</span><p><b>Elegí un libro</b><small>Sus notas aparecerán acá.</small></p></div>}</article>
+  </article><StudyResourcesPanel resources={data.resources ?? []} notes={data.resourceNotes ?? []} saving={saving} save={save} saveLabel={saveLabel} onError={setError} />
   <article className="panel section-panel book-discover-panel"><div className="book-discover-head"><span>✦</span><div><p>DESCUBRIR NUEVAS LECTURAS</p><h2>¿Sobre qué querés leer?</h2><small>Buscá por un tema, una idea o un interés y elegí el idioma de la edición.</small></div></div><form className="book-discover-form" onSubmit={(event) => void discoverBooks(event)}><input value={discoverQuery} onChange={(event) => setDiscoverQuery(event.target.value)} placeholder="Ej. finanzas personales, inteligencia artificial, historia…" /><Dropdown ariaLabel="Idioma del libro" value={discoverLanguage} onChange={setDiscoverLanguage} options={bookLanguageOptions.map(([value, label]) => ({ value, label }))} /><button disabled={discoverLoading || discoverQuery.trim().length < 2}>{discoverLoading ? "Buscando…" : "Buscar libros"}</button></form><div className="book-topic-chips">{["Finanzas personales", "Productividad", "Historia", "Tecnología", "Psicología", "Biografías"].map((topic) => <button type="button" key={topic} onClick={() => setDiscoverQuery(topic)}>{topic}</button>)}</div>{discoverLoading && <div className="discover-loading"><span className="voice-spinner" /><b>Buscando buenas opciones…</b></div>}{!discoverLoading && discoverResults.length > 0 && <div className="book-results-grid">{discoverResults.map((book) => { const isSaved = data.books.some((savedBook) => savedBook.title.toLowerCase() === book.title.toLowerCase() && (!savedBook.author || savedBook.author.toLowerCase() === book.author.toLowerCase())); return <article key={book.key}><CatalogBookCover book={book} /><div className="book-result-copy"><span>{book.year || "Edición disponible"}</span><h3>{book.title}</h3><p>{book.author}</p><small>{book.pages ? `${book.pages} páginas aproximadas` : "Páginas no informadas"}</small></div><div className="book-result-actions"><button type="button" disabled={saving || isSaved} onClick={() => void saveDiscoveredBook(book)}>{isSaved ? "✓ En tu biblioteca" : "＋ Quiero leer"}</button><a href={book.openLibraryUrl} target="_blank" rel="noreferrer">Ver ficha ↗</a></div></article>; })}</div>}{!discoverLoading && discoverSearched && !discoverResults.length && <div className="inline-empty discover-empty"><span>⌕</span><p><b>No encontramos opciones con esos filtros</b><small>Probá con un tema más amplio u otro idioma.</small></p></div>}<p className="catalog-credit">Información bibliográfica y portadas provistas por <a href="https://openlibrary.org/" target="_blank" rel="noreferrer">Open Library</a>.</p></article></section>;
 
   const priorityEditor = <article className="panel priority-panel"><div className="panel-heading"><div><p>PRIORIDAD DEL MES</p><h2>¿Qué te importa más cumplir?</h2></div></div><p className="panel-intro">Estas prioridades definen el peso de cada área en el Daily Score.</p><div className="priority-list">{([
@@ -4049,7 +4160,7 @@ export default function ProgressClient({ initialUser, initialError = "", pending
         <button type="button" className="cancel" onClick={() => setBlockMenu(null)}>Cancelar</button>
       </section>
     </div>}
-    {bookToDelete && <div className="delete-book-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookToDelete(null); }}><section className="delete-book-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-book-title"><span className="delete-book-icon" aria-hidden="true">⌫</span><p>ELIMINAR DE TU BIBLIOTECA</p><h2 id="delete-book-title">¿Eliminar “{bookToDelete.title}”?</h2><small>También se eliminarán sus páginas registradas y sus notas. Esta acción no se puede deshacer.</small><div><button type="button" className="delete-book-cancel" disabled={saving} onClick={() => setBookToDelete(null)}>Cancelar</button><button type="button" className="delete-book-confirm" disabled={saving} onClick={() => { const bookId = bookToDelete.id; void save({ action: "delete_book", bookId }).then((ok) => { if (ok) { setBookToDelete(null); setSelectedBookId(null); setBookShelfPage(0); setPagesInput(0); setNote(""); } }); }}>{saving ? "Eliminando…" : "Sí, eliminar libro"}</button></div></section></div>}
+    {bookToDelete && <div className="delete-book-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookToDelete(null); }}><section className="delete-book-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-book-title"><span className="delete-book-icon" aria-hidden="true">⌫</span><p>ELIMINAR DE TU BIBLIOTECA</p><h2 id="delete-book-title">¿Eliminar “{bookToDelete.title}”?</h2><small>También se eliminarán sus páginas registradas y sus notas. Esta acción no se puede deshacer.</small><div><button type="button" className="delete-book-cancel" disabled={saving} onClick={() => setBookToDelete(null)}>Cancelar</button><button type="button" className="delete-book-confirm" disabled={saving} onClick={() => { const bookId = bookToDelete.id; void save({ action: "delete_book", bookId }).then((ok) => { if (ok) { setBookToDelete(null); setSelectedBookId(null); setBookShelfPage(0); setPagesInput(0); } }); }}>{saving ? "Eliminando…" : "Sí, eliminar libro"}</button></div></section></div>}
     </main>
   </>;
 }
