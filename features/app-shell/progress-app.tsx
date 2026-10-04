@@ -2,59 +2,46 @@
 
 import Image from "next/image";
 import { NotificationSettings } from "@/features/notifications/components/notification-settings";
-import { CSSProperties, FormEvent, type ReactNode, useId, useMemo } from "react";
+import { CSSProperties, FormEvent, type ReactNode } from "react";
 import { BrandMark } from "@/shared/ui/brand-mark";
-import { DatePicker } from "@/shared/ui/date-picker";
 import { Dropdown } from "@/shared/ui/dropdown";
-import { FULL_DAY_HOUR_OPTIONS, TimeFieldPicker } from "@/shared/ui/time-dropdown";
 import { TourOverlay } from "@/shared/ui/tour-overlay";
-import { clockFromMinutes, countdownLabel, countdownLabelCapitalized, formatMinutes, listPhrase, pluralize } from "@/shared/lib/format";
-import { sparklinePath, trendFor, type Trend } from "@/domain/streaks";
-import { restoreProgressFromStreak } from "@/features/engagement/logic/app-engagement";
-import { dayBlocks, PLAN_AGENDA_HOURS, type Block } from "@/domain/schedule";
-import { insightHeadline, type InsightAction } from "@/features/insights/logic/insights";
-import { dayClose, isReviewDay, weeklyReview } from "@/features/home/logic/review";
+import { pluralize } from "@/shared/lib/format";
 import { scoreLabel } from "@/domain/score";
 import { BADGE_DEFINITIONS } from "@/features/engagement/logic/badges";
 import { BadgeEmblem, StreakFlameIcon } from "@/features/engagement/components/badge-icons";
-import { NotesThread, StudyResourcesPanel } from "@/features/reading/components/study-resources";
 import { NotificationsDialog, WeeklySummaryDialog } from "@/features/notifications/components/notifications-center";
 import { EarlyAdopterAnnouncement } from "@/features/notifications/components/early-adopter-announcement";
 import { GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, goalPercent, goalPeriodLabel, goalSource, goalTotal, goalUnit, initialsFor, inviteMessage, isFresh, mailLink, shareStatus, whatsappLink, type GoalMetric, type GoalSource, type Group, type GroupGoal } from "@/features/friends/logic/social";
-import { BEDTIME_HOUR_OPTIONS, WAKE_HOUR_OPTIONS } from "@/features/sleep/constants";
-import type { BookStatus, DietForm, GoalPeriod, Priorities, Section, SettingsView, SlotCategory, StatsPeriod, StreakAction } from "@/shared/data/types";
-import { CatalogBookCover, SavedBookCover } from "@/features/reading/components/book-covers";
+import type { DietForm, Section, SettingsView, StreakAction } from "@/shared/data/types";
 import { estimateTargetCalories } from "@/features/nutrition/logic/diet";
-import { DISCIPLINE_PRIORITY_OPTIONS, WEEKLY_TARGET_OPTIONS, disciplineKindOptions, kindLabels } from "@/features/training/constants";
 import { DayStrip } from "@/shared/ui/day-strip";
-import { DistanceSessionForm } from "@/features/training/components/distance-session-form";
-import { EVENT_CATEGORY_OPTIONS, SLOT_CATEGORY_OPTIONS } from "@/features/plan/constants";
-import { ExerciseSessionTable } from "@/features/training/components/exercise-session-table";
 import { FEEDBACK_SECTIONS, FEEDBACK_TYPES } from "@/features/settings/constants";
-import { FOCUS_DAILY_TARGET_OPTIONS, averageNumbers, durationOptions, formatDecimalInput, formatFocusHours, parseDecimalInput } from "@/shared/lib/numbers";
 import { FRIEND_NUDGE_MESSAGES } from "@/features/friends/constants";
 import type { GoalDraft, GroupPanelTab } from "@/features/friends/logic/goal-draft";
 import { InsigniasModal } from "@/features/engagement/components/insignias-modal";
 import { LockedFeature } from "@/features/pro/components/locked-feature";
-import { STAT_MONTH_NAMES, STAT_WEEKDAY_NAMES, statsWindowFor } from "@/features/stats/logic/stats-window";
 import { SaveButtonContent } from "@/shared/ui/save-button";
-import type { StatsWindow } from "@/features/stats/logic/stats-window";
 import { TOUR_STEPS, friendsIcon, gearIcon, mobileNavItems, navItems, plusIcon } from "@/features/app-shell/navigation";
-import { TrainingQualityBar } from "@/features/training/components/training-quality-bar";
-import { countActiveDays, dateMinus, datePlus, datesBetween, dayDistance, formatDate, goalDeadline, lastDayOfMonth, shiftMonthStart, weekFor } from "@/domain/dates";
-import { bookLanguageOptions } from "@/features/reading/logic/books";
-import { categoryLabels, goalAreaOptions, periodLabels } from "@/features/goals/constants";
 import { emptyGoalDraft } from "@/features/friends/logic/goal-draft";
-import { priorityLabels } from "@/features/score/constants";
 import { useWorkspaceState, type WorkspaceProps } from "@/features/app-shell/use-workspace-state";
 import { WorkspaceContext } from "@/features/app-shell/workspace";
+import { FocusSection } from "@/features/focus/components/focus-section";
+import { HomeSection } from "@/features/home/components/home-section";
+import { PlanSection } from "@/features/plan/components/plan-section";
+import { ProSection } from "@/features/pro/components/pro-section";
+import { ReadingSection } from "@/features/reading/components/reading-section";
+import { ScoreSection } from "@/features/score/components/score-section";
+import { SleepSection } from "@/features/sleep/components/sleep-section";
+import { StatsSection } from "@/features/stats/components/stats-section";
+import { TrainingSection } from "@/features/training/components/training-section";
+import { VoiceCheckinDialog } from "@/features/voice-checkin/components/voice-checkin-dialog";
 
 export default function ProgressClient(props: WorkspaceProps) {
   const workspace = useWorkspaceState(props);
   const {
     today,
     monthKey,
-    week,
     data,
     section,
     tourActive,
@@ -69,8 +56,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     setInboxOpen,
     openSummary,
     setOpenSummary,
-    streakInfoOpen,
-    setStreakInfoOpen,
     announcementOpen,
     announcementSaving,
     announcementError,
@@ -79,7 +64,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     setStreakActionBusy,
     streakActionError,
     setStreakActionError,
-    engagementVisitRef,
     settingsOpen,
     setSettingsOpen,
     settingsView,
@@ -100,7 +84,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     setFeedbackSent,
     avatarUploading,
     loading,
-    refreshVersion,
     saving,
     pullDistance,
     pullRefreshing,
@@ -117,41 +100,11 @@ export default function ProgressClient(props: WorkspaceProps) {
     onboardingPreferences,
     setOnboardingPreferences,
     usernameStatus,
-    priorityDraft,
-    setPriorityDraft,
-    setSelectedDisciplineId,
-    trainingDate,
-    setTrainingDate,
-    sleepEntryDate,
-    setSleepEntryDate,
-    focusEntryDate,
-    setFocusEntryDate,
-    readingEntryDate,
-    setReadingEntryDate,
-    trainingWeekAnchor,
-    setTrainingWeekAnchor,
-    statsPeriod,
-    setStatsPeriod,
-    statsOffset,
-    setStatsOffset,
-    selectedScorePointKey,
-    setSelectedScorePointKey,
-    trainingWeeklyTarget,
-    setTrainingWeeklyTarget,
-    calendarCursor,
-    setCalendarCursor,
     physicalTab,
     setPhysicalTab,
     focusTab,
     setFocusTab,
     voiceOpen,
-    setVoiceOpen,
-    checkoutOpen,
-    setCheckoutOpen,
-    checkoutPlan,
-    setCheckoutPlan,
-    checkoutStep,
-    setCheckoutStep,
     friendsNotice,
     setFriendsNotice,
     social,
@@ -183,51 +136,8 @@ export default function ProgressClient(props: WorkspaceProps) {
     setGoalDraft,
     editingGoalId,
     setEditingGoalId,
-    agendaView,
-    setAgendaView,
-    weekAnchor,
-    setWeekAnchor,
-    slotDraft,
-    setSlotDraft,
-    blockMenu,
-    setBlockMenu,
-    agendaLongPressRef,
-    suppressAgendaClickRef,
-    slotCategory,
-    setSlotCategory,
-    slotDuration,
-    setSlotDuration,
-    slotCustomHours,
-    setSlotCustomHours,
-    nowMinutes,
     dietCalendarCursor,
     setDietCalendarCursor,
-    bookTab,
-    setBookTab,
-    setSelectedBookId,
-    bookToDelete,
-    setBookToDelete,
-    setBookShelfPage,
-    pagesInput,
-    setPagesInput,
-    bookForm,
-    setBookForm,
-    bookDraft,
-    setBookDraft,
-    bookSuggestions,
-    setBookSuggestions,
-    bookSuggestLoading,
-    setBookSuggestLoading,
-    bookMatching,
-    bookSuggestionOpen,
-    setBookSuggestionOpen,
-    discoverQuery,
-    setDiscoverQuery,
-    discoverLanguage,
-    setDiscoverLanguage,
-    discoverResults,
-    discoverLoading,
-    discoverSearched,
     aiDescription,
     setAiDescription,
     mealEntryDate,
@@ -255,91 +165,26 @@ export default function ProgressClient(props: WorkspaceProps) {
     generatedDietPlan,
     dietRecording,
     dietVoiceLoading,
-    sleepBedtime,
-    setSleepBedtime,
-    sleepWaketime,
-    setSleepWaketime,
-    sleepQuality,
-    setSleepQuality,
-    focusHours,
-    setFocusHours,
-    adjustFocusHours,
-    adjustPages,
-    goalPeriod,
-    setGoalPeriod,
-    customDate,
-    setCustomDate,
-    recording,
-    recordingSeconds,
-    voiceLoading,
-    voiceResult,
-    setVoiceResult,
-    voiceSaved,
     loadData,
     runStreakAction,
     acknowledgeAnnouncement,
     savePhase,
-    saveLabel,
     save,
     sendSocial,
-    uniqueFocusSessions,
-    effectiveTrainingLogs,
-    effectiveFocusMinutesFor,
-    completedTrainingTasksByDate,
-    trainingByDate,
-    focusByDate,
-    readingByDate,
-    caloriesByDay,
-    mealCountByDate,
-    sleepMinutesByDate,
-    trainedToday,
-    calories,
-    pagesToday,
-    sleepToday,
-    focusToday,
-    factors,
     score,
-    scoreForDate,
     badgeStats,
     entryDayLabel,
     historicalScore,
-    highestPriority,
-    topPriorities,
-    priorityNames,
-    balanced,
-    priorityCaption,
     displayName,
-    activeGoals,
-    selectedDiscipline,
-    selectedTrainingLog,
-    selectedExercises,
-    isDistanceDiscipline,
-    trainingDetailTitle,
-    booksInTab,
-    bookShelfPageCount,
-    visibleBookShelfPage,
-    visibleBooks,
-    selectedBook,
     savedDietPlan,
     displayedDietPlan,
     dietTargetCalories,
-    calculatedSleepMinutes,
-    scheduleInput,
-    todayBlocks,
-    todayUnscheduled,
-    todaySlots,
-    streaks,
-    activeCategories,
-    planNotices,
-    closeNotices,
     inboxItems,
     unreadCount,
     markSummariesSeen,
     showSummary,
     weeklySummary,
-    quote,
     openSection,
-    showBookShelfPage,
     submitForm,
     openSettings,
     openPersonalSettings,
@@ -347,14 +192,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     saveSettings,
     submitFeedback,
     uploadAvatar,
-    openAddBook,
-    chooseBookSuggestion,
-    submitNewBook,
-    discoverBooks,
-    saveDiscoveredBook,
-    startVoiceRecording,
-    stopVoiceRecording,
-    applyVoiceCheckin,
     selectMealPhoto,
     estimateMeal,
     saveEstimate,
@@ -366,880 +203,33 @@ export default function ProgressClient(props: WorkspaceProps) {
     stopDietRecording,
     isPro,
     openPro,
-    simulatePayment,
-    cancelPro,
     openArea,
-    applyInsightAction,
-    toggleTask,
-    taskDone,
-    toggleEvent,
-    eventDone,
   } = workspace;
 
-  const scoreCard = <article className="score-card">
-    <div><p>DAILY SCORE</p><h2>{score >= 75 ? <>Tu día va<br /><em>muy bien.</em></> : <>Cada acción<br /><em>suma.</em></>}</h2><span>{priorityCaption}</span></div>
-    <div className="score-ring" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
-  </article>;
 
-  // Versión compacta para la fila de Inicio: entra al lado de las métricas y
-  // es el único acceso al Daily Score, que ya no está en el menú.
-  const compactScoreCard = <button
-    type="button"
-    className="score-tile"
-    data-tour="score"
-    onClick={() => openSection("score")}
-    aria-label={`Daily Score ${score} de 100. Abrir el detalle.`}
-  >
-    <div className="score-ring small" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
-    <div className="score-tile-copy">
-      <p>DAILY SCORE</p>
-      <b>{scoreLabel(score)}</b>
-      <small>{balanced ? "Ajustar prioridades" : listPhrase(priorityNames)}</small>
-    </div>
-    <span className="score-tile-go" aria-hidden="true">→</span>
-  </button>;
 
-  // El cierre por voz comparte la primera fila con el Daily Score: es una
-  // acción principal del día, no un control secundario escondido en la agenda.
-  const compactVoiceButton = <button
-    type="button"
-    className={"voice-hero-button" + (isPro ? "" : " is-locked")}
-    data-tour="voice"
-    onClick={() => isPro ? setVoiceOpen(true) : openPro()}
-    aria-label={isPro ? "Grabar mi día" : "Conocer el cierre del día con AVORA Pro"}
-  >
-    <span className="voice-hero-record" aria-hidden="true">●</span>
-    <span className="voice-hero-copy">
-      <small>CIERRE DEL DÍA</small>
-      <b>Grabar mi día</b>
-      <em>Contalo en 60 segundos</em>
-    </span>
-    {isPro ? <span className="voice-hero-go" aria-hidden="true">→</span> : <span className="voice-hero-lock" aria-hidden="true"><i>🔒</i><strong>PRO</strong></span>}
-  </button>;
 
-  // Las métricas de Inicio siguen a las prioridades del mes: si te importa
-  // dormir, la tarjeta que ves es la de sueño.
-  const areaMetrics: Record<string, { icon: string; tone: string; label: string; value: string; unit: string; caption: string; area: string }> = {
-    gymWeight: {
-      icon: "↗", tone: "violet", label: "ENTRENAMIENTOS", area: "training",
-      value: String(Object.entries(trainingByDate).filter(([date]) => date >= week[0].iso && date <= today).reduce((sum, [, count]) => sum + count, 0)), unit: "esta semana",
-      caption: streaks.training.current ? pluralize(streaks.training.current, "semana seguida", "semanas seguidas") : `${data.disciplines.length} disciplinas`,
-    },
-    focusWeight: {
-      icon: "⌁", tone: "coral", label: "FOCO HOY", area: "focus",
-      value: (focusToday / 60).toFixed(focusToday % 60 ? 1 : 0), unit: "h",
-      caption: formatFocusHours(focusToday),
-    },
-    sleepWeight: {
-      icon: "☾", tone: "mint", label: "SUEÑO", area: "sleep",
-      value: sleepToday ? String(Math.round(sleepToday / 6) / 10) : "—", unit: "h",
-      caption: sleepToday ? "Último registro" : "Sin registrar",
-    },
-    nutritionWeight: {
-      icon: "◇", tone: "sand", label: "CALORÍAS", area: "meals",
-      value: calories ? calories.toLocaleString("es-AR") : "—", unit: "kcal",
-      caption: dietTargetCalories ? `de ${dietTargetCalories.toLocaleString("es-AR")} objetivo` : `${data.meals.length} comidas hoy`,
-    },
-    readingWeight: {
-      icon: "▱", tone: "sky", label: "LECTURA", area: "books",
-      value: String(pagesToday), unit: "pág.",
-      caption: streaks.reading.current ? pluralize(streaks.reading.current, "día leyendo", "días leyendo") : `${data.books.filter((book) => book.status === "reading").length} libros abiertos`,
-    },
-    goalsWeight: {
-      icon: "◎", tone: "violet", label: "OBJETIVOS", area: "goals",
-      value: String(activeGoals.length), unit: "activos",
-      caption: data.goals.filter((goal) => goal.completedAt).length + " cumplidos",
-    },
-  };
-  // Orden estable cuando varias áreas empatan en peso.
-  const metricOrder = ["gymWeight", "focusWeight", "sleepWeight", "nutritionWeight", "readingWeight", "goalsWeight"];
-  // Inicio muestra todas las áreas marcadas explícitamente como "Prioridad".
-  // Si todavía no hay ninguna, conserva la selección de mayor peso existente;
-  // y en el estado inicial completamente equilibrado usa tres accesos útiles.
-  const priorityMetricKeys = metricOrder.filter((key) => priorityDraft[key as keyof Omit<Priorities, "monthKey">] === highestPriority);
-  const explicitPriorityMetricKeys = metricOrder.filter((key) => priorityDraft[key as keyof Omit<Priorities, "monthKey">] === 3);
-  const featuredMetricKeys = explicitPriorityMetricKeys.length ? explicitPriorityMetricKeys : balanced ? metricOrder.slice(0, 3) : priorityMetricKeys;
-  const heroMetrics = featuredMetricKeys.map((key) => areaMetrics[key]);
 
-  const voiceRecorder = <article className="panel voice-capture-panel">
-    <div className="voice-copy"><p className="voice-eyebrow">CIERRE RÁPIDO CON IA</p><h2>Contá tu día en un minuto.</h2><span>Decí qué entrenaste, qué comiste, cuánto trabajaste o estudiaste, cuánto leíste y dormiste. Revisás el resultado antes de guardarlo.</span><div className="voice-hints"><small>“Corrí 5 km…”</small><small>“Hice sentadilla…”</small><small>“Trabajé 2 horas…”</small><small>“Dormí 7 horas…”</small></div></div>
-    <div className="voice-action">
-      {!recording && !voiceLoading && <button className="record-button" onClick={() => void startVoiceRecording()}><span>●</span><b>{voiceResult ? "Grabar de nuevo" : "Empezar cierre del día"}</b><small>Máximo 60 segundos</small></button>}
-      {recording && <button className="record-button recording" onClick={stopVoiceRecording}><span>■</span><b>Grabando… {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:{String(recordingSeconds % 60).padStart(2, "0")}</b><small>Tocá para terminar</small></button>}
-      {voiceLoading && <div className="voice-processing"><div className="voice-spinner" /><b>Organizando tu día…</b><small>La grabación no se conserva.</small></div>}
-      {voiceSaved && <div className="voice-saved"><span>✓</span><div><b>Cierre guardado</b><small>Los datos ya aparecen en sus secciones.</small></div></div>}
-    </div>
-    {voiceResult && <div className="voice-review"><div className="voice-review-head"><div><p>REVISÁ ANTES DE GUARDAR</p><h3>{voiceResult.summary || "Esto fue lo que entendimos"}</h3></div><span className={"confidence " + voiceResult.confidence}>Confianza {voiceResult.confidence === "high" ? "alta" : voiceResult.confidence === "medium" ? "media" : "baja"}</span></div><div className="voice-review-grid">
-      <div><span>↗</span><p><b>Entrenamiento</b><small>{voiceResult.gym.attended ? "Entrenamiento registrado" : "Sin asistencia"} {voiceResult.gym.detail}</small></p></div>
-      <div><span>◇</span><p><b>Comidas</b><small>{voiceResult.meals.length ? voiceResult.meals.map((meal) => meal.name + " ≈" + meal.calories + " kcal").join(" · ") : "Sin comidas"}</small></p></div>
-      <div><span>⌁</span><p><b>Estudio / trabajo</b><small>{voiceResult.study.minutes ? formatFocusHours(voiceResult.study.minutes) + " · " : ""}{voiceResult.study.detail || "Sin dato"}</small></p></div>
-      <div><span>☾</span><p><b>Sueño</b><small>{voiceResult.sleep.minutes ? Math.round(voiceResult.sleep.minutes / 6) / 10 + " horas" : "Sin dato"}</small></p></div>
-      <div><span>▱</span><p><b>Lectura</b><small>{voiceResult.reading.bookTitle || "Libro actual"} · {voiceResult.reading.pages} páginas</small></p></div>
-      <div><span>✎</span><p><b>Reflexión</b><small>{voiceResult.journal || "Sin reflexión"}</small></p></div>
-    </div><details><summary>Ver transcripción</summary><p>{voiceResult.transcript}</p></details><div className="voice-review-actions"><button className="discard-voice" onClick={() => setVoiceResult(null)}>Descartar</button><button className="confirm-voice" disabled={saving} onClick={() => void applyVoiceCheckin()}><SaveButtonContent label="Confirmar y guardar" phase={savePhase("apply_voice_checkin")} /></button></div></div>}
-  </article>;
 
-  // Semana navegable del historial de entrenamientos: independiente de "week"
-  // (que siempre es la semana actual, usada en Inicio y otras secciones), así
-  // se puede deslizar hacia atrás sin afectar el resto de la app.
-  const trainingWeek = useMemo(() => weekFor(trainingWeekAnchor), [trainingWeekAnchor]);
-  const shiftTrainingWeek = (amount: number) => setTrainingWeekAnchor((current) => dateMinus(current, -amount * 7));
-  const trainingPanel = <section className="module-stack">
-    <article className="panel section-panel">
-      <div className="panel-heading">
-        <div><p>TUS DISCIPLINAS</p><h2>Un calendario para cada actividad</h2></div>
-        <div className="training-week-meta">
-          <label className="training-target-label" htmlFor="training-weekly-target">Meta semanal<Dropdown id="training-weekly-target" className="weekly-target-dropdown" ariaLabel="Meta de entrenamientos por semana" value={String(trainingWeeklyTarget)} onChange={(value) => setTrainingWeeklyTarget(Number(value))} options={WEEKLY_TARGET_OPTIONS} /></label>
-        </div>
-      </div>
-      <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_discipline", name: form.get("name"), kind: form.get("kind") }); }}>
-        <input name="name" required placeholder="Nueva disciplina: pádel, fútbol…" />
-        <Dropdown name="kind" ariaLabel="Tipo de disciplina" defaultValue="other" options={disciplineKindOptions} />
-        <button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_discipline")} /></button>
-      </form>
-      <div className="calendar-head training-week-nav">
-        <button type="button" onClick={() => shiftTrainingWeek(-1)} aria-label="Semana anterior">‹</button>
-        <div className="training-week-nav-title">
-          <h2>{formatDate(trainingWeek[0].iso)} – {formatDate(trainingWeek[6].iso)}</h2>
-          {trainingWeekAnchor !== today ? <button type="button" className="training-week-today" onClick={() => setTrainingWeekAnchor(today)}>Volver a hoy</button> : <span className="week-pill">{effectiveTrainingLogs.filter((log) => log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).length} sesiones esta semana</span>}
-        </div>
-        <button type="button" onClick={() => shiftTrainingWeek(1)} aria-label="Semana siguiente">›</button>
-      </div>
-      <div className="discipline-list">{data.disciplines.map((discipline) => {
-        const dates = effectiveTrainingLogs.filter((log) => log.disciplineId === discipline.id && log.trainingDate >= trainingWeek[0].iso && log.trainingDate <= trainingWeek[6].iso).map((log) => log.trainingDate);
-        const focusedLog = selectedDiscipline?.id === discipline.id ? effectiveTrainingLogs.find((log) => log.disciplineId === discipline.id && log.trainingDate === trainingDate) : undefined;
-        return <div className={"discipline-card " + (selectedDiscipline?.id === discipline.id ? "selected" : "")} key={discipline.id}>
-          <div className="discipline-card-heading">
-            <button type="button" className="discipline-title" onClick={() => setSelectedDisciplineId(discipline.id)}><span>{discipline.kind === "strength" ? "🏋" : discipline.kind === "running" ? "🏃" : discipline.kind === "cycling" ? "🚴" : discipline.kind === "swimming" ? "🏊" : "●"}</span><p><b>{discipline.name}</b><small>{kindLabels[discipline.kind]}</small></p><strong>{dates.length}/7</strong></button>
-            {data.disciplines.length > 1 && <div className="discipline-priority" role="group" aria-label={"Importancia de " + discipline.name}>
-              {DISCIPLINE_PRIORITY_OPTIONS.map((option) => <button key={option.value} type="button" className={discipline.priority === option.value ? "active" : ""} aria-pressed={discipline.priority === option.value} disabled={saving} onClick={() => void save({ action: "set_discipline_priority", disciplineId: discipline.id, priority: option.value })}>{option.label}</button>)}
-            </div>}
-            {data.disciplines.length > 1 && <button type="button" className="discipline-delete" aria-label={"Eliminar " + discipline.name} title="Eliminar disciplina" disabled={saving} onClick={(event) => { event.stopPropagation(); if (window.confirm("¿Eliminar " + discipline.name + "? También se borrará su historial de entrenamiento.")) void save({ action: "delete_discipline", disciplineId: discipline.id }); }}>×</button>}
-          </div>
-          <div className="week-row">{trainingWeek.map((day) => {
-            const done = dates.includes(day.iso);
-            // Primer click en un día: solo lo abre en el detalle de abajo (ver
-            // el historial). Un segundo click sobre el mismo día ya
-            // seleccionado marca/desmarca la sesión, para no desmarcar por
-            // accidente un día que sólo querías mirar.
-            const focused = selectedDiscipline?.id === discipline.id && trainingDate === day.iso;
-            return <button key={day.iso} className={(done ? "done " : "") + (day.iso === today ? "today" : "") + (focused ? " active" : "")} disabled={saving} onClick={() => { setSelectedDisciplineId(discipline.id); setTrainingDate(day.iso); if (focused) { if (focusedLog?.planEventId) void toggleEvent(focusedLog.planEventId, false); else void save({ action: "toggle_training", disciplineId: discipline.id, date: day.iso }); } }}><small>{day.short}</small><b>{done ? "✓" : day.number}</b>{day.iso === today && <i />}</button>;
-          })}</div>
-          {focusedLog && <TrainingQualityBar disciplineName={discipline.name} quality={focusedLog.quality} saving={saving} onSelect={(quality) => void save(focusedLog.planEventId ? { action: "set_plan_training_quality", eventId: focusedLog.planEventId, quality } : { action: "set_training_quality", disciplineId: discipline.id, date: trainingDate, quality })} />}
-        </div>;
-      })}</div>
-    </article>
-    {selectedDiscipline && <div className="training-detail-grid single-session">
-      <article className="panel">
-        <div className="panel-heading"><div><p>{trainingDetailTitle}</p><h2>{selectedDiscipline.name}</h2></div><div className="meal-panel-actions"><span className="week-pill">{trainingDate === today ? "Hoy" : formatDate(trainingDate)}</span>{trainingDate !== today && <button type="button" className="meal-backfill-toggle" onClick={() => { setTrainingDate(today); setTrainingWeekAnchor(today); }}>Volver a hoy</button>}</div></div>
-        {historicalScore(trainingDate)}
-        {selectedDiscipline.kind === "strength" ? <>
-          <div className="panel-heading small"><div><p>PESOS Y REPETICIONES</p><h2>Ejercicios</h2></div><span className="week-pill">{selectedExercises.length} cargados</span></div>
-          <ExerciseSessionTable
-            key={`${selectedDiscipline.id}-${trainingDate}-${selectedExercises.map((item) => item.id).sort((left, right) => left - right).join(".")}`}
-            disciplineId={selectedDiscipline.id}
-            date={trainingDate}
-            exercises={selectedExercises}
-            saving={saving}
-            savePhase={savePhase("save_exercises")}
-            onSave={(payload) => void save(payload)}
-            onError={setError}
-          />
-        </> : isDistanceDiscipline ? <DistanceSessionForm
-          key={`${selectedDiscipline.id}-${trainingDate}`}
-          disciplineId={selectedDiscipline.id}
-          date={trainingDate}
-          log={selectedTrainingLog}
-          saving={saving}
-          savePhase={savePhase("save_training")}
-          onSave={(payload) => void save(payload)}
-        /> : <form key={`${selectedDiscipline.id}-${trainingDate}`} className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "save_training", disciplineId: selectedDiscipline.id, date: trainingDate, durationMinutes: form.get("durationMinutes"), distanceKm: 0 }); }}>
-          <label>Duración (min)<input name="durationMinutes" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" defaultValue={selectedTrainingLog?.durationMinutes ? formatDecimalInput(selectedTrainingLog.durationMinutes) : ""} /></label>
-          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase("save_training")} /></button>
-        </form>}
-      </article>
-    </div>}
-  </section>;
 
-  const sleepPanel = <section className="module-stack sleep-page">
-    <div className="split-grid">
-      <article className="panel"><div className="panel-heading"><div><p>DESCANSO DE {entryDayLabel(sleepEntryDate)}</p><h2>Registrar sueño</h2></div><div className="meal-panel-actions"><span className="sleep-icon">☾</span></div></div>
-        <DayStrip label="Elegí la noche que querés registrar" value={sleepEntryDate} today={today} onChange={setSleepEntryDate} markedDates={new Set(data.dailyCheckins.filter((item) => item.sleepMinutes > 0).map((item) => item.entryDate))} />
-        {historicalScore(sleepEntryDate)}
-        <form className="data-form sleep-form" onSubmit={(event) => void submitForm(event, { action: "save_sleep", date: sleepEntryDate, sleepMinutes: calculatedSleepMinutes, bedtime: sleepBedtime, wakeTime: sleepWaketime, sleepQuality })}>
-          <div className="sleep-duration-badge"><span>TIEMPO CALCULADO</span><b>{Math.floor(calculatedSleepMinutes / 60)} h {calculatedSleepMinutes % 60 ? calculatedSleepMinutes % 60 + " min" : ""}</b><small>Entre la hora de acostarte y la de despertarte</small></div>
-          <div className="sleep-time-grid">
-            <div className="time-picker-card">
-              <span className="time-symbol">☾</span>
-              <TimeFieldPicker idPrefix="sleep-bedtime" label="Me acosté" value={sleepBedtime} onChange={setSleepBedtime} hourOptions={BEDTIME_HOUR_OPTIONS} />
-            </div>
-            <div className="time-picker-card wake">
-              <span className="time-symbol">☀</span>
-              <TimeFieldPicker idPrefix="sleep-waketime" label="Me desperté" value={sleepWaketime} onChange={setSleepWaketime} hourOptions={WAKE_HOUR_OPTIONS} />
-            </div>
-          </div>
-          <p className="sleep-form-note">Elegí la hora de la lista: sin escribir y sin AM/PM.</p>
-          {calculatedSleepMinutes > 0 && <fieldset className="sleep-quality-picker">
-            <legend>¿Cómo fue tu sueño?</legend>
-            <div className="sleep-quality-options">
-              <button type="button" className={sleepQuality === "good" ? "active good" : "good"} aria-pressed={sleepQuality === "good"} onClick={() => setSleepQuality("good")}>Bueno</button>
-              <button type="button" className={sleepQuality === "bad" ? "active bad" : "bad"} aria-pressed={sleepQuality === "bad"} onClick={() => setSleepQuality("bad")}>Malo</button>
-            </div>
-          </fieldset>}
-          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar descanso" phase={savePhase("save_sleep")} /></button>
-        </form>
-      </article>
-      <article className="panel sleep-summary"><div className="panel-heading"><div><p>ÚLTIMOS 7 DÍAS</p><h2>Regularidad</h2></div></div>
-        <div className="sleep-bars">{week.map((day) => { const minutes = data.dailyCheckins.find((item) => item.entryDate === day.iso)?.sleepMinutes ?? 0; return <div key={day.iso}><span><i style={{ height: String(Math.min(100, minutes / 600 * 100)) + "%" }} /></span><b>{minutes ? Math.round(minutes / 6) / 10 : "—"}</b><small>{day.short}</small></div>; })}</div>
-        <p className="soft-note">Objetivo visual de referencia: 8 horas. Cada persona puede necesitar un rango diferente.</p>
-      </article>
-    </div>
-    <article className="panel wearable-panel"><div className="wearable-copy"><span className="wearable-icon">⌚</span><div><p>DISPOSITIVO DE SALUD</p><h2>Importar el sueño desde tu reloj</h2><small>Al conectarlo podremos traer duración real, etapas del sueño, frecuencia cardíaca, oxígeno y regularidad, según lo que admita tu dispositivo.</small></div></div><div className="wearable-actions"><div className="wearable-badges"><span>Apple Health</span><span>Health Connect</span><span>Garmin</span></div><button type="button" disabled>Elegir dispositivo · próximo paso</button></div></article>
-  </section>;
 
-  const focusProjectsInTab = data.focusProjects.filter((project) => project.kind === focusTab);
-  const focusProjectIds = new Set(focusProjectsInTab.map((project) => project.id));
-  const focusTodayInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date === today), 0);
-  const focusWeekInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date >= week[0].iso), 0);
-  const focusEntryMinutesInTab = [...focusProjectIds].reduce((sum, projectId) => sum + effectiveFocusMinutesFor(projectId, (date) => date === focusEntryDate), 0);
-  const focusSessionsInEntry = uniqueFocusSessions
-    .filter((session) => focusProjectIds.has(session.projectId) && session.sessionDate === focusEntryDate)
-    .sort((left, right) => right.id - left.id);
 
-  const focusPanel = <section className="module-stack">
-      <article className="panel focus-workspace"><div className="panel-heading"><div><p>ÁREAS DE FOCO</p><h2>{focusTab === "study" ? "Materias" : "Proyectos"}</h2></div><div className="meal-panel-actions"><label className="training-target-label">Objetivo diario de foco<Dropdown className="weekly-target-dropdown" ariaLabel="Objetivo diario de estudio y trabajo" value={String(data.profile.focusDailyTargetMinutes || 120)} onChange={(value) => void save({ action: "set_focus_daily_target", minutes: Number(value) }, "focus_daily_target")} options={FOCUS_DAILY_TARGET_OPTIONS} /></label><span className="week-pill">{focusProjectsInTab.length} {focusTab === "study" ? "materias" : "proyectos"}</span></div></div>
-        <DayStrip label="Elegí el día de foco que querés registrar" value={focusEntryDate} today={today} onChange={setFocusEntryDate} markedDates={new Set(uniqueFocusSessions.filter((session) => focusProjectIds.has(session.projectId)).map((session) => session.sessionDate))} />
-        {historicalScore(focusEntryDate)}
-        <form className="compact-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_focus_project", name: form.get("name"), kind: focusTab }); }}><input name="name" required placeholder={focusTab === "study" ? "Ej. Física, Anatomía…" : "Ej. Proyecto web, Cliente…"} /><button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_focus_project")} /></button></form>
-        <div className="focus-project-grid">{focusProjectsInTab.map((project) => { const todayMinutes = effectiveFocusMinutesFor(project.id, (date) => date === today); const weekMinutes = effectiveFocusMinutesFor(project.id, (date) => date >= week[0].iso); return <article className={"focus-project-card " + project.kind} key={project.id}><span>{project.kind === "study" ? "📘" : "💼"}</span><div><small>{project.kind === "study" ? "MATERIA" : "PROYECTO"}</small><b>{project.name}</b></div><p><strong>{todayMinutes ? formatFocusHours(todayMinutes) : "—"}</strong><small>hoy</small></p><p><strong>{weekMinutes ? formatFocusHours(weekMinutes) : "—"}</strong><small>semana</small></p><button type="button" className="focus-project-delete" aria-label={`Eliminar ${project.kind === "study" ? "materia" : "proyecto"} ${project.name}`} disabled={saving} onClick={() => { const kind = project.kind === "study" ? "materia" : "proyecto"; if (window.confirm(`¿Eliminar ${kind} “${project.name}”? También se borrarán sus registros de horas. Las tareas vinculadas se conservarán sin asignar a un proyecto.`)) void save({ action: "delete_focus_project", projectId: project.id }); }}>×</button></article>; })}{!focusProjectsInTab.length && <div className="inline-empty focus-empty"><span>＋</span><p><b>Agregá tu primera materia o proyecto</b><small>Van a aparecer juntos en este tablero.</small></p></div>}</div>
-        {focusProjectsInTab.length > 0 && <form className="data-form focus-session-form" onSubmit={(event) => { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const hours = parseDecimalInput(focusHours); const minutes = Math.round(hours * 60); if (hours <= 0 || hours > 24 || minutes <= 0) { setError("Indicá una cantidad válida de horas (mayor a 0 y hasta 24)."); return; } void save({ action: "add_focus_session", projectId: form.get("projectId"), date: focusEntryDate, minutes, note: form.get("note") }).then((ok) => { if (ok) { setFocusHours(""); formElement.reset(); } }); }}>
-          <label>{focusTab === "study" ? "Materia" : "Proyecto"}<Dropdown name="projectId" ariaLabel={focusTab === "study" ? "Materia" : "Proyecto"} options={focusProjectsInTab.map((project) => ({ value: String(project.id), label: project.name }))} /></label>
-          <label>Horas de foco<div className="focus-duration-control"><button type="button" className="stepper-button" aria-label="Restar 15 minutos de foco" onClick={() => adjustFocusHours(-0.25)} disabled={(parseDecimalInput(focusHours) || 0) <= 0}>−</button><input aria-label="Horas de foco" type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={focusHours} onFocus={(event) => { if (event.currentTarget.value === "0") setFocusHours(""); }} onChange={(event) => setFocusHours(event.target.value)} placeholder="Ej. 1,2 o 1,25" /><button type="button" className="stepper-button" aria-label="Sumar 15 minutos de foco" onClick={() => adjustFocusHours(0.25)} disabled={(parseDecimalInput(focusHours) || 0) >= 24}>＋</button><span>h</span></div></label>
-          <label>Qué avanzaste<input name="note" placeholder="Tema, entrega o avance…" /></label>
-          <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar bloque de foco" phase={savePhase("add_focus_session")} /></button>
-        </form>}
-        {focusProjectsInTab.length > 0 && <section className="focus-session-history" aria-label={`Registros de foco del ${formatDate(focusEntryDate)}`}>
-          <div className="focus-session-history-heading"><h3>Bloques de foco</h3><small>{formatDate(focusEntryDate)}</small></div>
-          {focusSessionsInEntry.length ? <ul className="focus-session-list">{focusSessionsInEntry.map((session) => {
-            const project = data.focusProjects.find((item) => item.id === session.projectId);
-            return <li className="focus-session-row" key={session.id}>
-              <span aria-hidden="true">◷</span>
-              <p><b>{project?.name ?? "Proyecto"}</b><small>{session.note || "Sin descripción"}</small></p>
-              <strong>{formatFocusHours(session.minutes)}</strong>
-              <button type="button" className="row-delete focus-session-delete" aria-label={`Eliminar registro de ${formatFocusHours(session.minutes)} de ${project?.name ?? "foco"}`} disabled={saving} onClick={() => { if (window.confirm(`¿Eliminar este bloque de ${formatFocusHours(session.minutes)} de ${project?.name ?? "foco"}?`)) void save({ action: "delete_focus_session", id: session.id }); }}>×</button>
-            </li>;
-          })}</ul> : <p className="focus-session-empty">Todavía no cargaste horas para esta fecha.</p>}
-        </section>}
-    </article>
-    <article className="panel weekly-focus"><div><p>{focusTab === "study" ? "ESTUDIO" : "TRABAJO"} · {focusEntryDate === today ? "HOY" : formatDate(focusEntryDate).toUpperCase()}</p><b>{formatFocusHours(focusEntryDate === today ? focusTodayInTab : focusEntryMinutesInTab)}</b><small>trabajo profundo</small></div><div><p>ESTA SEMANA</p><b>{formatFocusHours(focusWeekInTab)}</b><small>calculadas desde registros reales</small></div><button onClick={() => openSection("plan")}>Crear objetivo semanal →</button></article>
-  </section>;
 
-  const calendarStart = new Date(calendarCursor + "-01T12:00:00");
-  const calendarMonthName = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(calendarStart);
-  const calendarOffset = (calendarStart.getDay() + 6) % 7;
-  const calendarDays = new Date(calendarStart.getFullYear(), calendarStart.getMonth() + 1, 0).getDate();
-  const shiftCalendar = (amount: number) => {
-    const next = new Date(calendarStart);
-    next.setMonth(next.getMonth() + amount);
-    setCalendarCursor(next.toISOString().slice(0, 7));
-  };
-  const calendarItems = [
-    ...data.events.map((item) => ({ key: "e" + item.id, date: item.eventDate, title: item.title, type: item.category, id: item.id, source: "event" })),
-    ...data.tasks.filter((item) => item.dueDate).map((item) => ({ key: "t" + item.id, date: item.dueDate as string, title: item.title, type: "task", id: item.id, source: "task" })),
-    ...activeGoals.map((item) => ({ key: "g" + item.id, date: item.targetDate, title: item.title, type: "goal", id: item.id, source: "goal" })),
-  ].sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = calendarItems.filter((item) => item.date >= today).slice(0, 8);
-  // ---------------------------------------------------------------------------
-  // Plan del día
-  // ---------------------------------------------------------------------------
-  const blockCategoryLabel: Record<string, string> = {
-    task: "Tarea", study: "Estudio", work: "Trabajo", personal: "Personal",
-    training: "Entrenamiento", nutrition: "Alimentación", sleep: "Sueño", reading: "Lectura",
-    health: "Salud", other: "Otro",
-  };
-  const currentBlock = todayBlocks.find((block) => !block.done && block.start <= nowMinutes && block.end > nowMinutes);
-  const nextBlock = todayBlocks.find((block) => !block.done && block.start > nowMinutes);
 
-  const dayPlanPanel = <article className="panel day-plan">
-    <div className="panel-heading">
-      <div><p>PLAN DEL DÍA</p><h2>{todayBlocks.length ? "Tu día, hora por hora" : "Todavía no armaste el día"}</h2></div>
-      <div className="day-plan-actions">
-        <button className="text-link" onClick={() => { setAgendaView("week"); openSection("plan"); }}>Ver la semana →</button>
-      </div>
-    </div>
-    {todayBlocks.length ? <>
-      <div className="day-now">
-        {currentBlock
-          ? <p><i className="live" /><b>Ahora: {currentBlock.title}</b><small>hasta las {clockFromMinutes(currentBlock.end)}</small></p>
-          : nextBlock
-            ? <p><i /><b>Lo próximo: {nextBlock.title}</b><small>a las {clockFromMinutes(nextBlock.start)}</small></p>
-            : <p><i /><b>No queda nada agendado</b><small>el resto del día es tuyo</small></p>}
-      </div>
-      <ol className="day-timeline">
-        {todayBlocks.map((block) => {
-          const done = block.taskId
-            ? taskDone(block.taskId, block.done)
-            : block.eventId
-              ? eventDone(block.eventId, block.done)
-              : block.done;
-          const past = block.end <= nowMinutes;
-          const live = block.start <= nowMinutes && block.end > nowMinutes;
-          const classes = ["day-block", done ? "done" : "", past ? "past" : "", live ? "live" : ""].filter(Boolean).join(" ");
-          // Una tarea o evento se puede completar aunque su horario ya haya pasado:
-          // el día se registra cuando la persona realmente lo termina.
-          return <li key={block.key} className={classes}>
-            {block.taskId ? <button
-              type="button"
-              className="day-block-hit"
-              aria-pressed={done}
-              aria-label={block.title + ", " + clockFromMinutes(block.start) + ". " + (done ? "Marcar como pendiente" : "Marcar como hecha") + "."}
-              onClick={() => void toggleTask(block.taskId as number, !done)}
-            >
-              <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
-              <span className={"block-body " + block.category}>
-                <b>{block.title}</b>
-                <small>{[blockCategoryLabel[block.category] ?? "Bloque", block.detail].filter(Boolean).join(" · ")}</small>
-              </span>
-              <span className="block-check" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg></span>
-            </button> : block.eventId ? <button
-              type="button"
-              className="day-block-hit is-event"
-              aria-pressed={done}
-              aria-label={block.title + ", " + clockFromMinutes(block.start) + ". " + (done ? "Marcar como pendiente" : "Marcar como hecho") + "."}
-              onClick={() => void toggleEvent(block.eventId as number, !done)}
-            >
-              <span className="block-time">{clockFromMinutes(block.start)}<small>{formatMinutes(block.minutes)}</small></span>
-              <span className={"block-body " + block.category}>
-                <b>{block.title}</b>
-                <small>{[blockCategoryLabel[block.category] ?? "Evento", block.detail].filter(Boolean).join(" · ")}</small>
-              </span>
-              <span className={"block-check " + (done ? "" : "block-check-event")} aria-hidden="true" title="Evento del calendario">{done ? <svg viewBox="0 0 20 20"><path d="M4.5 10.5l3.6 3.6L15.5 6.7" /></svg> : "◇"}</span>
-            </button> : null}
-          </li>
-        })}
-      </ol>
-    </> : <div className="inline-empty tall">
-      <span>◷</span>
-      <p><b>Sin bloques para hoy</b><small>Poné una hora a tus tareas y aparecen acá, ordenadas.</small></p>
-    </div>}
-    {todayUnscheduled.length > 0 && <div className="unscheduled-strip">
-      <p>{pluralize(todayUnscheduled.length, "tarea sin horario", "tareas sin horario")}</p>
-      <div>{todayUnscheduled.slice(0, 4).map((task) => <span key={task.id}>{task.title}</span>)}</div>
-      <button className="text-link" onClick={() => openSection("focus")}>Organizarlas →</button>
-    </div>}
-    {todaySlots.length > 0 && <p className="slot-hint">
-      Huecos libres: {todaySlots.slice(0, 3).map((slot) => `${clockFromMinutes(slot.start)}–${clockFromMinutes(slot.end)}`).join(" · ")}
-    </p>}
-  </article>;
 
-  const insightsPanel = <article className="panel insights-panel">
-    <div className="panel-heading">
-      <div><p>LO QUE VEO EN TUS DATOS</p><h2>{insightHeadline(planNotices, score, balanced ? [] : priorityNames)}</h2></div>
-    </div>
-    {planNotices.length ? <div className="insight-list">
-      {planNotices.map((insight) => <article key={insight.id} className={"insight " + insight.tone}>
-        <span className="insight-icon">{insight.icon}</span>
-        <div className="insight-copy">
-          <b>{insight.title}</b>
-          <p>{insight.body}</p>
-          <details><summary>Por qué aparece esto</summary><p>{insight.because}</p></details>
-        </div>
-        {insight.action && <button className="insight-action" disabled={saving} onClick={() => void applyInsightAction(insight.action as InsightAction)}>{insight.action.label}</button>}
-      </article>)}
-    </div> : <div className="inline-empty">
-      <span>✓</span>
-      <p><b>Nada que corregir</b><small>Cuando el sueño, la agenda o las rachas se crucen mal, te aviso acá.</small></p>
-    </div>}
-  </article>;
 
-  // ---------------------------------------------------------------------------
-  // Los dos cortes: el del día y, los domingos, el de la semana.
-  // ---------------------------------------------------------------------------
-  const close = dayClose({
-    score,
-    blocks: todayBlocks,
-    trained: trainedToday,
-    sleepMinutes: sleepToday,
-    focusMinutes: focusToday,
-    pages: pagesToday,
-    meals: data.meals.length,
-    calories,
-  });
 
-  const dayClosePanel = <article className="panel day-close">
-    <div className="panel-heading">
-      <div><p>{nowMinutes >= 18 * 60 ? "CIERRE DEL DÍA" : "CÓMO VIENE EL DÍA"}</p><h2>{close.headline}</h2></div>
-      {close.blocksTotal > 0 && <span className="week-pill">{close.blocksDone} de {close.blocksTotal} bloques</span>}
-    </div>
-    {close.done.length > 0 && <p className="day-close-done">{close.done.join(" · ")}</p>}
-    {close.pending.length > 0 && <p className="day-close-pending">Quedó sin cerrar: {listPhrase(close.pending)}.</p>}
-    {closeNotices.length > 0 && <div className="day-close-notes">
-      {closeNotices.map((notice) => <div key={notice.id}>
-        <span aria-hidden="true">{notice.icon}</span>
-        <p><b>{notice.title}</b><small>{notice.body}</small></p>
-      </div>)}
-    </div>}
-    {close.done.length === 0 && close.pending.length === 0 && closeNotices.length === 0 && <p className="day-close-done">Cuando registres algo, el balance del día aparece acá.</p>}
-  </article>;
 
-  // El corte semanal sólo se arma el domingo: el resto de la semana no hay nada
-  // cerrado que mirar y ocuparía lugar por nada.
-  const review = isReviewDay(today) ? weeklyReview({
-    days: Array.from({ length: 7 }, (_, index) => {
-      const date = dateMinus(today, 6 - index);
-      return { date, blocks: dayBlocks(scheduleInput, date), score: scoreForDate(date) };
-    }),
-    areas: [
-      { label: "Entrenamiento", activeDays: countActiveDays(trainingByDate, today) },
-      { label: "Foco", activeDays: countActiveDays(focusByDate, today) },
-      { label: "Lectura", activeDays: countActiveDays(readingByDate, today) },
-      { label: "Alimentación", activeDays: countActiveDays(mealCountByDate, today) },
-      { label: "Sueño", activeDays: countActiveDays(sleepMinutesByDate, today) },
-    ],
-    staleGoals: data.goals
-      .filter((goal) => !goal.completedAt && !activeCategories.has(goal.category))
-      .map((goal) => ({ id: goal.id, title: goal.title, days: dayDistance(today, goal.targetDate) })),
-  }) : null;
 
-  const weeklyReviewPanel = review && <article className="panel weekly-review">
-    <div className="panel-heading">
-      <div><p>DOMINGO</p><h2>Tu semana</h2></div>
-      <span className="week-pill">Promedio {review.averageScore}/100</span>
-    </div>
-    <div className="review-stats">
-      <div><b>{review.blocksTotal ? `${review.blocksDone} de ${review.blocksTotal}` : "—"}</b><small>{review.blocksTotal ? `bloques cumplidos · ${review.completionPercent} %` : "no agendaste bloques"}</small></div>
-      <div><b>{review.bestDay ? formatDate(review.bestDay.date) : "—"}</b><small>{review.bestDay ? `tu mejor día · ${review.bestDay.score}/100` : "sin registros esta semana"}</small></div>
-      <div><b>{review.quietAreas.length ? listPhrase(review.quietAreas) : "Ninguna"}</b><small>{review.quietAreas.length ? "sin registros en toda la semana" : "todas las áreas tuvieron movimiento"}</small></div>
-    </div>
-    {review.staleGoals.length > 0 && <div className="review-goals">
-      <p>OBJETIVOS SIN MOVIMIENTO</p>
-      {review.staleGoals.map((goal) => <div key={goal.id}>
-        <p><b>{goal.title}</b><small>{countdownLabelCapitalized(goal.days)} · sin actividad en su área</small></p>
-        <button disabled={saving} onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: true })}>Cerrarlo</button>
-        <button className="ghost" disabled={saving} onClick={() => openSection("plan")}>Sigue en pie</button>
-      </div>)}
-    </div>}
-  </article>;
 
-  const streakProgress = restoreProgressFromStreak(engagement?.currentStreak ?? 0);
-  const streakWidget = engagement && <div className="app-streak-wrap">
-    <button type="button" className="app-streak-chip" onClick={() => setStreakInfoOpen((open) => !open)} aria-label={`Racha de ${engagement.currentStreak} ${engagement.currentStreak === 1 ? "día" : "días"}`} aria-expanded={streakInfoOpen} aria-controls="app-streak-details">
-      <StreakFlameIcon className="app-streak-flame" />
-      <b>{engagement.currentStreak}</b>
-    </button>
-    {streakActionError && <div className="streak-request-error" role="status">
-      <span>{streakActionError}</span>
-      <button type="button" onClick={() => { engagementVisitRef.current = today; void runStreakAction("visit").catch((caught) => setStreakActionError(caught instanceof Error ? caught.message : "No pudimos cargar tu racha.")); }}>Reintentar</button>
-    </div>}
-    {streakInfoOpen && <article className="app-streak-details" id="app-streak-details" aria-label="Información de racha">
-      <button type="button" className="app-streak-details-close" onClick={() => setStreakInfoOpen(false)} aria-label="Cerrar información de racha">×</button>
-      <p className="streak-details-eyebrow">CONSTANCIA</p>
-      <h2>Racha</h2>
-      <p>Llevas {pluralize(engagement.currentStreak, "día seguido", "días seguidos")} usando la app.</p>
-      <div className="streak-progress-row">
-        <div className="streak-progress-gaps" role="img" aria-label={`${streakProgress} de 7 días para el próximo restablecedor`}>
-          {Array.from({ length: 7 }, (_, index) => <i className={index < streakProgress ? "filled" : ""} key={index} />)}
-        </div>
-        <span className="streak-restores" title="Restablecedores disponibles">↺ <b>{engagement.restoresAvailable}</b><small>/3</small></span>
-      </div>
-      <small className="streak-progress-caption">{engagement.restoresAvailable >= 3 ? "Máximo de restablecedores acumulados" : streakProgress === 7 ? "¡Completaste 7 días y ganaste un restablecedor!" : `${streakProgress} de 7 días para ganar un restablecedor`}</small>
-    </article>}
-  </div>;
 
-  const quotePanel = <aside className="quote-strip">
-    <span className="quote-mark" aria-hidden="true">“</span>
-    <p>{quote.text}<span className="quote-mark" aria-hidden="true">”</span></p>
-    <b>{quote.author}</b>
-  </aside>;
 
-  // ---------------------------------------------------------------------------
-  // Agenda semanal por horas
-  // ---------------------------------------------------------------------------
-  const agendaWeek = useMemo(() => weekFor(weekAnchor), [weekAnchor]);
-  const agendaBlocksByDay = useMemo(
-    () => Object.fromEntries(agendaWeek.map((day) => [day.iso, dayBlocks(scheduleInput, day.iso)])) as Record<string, Block[]>,
-    [agendaWeek, scheduleInput],
-  );
-  const agendaStartHour = PLAN_AGENDA_HOURS[0];
-  // Fin exclusivo para que el bloque de las 23:00 siga siendo seleccionable.
-  const agendaEndHour = PLAN_AGENDA_HOURS[PLAN_AGENDA_HOURS.length - 1] + 1;
-  const agendaHours = PLAN_AGENDA_HOURS;
-  const shiftWeek = (amount: number) => setWeekAnchor((current) => dateMinus(current, -amount * 7));
-  const clearAgendaLongPress = () => {
-    if (agendaLongPressRef.current !== null) {
-      window.clearTimeout(agendaLongPressRef.current);
-      agendaLongPressRef.current = null;
-    }
-  };
-  const beginAgendaLongPress = (block: Block, date: string) => {
-    clearAgendaLongPress();
-    suppressAgendaClickRef.current = false;
-    agendaLongPressRef.current = window.setTimeout(() => {
-      suppressAgendaClickRef.current = true;
-      setBlockMenu({ block, date });
-    }, 550);
-  };
-  const openSlotDraft = (date: string, startTime: string, editingBlock?: Block) => {
-    setSlotDraft({ date, startTime, editingBlock });
-    setSlotCategory(editingBlock ? editingBlock.category as SlotCategory : "focus");
-    setSlotDuration(String(editingBlock?.minutes ?? 60));
-    setSlotCustomHours("");
-  };
-  const deleteAgendaBlock = (block: Block) => save(block.taskId
-    ? { action: "delete_task", id: block.taskId }
-    : { action: "delete_event", id: block.eventId }
-  );
-  const handleAgendaBlockClick = (block: Block) => {
-    clearAgendaLongPress();
-    if (suppressAgendaClickRef.current) {
-      suppressAgendaClickRef.current = false;
-      return;
-    }
-    if (block.taskId) void toggleTask(block.taskId, !block.done);
-    else if (block.eventId) void toggleEvent(block.eventId, !block.done);
-  };
 
-  const slotUsesProject = Boolean(!slotDraft?.editingBlock?.eventId && (slotCategory === "focus" || slotCategory === "study" || slotCategory === "work"));
-  const slotProjects = slotCategory === "study" ? data.focusProjects.filter((project) => project.kind === "study")
-    : slotCategory === "work" ? data.focusProjects.filter((project) => project.kind === "work")
-    : data.focusProjects;
-  const slotAreaOptions = slotDraft?.editingBlock?.taskId
-    ? SLOT_CATEGORY_OPTIONS.filter((option) => option.value === "focus" || option.value === "study" || option.value === "work")
-    : SLOT_CATEGORY_OPTIONS;
 
-  const weekAgendaPanel = <article className="panel week-agenda">
-    <div className="agenda-head">
-      <button onClick={() => shiftWeek(-1)} aria-label="Semana anterior">‹</button>
-      <div><p>ZOOM DE LA SEMANA</p><h2>{formatDate(agendaWeek[0].iso)} — {formatDate(agendaWeek[6].iso)}</h2></div>
-      <button onClick={() => shiftWeek(1)} aria-label="Semana siguiente">›</button>
-    </div>
-    <div className="agenda-scroll">
-      <div className="agenda-grid" style={{ "--hours": String(agendaHours.length) } as CSSProperties}>
-        <div className="agenda-corner" />
-        {agendaWeek.map((day) => <div className={"agenda-day-head " + (day.iso === today ? "today" : "")} key={day.iso}>
-          <small>{day.short}</small><b>{day.number}</b>
-        </div>)}
-        <div className="agenda-hours">
-          {agendaHours.map((hour) => <span key={hour}>{String(hour).padStart(2, "0")}:00</span>)}
-        </div>
-        {agendaWeek.map((day) => {
-          const blocks = agendaBlocksByDay[day.iso] ?? [];
-          return <div className={"agenda-column " + (day.iso === today ? "today" : "")} key={day.iso}>
-            {agendaHours.map((hour) => <button
-              key={hour}
-              className="agenda-slot"
-              aria-label={`Agregar un bloque el ${formatDate(day.iso)} a las ${String(hour).padStart(2, "0")}:00`}
-              onClick={() => openSlotDraft(day.iso, `${String(hour).padStart(2, "0")}:00`)}
-            />)}
-            {blocks.map((block) => {
-              const top = (block.start - agendaStartHour * 60) / 60;
-              const height = block.minutes / 60;
-              if (top + height <= 0 || top >= agendaHours.length) return null;
-              return <button
-                type="button"
-                key={block.key}
-                className={"agenda-block " + block.category + (block.done ? " done" : "")}
-                style={{ top: "calc(" + Math.max(0, top) + " * var(--hour-height)", height: "calc(" + Math.min(height, agendaHours.length - top) + " * var(--hour-height) - 3px)" }}
-                title={block.title + " · " + clockFromMinutes(block.start) + "–" + clockFromMinutes(block.end)}
-                aria-pressed={block.done}
-                onClick={() => handleAgendaBlockClick(block)}
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture?.(event.pointerId);
-                  beginAgendaLongPress(block, day.iso);
-                }}
-                onPointerUp={(event) => {
-                  clearAgendaLongPress();
-                  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
-                }}
-                onPointerCancel={clearAgendaLongPress}
-                onPointerLeave={clearAgendaLongPress}
-                onContextMenu={(event) => { event.preventDefault(); clearAgendaLongPress(); setBlockMenu({ block, date: day.iso }); }}
-              >
-                <b>{block.title}</b>
-                <small>{clockFromMinutes(block.start)}</small>
-              </button>;
-            })}
-            {day.iso === today && nowMinutes >= agendaStartHour * 60 && nowMinutes <= agendaEndHour * 60 && <i
-              className="agenda-now"
-              style={{ top: `calc(${(nowMinutes - agendaStartHour * 60) / 60} * var(--hour-height))` }}
-            />}
-          </div>;
-        })}
-      </div>
-    </div>
-    {slotDraft && <form key={`${slotDraft.editingBlock?.key ?? "new"}-${slotDraft.date}-${slotDraft.startTime}`} className="slot-form" onSubmit={(event) => {
-      event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      const customHours = parseDecimalInput(slotCustomHours);
-      const durationMinutes = slotDuration === "custom" ? Math.round(customHours * 60) : Number(slotDuration) || 60;
-      if (durationMinutes < 15 || durationMinutes > 1440) {
-        setError("Indicá una duración válida (entre 15 minutos y 24 horas).");
-        return;
-      }
-      const editingBlock = slotDraft.editingBlock;
-      const projectId = Number(form.get("projectId")) || null;
-      const disciplineId = Number(form.get("disciplineId")) || null;
-      if (slotUsesProject && !projectId) {
-        setError(slotCategory === "study" ? "Elegí la materia que querés estudiar." : slotCategory === "work" ? "Elegí el proyecto de trabajo." : "Elegí una materia o proyecto.");
-        return;
-      }
-      if (slotCategory === "training" && !disciplineId) {
-        setError("Elegí qué disciplina vas a entrenar.");
-        return;
-      }
-      const payload = editingBlock
-        ? editingBlock.taskId
-          ? { action: "update_task", id: editingBlock.taskId, title: form.get("title"), projectId, dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
-          : { action: "update_event", id: editingBlock.eventId, title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory, disciplineId }
-        : slotUsesProject
-          ? { action: "add_task", title: form.get("title"), projectId, dueDate: slotDraft.date, startTime: slotDraft.startTime, durationMinutes }
-          : { action: "add_event", title: form.get("title"), eventDate: slotDraft.date, eventTime: slotDraft.startTime, durationMinutes, category: slotCategory, disciplineId };
-      void save(payload).then((ok) => { if (ok) setSlotDraft(null); });
-    }}>
-      <p>{slotDraft.editingBlock ? "Editar bloque" : "Nuevo bloque"} · {formatDate(slotDraft.date)} a las {slotDraft.startTime}</p>
-      <div className="slot-fields">
-        <input name="title" required autoFocus defaultValue={slotDraft.editingBlock?.title ?? ""} placeholder={slotCategory === "study" ? "Ej. Estudiar capítulo 2" : slotCategory === "work" ? "Ej. Avanzar presentación" : "Ej. Gimnasio"} />
-        <Dropdown ariaLabel="Área del bloque" value={slotCategory} onChange={(value) => setSlotCategory(value as SlotCategory)} options={slotAreaOptions} />
-        {slotUsesProject && <Dropdown key={"slot-project-" + slotCategory} name="projectId" ariaLabel={slotCategory === "study" ? "Materia del bloque" : "Proyecto del bloque"} defaultValue={String(slotDraft.editingBlock?.projectId ?? "")} options={slotProjects.map((project) => ({ value: String(project.id), label: project.name }))} />}
-        {slotCategory === "training" && <Dropdown key={"slot-discipline-" + (slotDraft.editingBlock?.key ?? "new")} name="disciplineId" ariaLabel="Disciplina del entrenamiento" defaultValue={String(slotDraft.editingBlock?.disciplineId ?? data.disciplines[0]?.id ?? "")} options={data.disciplines.map((discipline) => ({ value: String(discipline.id), label: discipline.name + (discipline.priority === "secondary" ? " · Secundaria" : " · Importante") }))} />}
-        <Dropdown ariaLabel="Duración del bloque" value={slotDuration} onChange={setSlotDuration} options={[...durationOptions([30, 45, 60, 90, 120, 180]), { value: "custom", label: "Personalizado" }]} />
-        {slotDuration === "custom" && <label className="slot-custom-duration">Duración personalizada
-          <div className="slot-custom-duration-input">
-            <input
-              type="text"
-              inputMode="decimal"
-              pattern="[0-9]+([.,][0-9]+)?"
-              value={slotCustomHours}
-              onChange={(event) => setSlotCustomHours(event.target.value)}
-              placeholder="Ej. 4,5"
-              autoFocus
-              required
-            />
-            <span>h</span>
-          </div>
-        </label>}
-      </div>
-      <div className="slot-actions">
-        <button type="button" onClick={() => setSlotDraft(null)}>Cancelar</button>
-        <button className="primary-action" disabled={saving}><SaveButtonContent label={slotDraft.editingBlock ? "Guardar cambios" : "Agregar bloque"} phase={savePhase(slotDraft.editingBlock ? (slotDraft.editingBlock.taskId ? "update_task" : "update_event") : (slotCategory === "focus" ? "add_task" : "add_event"))} /></button>
-      </div>
-    </form>}
-    <p className="agenda-hint">Tocá una franja vacía para agregar. Mantené apretado un bloque para editarlo o eliminarlo.</p>
-  </article>;
 
-  const monthCalendarPanel = <article className="panel calendar-panel"><div className="calendar-head"><button onClick={() => shiftCalendar(-1)}>‹</button><h2>{calendarMonthName}</h2><button onClick={() => shiftCalendar(1)}>›</button></div><div className="calendar-grid"><div className="calendar-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((item, index) => <b key={item + index}>{item}</b>)}</div><div className="calendar-cells">{Array.from({ length: calendarOffset }, (_, index) => <span className="blank" key={"blank" + index} />)}{Array.from({ length: calendarDays }, (_, index) => {
-    const date = calendarCursor + "-" + String(index + 1).padStart(2, "0");
-    const items = calendarItems.filter((item) => item.date === date);
-    const daySummary = items.map((item) => item.title).join(", ");
-    return <button className={date === today ? "today" : ""} key={date} aria-label={items.length ? `${index + 1}: ${daySummary}` : String(index + 1)} title={daySummary || undefined} onClick={() => { setWeekAnchor(date); setAgendaView("week"); }}><b>{index + 1}</b><div className="calendar-day-events">{items.slice(0, 2).map((item) => <span className={"calendar-event " + item.type} key={item.key}><i />{item.title}</span>)}{items.length > 2 && <small className="calendar-more">+{items.length - 2} más</small>}</div></button>;
-  })}</div></div></article>;
 
-  const calendarPanel = <section className="module-stack">
-    <div className="period-switch agenda-switch">
-      <button className={agendaView === "week" ? "active" : ""} onClick={() => setAgendaView("week")}>Semana por horas</button>
-      <button className={agendaView === "month" ? "active" : ""} onClick={() => setAgendaView("month")}>Mes completo</button>
-    </div>
-    {agendaView === "week" ? weekAgendaPanel : monthCalendarPanel}
-    <div className="calendar-layout">
-      <article className="panel"><div className="panel-heading"><div><p>NUEVO RECORDATORIO</p><h2>Evento importante</h2></div></div><form className="data-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_event", title: form.get("title"), eventDate: form.get("eventDate"), eventTime: form.get("eventTime"), durationMinutes: form.get("durationMinutes"), category: form.get("category"), notes: form.get("notes") }); }}>
-        <label>Evento<input name="title" required placeholder="Examen, turno, carrera…" /></label><div className="three-fields"><label>Fecha<DatePicker name="eventDate" ariaLabel="Fecha del evento" defaultValue={today} /></label><TimeFieldPicker idPrefix="event-time" label="Hora" name="eventTime" defaultValue="09:00" hourOptions={FULL_DAY_HOUR_OPTIONS} /><label>Dura<Dropdown name="durationMinutes" ariaLabel="Duración del evento" defaultValue="60" options={durationOptions([30, 60, 90, 120, 180, 240])} /></label></div><label>Categoría<Dropdown name="category" ariaLabel="Categoría del evento" options={EVENT_CATEGORY_OPTIONS} /></label><label>Notas<textarea name="notes" placeholder="Dirección, preparación, información útil…" /></label><button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar evento" phase={savePhase("add_event")} /></button>
-      </form></article>
-      <article className="panel"><div className="panel-heading"><div><p>LO PRÓXIMO</p><h2>Recordatorios y cuenta regresiva</h2></div><span className="week-pill">{upcoming.length} próximos</span></div><div className="upcoming-list">{upcoming.length ? upcoming.map((item) => <div key={item.key}><span className={"event-dot " + item.type} /><p><b>{item.title}</b><small>{formatDate(item.date)} · {item.source === "goal" ? "Objetivo" : item.source === "task" ? "Tarea" : "Evento"}</small></p><strong>{countdownLabelCapitalized(dayDistance(today, item.date))}</strong>{item.source === "event" && <button onClick={() => void save({ action: "delete_event", id: item.id })}>×</button>}</div>) : <div className="inline-empty"><span>□</span><p><b>No hay fechas próximas</b><small>Agregá un evento, tarea u objetivo.</small></p></div>}</div></article>
-    </div>
-  </section>;
-  const statsWindow = statsWindowFor(statsPeriod, statsOffset, today);
-  const statsStart = statsWindow.start;
-  const statsEnd = statsWindow.end;
-  const periodDays = Math.max(1, datesBetween(statsStart, statsEnd).length);
-  const periodTraining = effectiveTrainingLogs.filter((item) => item.trainingDate >= statsStart && item.trainingDate <= statsEnd);
-  const periodFocusEntries = Object.entries(focusByDate).filter(([date, minutes]) => date >= statsStart && date <= statsEnd && minutes > 0);
-  const periodFocusMinutes = periodFocusEntries.reduce((sum, [, minutes]) => sum + minutes, 0);
-  const periodTaskTrainingCount = Object.entries(completedTrainingTasksByDate)
-    .filter(([date]) => date >= statsStart && date <= statsEnd)
-    .reduce((sum, [, count]) => sum + count, 0);
-  const periodSleep = data.dailyCheckins.filter((item) => item.entryDate >= statsStart && item.entryDate <= statsEnd && item.sleepMinutes > 0);
-  const periodReading = data.readingHistory.filter((item) => item.logDate >= statsStart && item.logDate <= statsEnd);
-  const periodMeals = data.mealHistory.filter((item) => item.mealDate >= statsStart && item.mealDate <= statsEnd);
-  // Las tarjetas secundarias siguen mostrando tendencias diarias, pero respetan
-  // el período elegido en vez de quedar clavadas en "los últimos días".
-  const trendSpan = periodDays;
-  const trends: Array<{ key: string; icon: string; label: string; trend: Trend; format: (value: number) => string; caption: string; useAverage?: boolean }> = [
-    { key: "training", icon: "↗", label: "Entrenamientos", trend: trendFor(trendSpan, statsEnd, (date) => trainingByDate[date] ?? 0), format: (value) => String(Math.round(value)), caption: "sesiones registradas" },
-    { key: "focus", icon: "⌁", label: "Foco profundo", trend: trendFor(trendSpan, statsEnd, (date) => focusByDate[date] ?? 0), format: (value) => formatFocusHours(value), caption: "tiempo de trabajo concentrado" },
-    { key: "sleep", icon: "☾", label: "Sueño", trend: trendFor(trendSpan, statsEnd, (date) => sleepMinutesByDate[date] ?? 0), format: (value) => formatMinutes(value), caption: "promedio dormido por día", useAverage: true },
-    { key: "reading", icon: "▱", label: "Lectura", trend: trendFor(trendSpan, statsEnd, (date) => readingByDate[date] ?? 0), format: (value) => `${Math.round(value)} pág.`, caption: "páginas leídas" },
-    { key: "nutrition", icon: "◇", label: "Calorías", trend: trendFor(trendSpan, statsEnd, (date) => caloriesByDay[date] ?? 0), format: (value) => `${Math.round(value).toLocaleString("es-AR")} kcal`, caption: "promedio diario", useAverage: true },
-  ];
-  // El Daily Score se agrupa según la escala elegida: días en la semana,
-  // semanas dentro del mes y meses dentro del año.
-  const scoreBucketsFor = (window: StatsWindow) => {
-    if (statsPeriod === "weekly") {
-      return weekFor(window.start).map((day, index) => ({ key: day.iso, date: day.iso, label: STAT_WEEKDAY_NAMES[index], value: scoreForDate(day.iso) }));
-    }
-    if (statsPeriod === "monthly") {
-      const totalDays = datesBetween(window.start, window.end).length;
-      return Array.from({ length: Math.ceil(totalDays / 7) }, (_, index) => {
-        const start = datePlus(window.start, index * 7);
-        const end = datePlus(start, Math.min(6, totalDays - index * 7 - 1));
-        return { key: start, date: start, label: "Semana " + (index + 1), value: Math.round(averageNumbers(datesBetween(start, end).map(scoreForDate))) };
-      });
-    }
-    return Array.from({ length: 12 }, (_, index) => {
-      const start = shiftMonthStart(window.start, index);
-      const end = lastDayOfMonth(start);
-      return { key: start, date: start, label: STAT_MONTH_NAMES[index], value: Math.round(averageNumbers(datesBetween(start, end).map(scoreForDate))) };
-    });
-  };
-  const scoreTrendPoints = scoreBucketsFor(statsWindow);
-  const scoreAverage = Math.round(averageNumbers(scoreTrendPoints.map((point) => point.value)));
-  // Geometría del gráfico de líneas del Daily Score.
-  const scoreGradientId = useId();
-  const scoreChartWidth = 600;
-  const scoreChartHeight = 130;
-  const scoreYFor = (value: number) => scoreChartHeight - (Math.max(0, Math.min(100, value)) / 100) * scoreChartHeight;
-  const scoreChartPoints = scoreTrendPoints.map((point, index) => ({
-    ...point,
-    x: scoreTrendPoints.length > 1 ? (index / (scoreTrendPoints.length - 1)) * scoreChartWidth : scoreChartWidth / 2,
-    y: scoreYFor(point.value),
-  }));
-  const scoreLinePath = scoreChartPoints.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(1) + "," + point.y.toFixed(1)).join(" ");
-  const scoreAreaPath = scoreChartPoints.length
-    ? scoreLinePath + " L" + scoreChartPoints[scoreChartPoints.length - 1].x.toFixed(1) + "," + scoreChartHeight + " L" + scoreChartPoints[0].x.toFixed(1) + "," + scoreChartHeight + " Z"
-    : "";
-  const scoreAverageY = scoreYFor(scoreAverage);
 
-  const streakCards: Array<{ key: string; icon: string; label: string; streak: typeof streaks.training; unitSingular: string; unitPlural: string; pendingLabel: string; warningLabel: string }> = [
-    { key: "training", icon: "↗", label: "Entrenamiento", streak: streaks.training, unitSingular: "semana", unitPlural: "semanas", pendingLabel: "Esta semana todavía no", warningLabel: `Sumá ${trainingWeeklyTarget} entrenamientos esta semana para no cortarla` },
-    { key: "focus", icon: "⌁", label: "Foco", streak: streaks.focus, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá un día con foco hoy para no cortarla" },
-    { key: "reading", icon: "▱", label: "Lectura", streak: streaks.reading, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá un día leyendo hoy para no cortarla" },
-    { key: "sleep", icon: "☾", label: "Sueño de 7 h+", streak: streaks.sleep, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá una noche completa hoy para no cortarla" },
-    { key: "logging", icon: "✎", label: "Registro diario", streak: streaks.logging, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá un día hoy para no cortarla" },
-  ];
 
-  const statsPanel = <section className="module-stack">
-    {weeklyReviewPanel}
-    <div className="stats-controls">
-      <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => { setStatsPeriod(period); setStatsOffset(0); setSelectedScorePointKey(null); }}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
-      <label className="stats-range-picker"><span>Período</span><select value={String(statsOffset)} onChange={(event) => { setStatsOffset(Number(event.target.value)); setSelectedScorePointKey(null); }}>
-        {(statsPeriod === "weekly"
-          ? Array.from({ length: 13 }, (_, offset) => ({ value: offset, label: offset === 0 ? "Esta semana" : offset === 1 ? "Semana pasada" : "Hace " + offset + " semanas" }))
-          : statsPeriod === "monthly"
-            ? Array.from({ length: 13 }, (_, offset) => { const start = shiftMonthStart(today, -offset); return { value: offset, label: new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(start + "T12:00:00")) }; })
-            : Array.from({ length: 6 }, (_, offset) => ({ value: offset, label: String(Number(today.slice(0, 4)) - offset) }))
-        ).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select></label>
-    </div>
-
-    <article className="panel score-history-panel">
-      <div className="panel-heading">
-        <div><p>DAILY SCORE</p><h2>{statsPeriod === "weekly" ? "Semana" : statsPeriod === "monthly" ? "Mes" : "Año"}</h2></div>
-        <button className="text-link" onClick={() => openSection("score")}>Cómo se calcula →</button>
-      </div>
-      <div className="score-history">
-        <div className="score-history-now">
-          <div className="score-ring small" style={{ "--score": String(score * 3.6) + "deg" } as CSSProperties}><div><b>{score}</b><small>/100</small></div></div>
-          <p><b>Hoy</b><small>{scoreLabel(score)}</small></p>
-        </div>
-        <div className="score-history-chart">
-          <svg
-            className="score-line-chart"
-            viewBox={`0 0 ${scoreChartWidth} ${scoreChartHeight}`}
-            preserveAspectRatio="none"
-            role="img"
-            aria-label={"Daily Score " + (statsPeriod === "weekly" ? "semanal" : statsPeriod === "monthly" ? "mensual" : "anual") + ". Promedio " + scoreAverage + " de 100."}
-          >
-            <defs>
-              <linearGradient id={scoreGradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--green)" stopOpacity="0.28" />
-                <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <line className="score-average-line" x1="0" y1={scoreAverageY} x2={scoreChartWidth} y2={scoreAverageY} vectorEffect="non-scaling-stroke" />
-            {scoreAreaPath && <path className="score-line-area" d={scoreAreaPath} fill={`url(#${scoreGradientId})`} />}
-            <path className="score-line-path" d={scoreLinePath} fill="none" vectorEffect="non-scaling-stroke" />
-            {scoreChartPoints.map((point) => <g key={point.key}>
-              <circle
-                className="score-line-hit-area"
-                cx={point.x}
-                cy={point.y}
-                r={12}
-                role="button"
-                tabIndex={0}
-                aria-label={point.label + ": " + point.value + "/100" + (statsPeriod === "weekly" ? "" : " promedio")}
-                onClick={() => setSelectedScorePointKey(point.key)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedScorePointKey(point.key);
-                  }
-                }}
-              />
-              <circle
-                className={"score-line-dot " + (point.date === today ? "today" : "")}
-                cx={point.x}
-                cy={point.y}
-                r={point.date === today ? 5 : 3.4}
-                vectorEffect="non-scaling-stroke"
-              >
-                <title>{point.label + " · " + point.value + "/100"}</title>
-              </circle>
-              {selectedScorePointKey === point.key && <g
-                className="score-point-tooltip"
-                transform={"translate(" + Math.max(38, Math.min(scoreChartWidth - 38, point.x)) + "," + Math.max(24, point.y - 18) + ")"}
-              >
-                <rect x="-38" y="-21" width="76" height="19" rx="6" />
-                <text x="0" y="-8" textAnchor="middle">{point.value + (statsPeriod === "weekly" ? "/100" : " prom.")}</text>
-              </g>}
-            </g>)}
-          </svg>
-
-          <div className="score-point-labels" style={{ "--score-points": scoreChartPoints.length } as CSSProperties} aria-label="Períodos del Daily Score">
-            {scoreChartPoints.map((point) => <small key={point.key}>{point.label}</small>)}
-          </div>
-
-        </div>
-      </div>
-      <p className="formula-note">Cada barra se reconstruye con lo que registraste ese día y las prioridades de ese mes. Si corregís ayer, su puntaje sube o baja automáticamente sin cambiar el de hoy.</p>
-    </article>
-
-    <article className="panel streaks-panel">
-      <div className="panel-heading"><div><p>CONSTANCIA</p><h2>Tus rachas</h2></div><span className="week-pill">{streakCards.filter((card) => card.streak.current > 0).length} activas</span></div>
-      <div className="streak-grid">{streakCards.map((card) => <article key={card.key} className={"streak-card " + (card.streak.current > 0 ? "alive" : "cold")}>
-        <span className="streak-icon">{card.icon}</span>
-        <b className="streak-count">{card.streak.current}<small>{" " + (card.streak.current === 1 ? card.unitSingular : card.unitPlural)}</small></b>
-        <p>{card.label}</p>
-        <small>{card.streak.pendingToday ? card.pendingLabel : card.streak.best > card.streak.current ? `Récord: ${card.streak.best}` : card.streak.current > 0 ? "Tu mejor marca" : "Sin racha activa"}</small>
-        {card.streak.pendingToday && <i className="streak-warning" title={card.warningLabel} />}
-      </article>)}</div>
-    </article>
-
-    <article className="panel trend-rows-panel">
-      <div className="panel-heading"><div><p>TENDENCIA</p><h2>{statsPeriod === "weekly" ? "Últimos 7 días" : statsPeriod === "monthly" ? "Últimos 30 días" : "Últimos 6 meses"}</h2></div><small className="trend-note">Comparado con el período anterior</small></div>
-      <div className="trend-rows">{trends.map((row) => {
-        const delta = row.trend.deltaPercent;
-        const direction = delta === null ? "flat" : delta > 4 ? "up" : delta < -4 ? "down" : "flat";
-        return <div className="trend-row" key={row.key}>
-          <span className={"trend-icon " + row.key}>{row.icon}</span>
-          <div className="trend-label"><b>{row.label}</b><small>{row.caption}</small></div>
-          <svg className="sparkline" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true">
-            <path d={sparklinePath(row.trend.points, 120, 28)} fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          </svg>
-          <div className="trend-values">
-            <b>{row.format(row.useAverage ? row.trend.average : row.trend.total)}</b>
-            <small className={"trend-delta " + direction}>{delta === null ? "sin base previa" : `${delta > 0 ? "+" : ""}${delta} %`}</small>
-          </div>
-        </div>;
-      })}</div>
-    </article>
-
-    <div className="metrics-grid">
-      <article><span>↗</span><p>ENTRENAMIENTOS<b>{periodTraining.length + periodTaskTrainingCount}</b><small>{(periodTraining.reduce((sum, item) => sum + item.distanceMeters, 0) / 1000).toFixed(1)} km recorridos</small></p></article>
-      <article><span>☾</span><p>SUEÑO PROMEDIO<b>{periodSleep.length ? (periodSleep.reduce((sum, item) => sum + item.sleepMinutes, 0) / periodSleep.length / 60).toFixed(1) : "0"} h</b><small>{periodSleep.length} noches registradas</small></p></article>
-      <article><span>⌁</span><p>TRABAJO PROFUNDO<b>{(periodFocusMinutes / 60).toFixed(1)} h</b><small>{periodFocusEntries.length} días con foco</small></p></article>
-      <article><span>▱</span><p>PÁGINAS LEÍDAS<b>{periodReading.reduce((sum, item) => sum + item.pages, 0)}</b><small>{periodReading.reduce((sum, item) => sum + item.minutes, 0)} min de lectura</small></p></article>
-      <article><span>◇</span><p>CALORÍAS REGISTRADAS<b>{periodMeals.reduce((sum, item) => sum + item.calories, 0).toLocaleString("es-AR")}</b><small>estimación del período</small></p></article>
-    </div>
-  </section>;
   const dietCalendarStart = new Date(dietCalendarCursor + "-01T12:00:00");
   const dietCalendarMonthName = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(dietCalendarStart);
   const dietCalendarOffset = (dietCalendarStart.getDay() + 6) % 7;
@@ -1323,180 +313,10 @@ export default function ProgressClient(props: WorkspaceProps) {
 
   const calorieCalendarPanel = <article className="panel calorie-calendar-panel"><div className="calorie-calendar-top"><div><p>SEGUIMIENTO DE LA DIETA</p><h2>Calorías por día</h2><small>{dietTargetCalories ? <>Tu referencia actual es <b>{dietTargetCalories.toLocaleString("es-AR")} kcal diarias.</b></> : "Creá y guardá un plan para comparar cada día con tu objetivo."}</small></div><div className="calorie-calendar-nav"><button onClick={() => shiftDietCalendar(-1)}>‹</button><b>{dietCalendarMonthName}</b><button onClick={() => shiftDietCalendar(1)}>›</button></div></div><div className="calorie-calendar"><div className="calorie-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <b key={day + index}>{day}</b>)}</div><div className="calorie-calendar-cells">{Array.from({ length: dietCalendarOffset }, (_, index) => <span className="blank" key={"diet-blank-" + index} />)}{Array.from({ length: dietCalendarDays }, (_, index) => { const day = index + 1; const iso = dietCalendarCursor + "-" + String(day).padStart(2, "0"); const total = caloriesByDate[iso] ?? 0; return <div className={calorieStatus(total) + (iso === today ? " today" : "")} key={iso} title={total ? total + " kcal registradas" : "Sin comidas registradas"}><span>{day}</span><b>{total ? total.toLocaleString("es-AR") : "—"}</b><small>kcal</small></div>; })}</div></div><div className="calorie-legend"><span><i className="on-target" />En objetivo ±10%</span><span><i className="near-target" />Cerca ±20%</span><span><i className="off-target" />Fuera del rango</span><span><i className="empty" />Sin registro</span></div></article>;
 
-  const booksPanel = <section className="books-layout"><article className="panel section-panel books-panel"><div className="panel-heading"><div><p>BIBLIOTECA · {entryDayLabel(readingEntryDate)}</p><h2>Libros</h2></div><div className="meal-panel-actions"><button className="add-button light" onClick={() => bookForm ? setBookForm(false) : openAddBook(bookTab)}>{bookForm ? "Cerrar" : "＋ Nuevo libro"}</button></div></div>
-    <DayStrip label="Elegí el día de lectura que querés registrar" value={readingEntryDate} today={today} onChange={setReadingEntryDate} markedDates={new Set(data.readingHistory.filter((log) => log.pages > 0 || log.minutes > 0).map((log) => log.logDate))} />
-    {historicalScore(readingEntryDate)}
-    {bookForm && <form className="book-form smart-book-form" onSubmit={(event) => void submitNewBook(event)}><div className="book-title-search"><input name="title" autoComplete="off" required value={bookDraft.title} onFocus={() => { if (bookSuggestions.length) setBookSuggestionOpen(true); }} onChange={(event) => { const title = event.target.value; setBookDraft({ ...bookDraft, title, coverUrl: "", externalKey: "" }); setBookSuggestionOpen(true); if (title.trim().length < 2) { setBookSuggestions([]); setBookSuggestLoading(false); } }} placeholder="Empezá a escribir el título…" />{(bookDraft.title.trim().length >= 2 && bookSuggestionOpen && (bookSuggestLoading || bookSuggestions.length > 0)) && <div className="book-autocomplete">{bookSuggestLoading && <div className="book-searching"><span className="voice-spinner" />Buscando en el catálogo…</div>}{!bookSuggestLoading && bookSuggestions.map((book) => <button type="button" key={book.key} onClick={() => chooseBookSuggestion(book)}><CatalogBookCover book={book} compact /><p><b>{book.title}</b><small>{book.author}{book.year ? ` · ${book.year}` : ""}</small></p>{book.pages > 0 && <em>{book.pages} pág.</em>}</button>)}</div>}</div><input name="author" value={bookDraft.author} onChange={(event) => setBookDraft({ ...bookDraft, author: event.target.value })} placeholder="Autor" /><input name="totalPages" value={bookDraft.totalPages || ""} onChange={(event) => setBookDraft({ ...bookDraft, totalPages: Number(event.target.value) || 0 })} type="number" min="0" placeholder="Páginas" /><Dropdown ariaLabel="Estado del libro" value={bookDraft.status} onChange={(value) => setBookDraft({ ...bookDraft, status: value as BookStatus })} options={[{ value: "reading", label: "Leyendo" }, { value: "read", label: "Leído" }, { value: "wishlist", label: "Quiero leer" }]} /><button disabled={saving || bookMatching}>{bookMatching && savePhase("add_book") === null ? "Identificando…" : <SaveButtonContent label="Guardar" phase={savePhase("add_book")} />}</button></form>}
-    <div className="book-tabs">{(["reading", "read", "wishlist"] as BookStatus[]).map((tab) => <button className={bookTab === tab ? "active" : ""} key={tab} onClick={() => { setBookTab(tab); setBookShelfPage(0); setSelectedBookId(null); }}>{tab === "reading" ? "Leyendo" : tab === "read" ? "Leídos" : "Quiero leer"} <i>{data.books.filter((book) => book.status === tab).length}</i></button>)}</div>
-    {booksInTab.length ? <><div className="book-shelf-list">{visibleBooks.map((book) => {
-      const isSelected = selectedBook?.id === book.id;
-      const bookNotes = data.notes.filter((item) => item.bookId === book.id);
-      const bookNoteCount = bookNotes.length;
-      const canEditPosition = (bookTab === "reading" || bookTab === "read") && isSelected;
-      const currentInput = Number(pagesInput) || 0;
-      const maximumPage = book.totalPages > 0 ? book.totalPages : 20000;
-      const savePosition = async () => {
-        const nextPage = Math.min(maximumPage, Math.max(0, currentInput));
-        const ok = await save({ action: "set_pages", bookId: book.id, date: readingEntryDate, currentPage: nextPage });
-        if (!ok) return;
-        const completed = book.totalPages > 0 && nextPage >= book.totalPages;
-        setBookTab(completed ? "read" : "reading");
-        setSelectedBookId(book.id);
-        setBookShelfPage(0);
-      };
-      return <article className={"current-book shelf-book " + (isSelected ? "selected" : "")} key={book.id}>
-        <SavedBookCover book={book} />
-        <div className="book-info">
-          <button type="button" className="book-card-select" aria-pressed={isSelected} onClick={() => setSelectedBookId(book.id)}>
-            <span>{bookTab === "reading" ? "LEYENDO AHORA" : bookTab === "read" ? "TERMINADO" : "PRÓXIMA LECTURA"}</span>
-            <h3>{book.title}</h3><p>{book.author}</p>
-          </button>
-          <div className="progress-line"><i style={{ width: String(book.totalPages ? Math.min(100, book.currentPage / book.totalPages * 100) : 0) + "%" }} /></div>
-          <small>{book.currentPage} de {book.totalPages || "?"} páginas</small>
-          <button type="button" className="delete-book-trigger" onClick={() => setBookToDelete(book)}>Eliminar libro</button>
-        </div>
-        {canEditPosition ? <div className="page-counter">
-          <label>Vas por la página</label>
-          <div>
-            <button type="button" className="stepper-button" aria-label="Retroceder una página" onClick={() => adjustPages(-1)} disabled={currentInput <= 0}>−</button>
-            <input type="number" inputMode="numeric" min="0" max={book.totalPages || undefined} value={pagesInput} onFocus={() => { if (pagesInput === 0) setPagesInput(""); }} onBlur={() => { if (pagesInput === "") setPagesInput(0); }} onChange={(event) => setPagesInput(event.target.value === "" ? "" : Math.min(maximumPage, Math.max(0, Number(event.target.value) || 0)))} />
-            <button type="button" className="stepper-button" aria-label="Avanzar una página" onClick={() => adjustPages(1)} disabled={book.totalPages > 0 && currentInput >= book.totalPages}>＋</button>
-            <button type="button" className="save-pages" onClick={() => void savePosition()}><SaveButtonContent label="Guardar" phase={savePhase("set_pages")} /></button>
-          </div>
-        </div> : <button type="button" className="book-select-action" onClick={() => setSelectedBookId(book.id)}>{isSelected ? "✓ Seleccionado" : `Ver notas y detalles${bookNoteCount ? ` · ${bookNoteCount}` : ""}`}</button>}
-        {isSelected && <div className="book-notes-slot"><NotesThread
-          key={book.id}
-          notes={bookNotes}
-          placeholder={`Idea u observación de ${book.title}…`}
-          saving={saving}
-          saveLabel={saveLabel}
-          feedbackKey="add_note"
-          onAdd={(content) => save({ action: "add_note", bookId: book.id, content })}
-          onDelete={(id) => void save({ action: "delete_note", id })}
-        /></div>}
-      </article>;
-    })}</div>{bookShelfPageCount > 1 && <div className="book-shelf-pagination"><button type="button" disabled={visibleBookShelfPage === 0} onClick={() => showBookShelfPage(visibleBookShelfPage - 1)}>← Anteriores</button><span>{visibleBookShelfPage + 1} de {bookShelfPageCount}</span><button type="button" disabled={visibleBookShelfPage === bookShelfPageCount - 1} onClick={() => showBookShelfPage(visibleBookShelfPage + 1)}>Siguientes →</button></div>}</> : <button type="button" className="empty-shelf" onClick={() => openAddBook(bookTab)}><span>＋</span><b>No hay libros en esta lista</b><p>Tocá acá para agregar el primero.</p></button>}
-  </article><StudyResourcesPanel resources={data.resources ?? []} notes={data.resourceNotes ?? []} saving={saving} save={save} saveLabel={saveLabel} onError={setError} />
-  <article className="panel section-panel book-discover-panel"><div className="book-discover-head"><span>✦</span><div><p>DESCUBRIR NUEVAS LECTURAS</p><h2>¿Sobre qué querés leer?</h2><small>Buscá por un tema, una idea o un interés y elegí el idioma de la edición.</small></div></div><form className="book-discover-form" onSubmit={(event) => void discoverBooks(event)}><input value={discoverQuery} onChange={(event) => setDiscoverQuery(event.target.value)} placeholder="Ej. finanzas personales, inteligencia artificial, historia…" /><Dropdown ariaLabel="Idioma del libro" value={discoverLanguage} onChange={setDiscoverLanguage} options={bookLanguageOptions.map(([value, label]) => ({ value, label }))} /><button disabled={discoverLoading || discoverQuery.trim().length < 2}>{discoverLoading ? "Buscando…" : "Buscar libros"}</button></form><div className="book-topic-chips">{["Finanzas personales", "Productividad", "Historia", "Tecnología", "Psicología", "Biografías"].map((topic) => <button type="button" key={topic} onClick={() => setDiscoverQuery(topic)}>{topic}</button>)}</div>{discoverLoading && <div className="discover-loading"><span className="voice-spinner" /><b>Buscando buenas opciones…</b></div>}{!discoverLoading && discoverResults.length > 0 && <div className="book-results-grid">{discoverResults.map((book) => { const isSaved = data.books.some((savedBook) => savedBook.title.toLowerCase() === book.title.toLowerCase() && (!savedBook.author || savedBook.author.toLowerCase() === book.author.toLowerCase())); return <article key={book.key}><CatalogBookCover book={book} /><div className="book-result-copy"><span>{book.year || "Edición disponible"}</span><h3>{book.title}</h3><p>{book.author}</p><small>{book.pages ? `${book.pages} páginas aproximadas` : "Páginas no informadas"}</small></div><div className="book-result-actions"><button type="button" disabled={saving || isSaved} onClick={() => void saveDiscoveredBook(book)}>{isSaved ? "✓ En tu biblioteca" : "＋ Quiero leer"}</button><a href={book.openLibraryUrl} target="_blank" rel="noreferrer">Ver ficha ↗</a></div></article>; })}</div>}{!discoverLoading && discoverSearched && !discoverResults.length && <div className="inline-empty discover-empty"><span>⌕</span><p><b>No encontramos opciones con esos filtros</b><small>Probá con un tema más amplio u otro idioma.</small></p></div>}<p className="catalog-credit">Información bibliográfica y portadas provistas por <a href="https://openlibrary.org/" target="_blank" rel="noreferrer">Open Library</a>.</p></article></section>;
 
-  const priorityEditor = <article className="panel priority-panel"><div className="panel-heading"><div><p>PRIORIDAD DEL MES</p><h2>¿Qué te importa más cumplir?</h2></div></div><p className="panel-intro">Estas prioridades definen el peso de cada área en el Daily Score.</p><div className="priority-list">{([
-    ["gymWeight", "Entrenamiento", "↗", "Constancia en todas tus disciplinas"],
-    ["nutritionWeight", "Alimentación", "◇", "Registrar comidas y cuidar tu energía"],
-    ["sleepWeight", "Sueño", "☾", "Duración y regularidad del descanso"],
-    ["focusWeight", "Estudio / Trabajo", "⌁", "Trabajo profundo en materias y proyectos"],
-    ["readingWeight", "Lectura", "▱", "Leer y avanzar en tus libros"],
-    ["goalsWeight", "Objetivos y organización", "◎", "Completar metas y próximos pasos"],
-  ] as Array<[keyof Omit<Priorities, "monthKey">, string, string, string]>).map(([key, label, icon, copy]) => <div className="priority-row" key={key}><span className="priority-icon">{icon}</span><div className="priority-copy"><b>{label}</b><small>{copy}</small></div><div className="priority-options">{[1, 2, 3].map((value) => <button key={value} className={priorityDraft[key] === value ? "active" : ""} onClick={() => setPriorityDraft({ ...priorityDraft, [key]: value })}>{priorityLabels[value]}</button>)}</div></div>)}</div><p className="priority-view-note">Inicio, Calendario y Progreso reúnen información de estas áreas, por eso no duplican peso en el puntaje.</p><button className="save-priorities" disabled={saving} onClick={() => void save({ action: "set_priorities", ...priorityDraft, monthKey })}><SaveButtonContent label="Guardar prioridades" phase={savePhase("set_priorities")} /></button></article>;
-  const goalTargetDate = goalPeriod === "custom" ? customDate : goalDeadline(today, goalPeriod);
-  const goalsPanel = <section className="goals-page"><div className="goals-columns"><article className="panel goal-creator"><div className="panel-heading"><div><p>NUEVO OBJETIVO</p><h2>¿Qué querés conseguir?</h2></div></div><form onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_goal", title: form.get("title"), category: form.get("category"), period: goalPeriod, targetDate: goalTargetDate }); }}><label>Objetivo<input name="title" required placeholder="Ej. Correr mis primeros 10 km" /></label><label>Área<Dropdown name="category" ariaLabel="Área del objetivo" options={goalAreaOptions.map((area) => ({ value: area.value, label: area.label }))} /></label><label>Plazo<Dropdown ariaLabel="Plazo del objetivo" value={goalPeriod} onChange={(value) => setGoalPeriod(value as GoalPeriod)} options={[{ value: "weekly", label: "Esta semana" }, { value: "monthly", label: "Este mes" }, { value: "annual", label: "Este año" }, { value: "custom", label: "Fecha exacta" }]} /></label>{goalPeriod === "custom" && <label>Fecha exacta<DatePicker ariaLabel="Fecha exacta del objetivo" value={customDate} onChange={setCustomDate} min={today} /></label>}<div className="deadline-preview"><span>◎</span><p><small>FECHA OBJETIVO</small><b>{formatDate(goalTargetDate)}</b></p></div><button className="primary-action" disabled={saving}><SaveButtonContent label="Crear objetivo" phase={savePhase("add_goal")} /></button></form></article>
-    <article className="panel goal-list-panel"><div className="panel-heading"><div><p>TU CAMINO</p><h2>Objetivos guardados</h2></div><span className="week-pill">{activeGoals.length} activos</span></div><div className="goal-list">{data.goals.map((goal) => <div className={"goal-row " + (goal.completedAt ? "completed" : "")} key={goal.id}><button className="goal-check" onClick={() => void save({ action: "toggle_goal", id: goal.id, completed: !goal.completedAt })}>{goal.completedAt ? "✓" : ""}</button><div><div className="goal-meta"><span className={"category-chip " + goal.category}>{categoryLabels[goal.category]}</span><span>{periodLabels[goal.period]}</span></div><b>{goal.title}</b><small>{goal.completedAt ? "Objetivo cumplido" : formatDate(goal.targetDate) + " · " + countdownLabel(Math.max(0, dayDistance(today, goal.targetDate)))}</small></div><button className="goal-delete" onClick={() => void save({ action: "delete_goal", id: goal.id })}>×</button></div>)}{!data.goals.length && <div className="inline-empty tall"><span>◎</span><p><b>Todavía no hay objetivos</b><small>Empezá con uno concreto.</small></p></div>}</div></article></div></section>;
 
-  // ---------------------------------------------------------------------------
-  // AVORA Pro: comparación de planes y simulación de compra
-  // ---------------------------------------------------------------------------
-  const planRows: Array<{ feature: string; detail: string; free: string | false; pro: string }> = [
-    { feature: "Registro de todo", detail: "Entrenamiento, comidas, sueño, foco, lectura y objetivos", free: "Completo", pro: "Completo" },
-    { feature: "Plan del día", detail: "Tu agenda hora por hora y los huecos libres", free: "Completo", pro: "Completo" },
-    { feature: "Daily Score y rachas", detail: "Puntaje por prioridades, récords y tendencias", free: "Completo", pro: "Completo" },
-    { feature: "Recomendaciones diarias", detail: "Cruza sueño, agenda y rachas para decirte qué mover y a qué hora", free: false, pro: "Ilimitadas" },
-    { feature: "Cierre del día por voz", detail: "Contás tu día en un minuto y se acomoda solo en cada sección", free: false, pro: "Sin límite" },
-    { feature: "Calorías por foto", detail: "Sacás una foto del plato y sale la estimación con macros", free: false, pro: "Sin límite" },
-    { feature: "Plan de alimentación", detail: "Calculado con tus datos y adaptado a tus intolerancias", free: false, pro: "Incluido" },
-    { feature: "Reprogramación automática", detail: "Dormiste poco: te mueve el bloque difícil al mejor hueco del día", free: false, pro: "Incluido" },
-  ];
-  const lockedCount = planRows.filter((row) => row.free === false).length;
 
-  const proPanel = <section className="pro-page">
-    {isPro ? <article className="panel pro-active">
-      <span className="pro-active-badge">✦</span>
-      <p>SUSCRIPCIÓN ACTIVA</p>
-      <h2>Tenés AVORA Pro.</h2>
-      <p className="pro-active-copy">Activada el {formatDate(data.profile.proSince || today)}. Todas las funciones están desbloqueadas en esta cuenta.</p>
-      <div className="pro-active-actions">
-        <button className="primary-action" onClick={() => openSection("summary")}>Volver a Inicio</button>
-        <button className="pro-cancel" disabled={saving} onClick={() => void cancelPro()}>{saving ? "Desactivando…" : "Volver al plan gratuito"}</button>
-      </div>
-      <small className="pro-demo-note">Demostración: la suscripción se simula localmente y no hay ningún cobro.</small>
-    </article> : <>
-      <article className="panel pro-hero">
-        <p className="pro-eyebrow">AVORA PRO</p>
-        <h2>Registrar es la mitad.<br /><em>Decidir es la otra.</em></h2>
-        <p className="pro-hero-copy">
-          Ya anotás todo. Pro es la parte que lee esos datos por vos y te dice qué mover:
-          que dormiste 5 h y tu bloque difícil está a las 8, que hay un hueco libre a las 17,
-          que llevás cinco días de racha y hoy todavía no registraste.
-        </p>
-        <div className="pro-hero-proof">
-          <div><b>{lockedCount}</b><small>funciones bloqueadas hoy</small></div>
-          <div><b>1 min</b><small>para cerrar el día hablando</small></div>
-          <div><b>0</b><small>planillas que llenar a mano</small></div>
-        </div>
-      </article>
 
-      <article className="panel pro-compare">
-        <div className="panel-heading"><div><p>QUÉ CAMBIA</p><h2>Gratis y Pro, lado a lado</h2></div></div>
-        <div className="pro-table" role="table">
-          <div className="pro-table-head" role="row">
-            <span role="columnheader">Función</span>
-            <span role="columnheader">Gratis</span>
-            <span role="columnheader" className="is-pro">Pro</span>
-          </div>
-          {planRows.map((row) => <div className={"pro-table-row " + (row.free === false ? "is-locked" : "")} role="row" key={row.feature}>
-            <span role="cell"><b>{row.feature}</b><small>{row.detail}</small></span>
-            <span role="cell" className="pro-cell-free">{row.free === false ? <i aria-label="No incluido">—</i> : row.free}</span>
-            <span role="cell" className="pro-cell-pro">{row.pro}</span>
-          </div>)}
-        </div>
-      </article>
-
-      <article className="panel pro-pricing">
-        <div className="pro-plan-switch" role="group" aria-label="Elegí la frecuencia de pago">
-          <button className={checkoutPlan === "monthly" ? "active" : ""} onClick={() => setCheckoutPlan("monthly")}>Mensual</button>
-          <button className={checkoutPlan === "annual" ? "active" : ""} onClick={() => setCheckoutPlan("annual")}>Anual <i>2 meses gratis</i></button>
-        </div>
-        <div className="pro-price">
-          <b>{checkoutPlan === "annual" ? "$4.990" : "$5.990"}</b>
-          <small>por mes{checkoutPlan === "annual" ? ", facturado anual" : ""}</small>
-        </div>
-        <p className="pro-price-note">{checkoutPlan === "annual" ? "Pagás $59.880 una vez al año y te ahorrás $11.980." : "Cancelás cuando quieras, sin explicaciones."}</p>
-        <button className="pro-buy" onClick={() => { setCheckoutStep("form"); setCheckoutOpen(true); }}>Empezar con Pro <span>→</span></button>
-        <ul className="pro-reassure">
-          <li>Tus datos siguen siendo tuyos: Pro no cambia quién los ve.</li>
-          <li>Si cancelás, todo lo que registraste sigue estando.</li>
-          <li>Demostración: no se cobra nada y podés volver atrás cuando quieras.</li>
-        </ul>
-      </article>
-    </>}
-  </section>;
-
-  const checkoutDialog = checkoutOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && checkoutStep !== "processing") setCheckoutOpen(false); }}>
-    <section className="checkout-dialog" role="dialog" aria-modal="true" aria-label="Confirmar suscripción">
-      {checkoutStep === "done" ? <div className="checkout-done">
-        <span aria-hidden="true">✓</span>
-        <h2>Listo, ya tenés Pro.</h2>
-        <p>Las recomendaciones, el cierre por voz, las calorías por foto y el plan de alimentación quedaron desbloqueados.</p>
-        <button className="primary-action" onClick={() => { setCheckoutOpen(false); openSection("summary"); }}>Ver mi Inicio</button>
-      </div> : <>
-        <p className="checkout-label">CONFIRMAR SUSCRIPCIÓN</p>
-        <h2>AVORA Pro {checkoutPlan === "annual" ? "anual" : "mensual"}</h2>
-        <div className="checkout-summary">
-          <div><span>Plan</span><b>{checkoutPlan === "annual" ? "Anual (12 meses)" : "Mensual"}</b></div>
-          <div><span>Precio</span><b>{checkoutPlan === "annual" ? "$59.880 por año" : "$5.990 por mes"}</b></div>
-          <div><span>Equivale a</span><b>{checkoutPlan === "annual" ? "$4.990 por mes" : "$5.990 por mes"}</b></div>
-        </div>
-        <div className="checkout-demo">
-          <span aria-hidden="true">ⓘ</span>
-          <p><b>Esto es una demostración.</b> No hay pasarela de pago ni se piden datos de tarjeta: el botón simula la compra y desbloquea las funciones para que puedas probarlas.</p>
-        </div>
-        <div className="checkout-actions">
-          <button type="button" className="checkout-cancel" disabled={checkoutStep === "processing"} onClick={() => setCheckoutOpen(false)}>Cancelar</button>
-          <button type="button" className="checkout-pay" disabled={checkoutStep === "processing"} onClick={() => void simulatePayment()}>
-            {checkoutStep === "processing" ? <><i className="voice-spinner" />Procesando…</> : "Simular pago y activar"}
-          </button>
-        </div>
-      </>}
-    </section>
-  </div>;
 
   const settingsTitles: Record<SettingsView, string> = { home: "Configuración", personal: "Datos personales", language: "Idioma", notifications: "Notificaciones" };
   const settingsDialog = settingsOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
@@ -2106,6 +926,11 @@ export default function ProgressClient(props: WorkspaceProps) {
     </a>
   </>;
 
+
+
+
+
+
   const streakPrompt = engagement?.pendingRestore ? "restore" : engagement?.lossNoticePending ? "lost" : null;
   async function submitStreakChoice(action: Exclude<StreakAction, "visit">) {
     setStreakActionBusy(true);
@@ -2152,54 +977,14 @@ export default function ProgressClient(props: WorkspaceProps) {
         </div></aside>
     <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}{unreadCount > 0 && <i className="profile-unread-dot" aria-label={`${unreadCount} notificaciones sin leer`} />}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
       {error && <div className="error-banner">{error}{(error.includes("cargar") || error.includes("conectar tus datos")) && <button type="button" onClick={() => void loadData()}>Reintentar</button>}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
-      {section === "summary" && <>
-        <NotificationSettings key={refreshVersion} isPro={data.profile.isPro} compact />
-        {streakWidget}
-        {quotePanel}
-        <section className={"hero-row " + (loading ? "is-loading" : "")}>
-          <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
-          <div className="hero-metrics-head"><small>{balanced ? "Tus seis áreas pesan igual" : `Según tu${topPriorities.length > 1 ? "s" : ""} prioridad${topPriorities.length > 1 ? "es" : ""} del mes: ${listPhrase(priorityNames)}`}</small><button type="button" onClick={() => openSection("score")}>Ajustar →</button></div>
-          <div className="hero-metrics" data-tiles={heroMetrics.length} data-tour="metrics">
-            {heroMetrics.map((metric) => <button
-              type="button"
-              className="stat-tile"
-              key={metric.label}
-              onClick={() => openArea(metric.area)}
-            >
-              <span className={"stat-icon " + metric.tone}>{metric.icon}</span>
-              <p>{metric.label}</p>
-              <b>{metric.value}<small> {metric.unit}</small></b>
-              <span className="stat-caption">{metric.caption}</span>
-            </button>)}
-          </div>
-        </section>
-        <section className="plan-grid">
-          {dayPlanPanel}
-          {isPro ? insightsPanel : <LockedFeature
-            title="Recomendaciones del día"
-            note="La app cruza tu sueño, tu agenda y tus rachas para decirte qué mover y a qué hora."
-            onOpen={openPro}
-          >{insightsPanel}</LockedFeature>}
-        </section>
-      </>}
-      {section === "score" && <section className="score-page">
-        <button className="back-link" onClick={() => openSection("summary")}>← Volver a Inicio</button>
-        <div className="score-main">{scoreCard}<article className="panel score-explanation"><div className="panel-heading"><div><p>CÓMO SE FORMA</p><h2>Tus factores de hoy</h2></div></div>{([
-          ["Entrenamiento", factors.training, priorityDraft.gymWeight, "gym"],
-          ["Alimentación", factors.nutrition, priorityDraft.nutritionWeight, "nutrition"],
-          ["Sueño", factors.sleep, priorityDraft.sleepWeight, "sleep"],
-          ["Estudio / Trabajo", factors.focus, priorityDraft.focusWeight, "focus"],
-          ["Lectura", factors.reading, priorityDraft.readingWeight, "reading"],
-          ["Objetivos / organización", factors.goals, priorityDraft.goalsWeight, "goals"],
-        ] as Array<[string, number, number, string]>).map(([label, value, weight, key]) => <div className="factor-row" key={key}><div><b>{label}</b><small>{priorityLabels[weight]}</small></div><div className="factor-track"><i className={key} style={{ width: String(value) + "%" }} /></div><strong>{value}</strong></div>)}<p className="formula-note">El puntaje combina acciones reales de Entrenamiento, Alimentación, Sueño, Estudio/Trabajo, Lectura y Objetivos. En Entrenamiento pesan la disciplina y la calidad: Malo 40%, Regular 60%, Bueno 80% y Muy bueno 100%; una disciplina secundaria aporta la mitad que una importante. Alimentación se calcula contra tu objetivo diario de calorías: dentro de un 10% suma 100 y cuanto más te alejás, menos suma. Sueño combina duración y calidad: “Bueno” conserva el puntaje por horas y “Malo” aporta el 40% de ese valor. Estudio/Trabajo suma en proporción a las horas realizadas frente a tu objetivo diario de foco. Las áreas con “Prioridad” pesan 3, las “Importantes” 2 y las “Secundarias” 1. Inicio, Plan y Progreso usan los mismos datos y no se cuentan dos veces.</p></article></div>
-        {priorityEditor}
-      </section>}
+      {section === "summary" && <HomeSection />}
+      {section === "score" && <ScoreSection />}
       {section === "physical" && <>
         <div className="period-switch section-switch">
           <button className={physicalTab === "training" ? "active" : ""} onClick={() => setPhysicalTab("training")}>Entrenamiento</button>
           <button className={physicalTab === "meals" ? "active" : ""} onClick={() => setPhysicalTab("meals")}>Alimentación</button>
         </div>
-        {physicalTab === "training" ? trainingPanel : <section className="single-section meals-section">
+        {physicalTab === "training" ? <TrainingSection key={today} /> : <section className="single-section meals-section">
           {mealsPanel}
           {dietQuickPanel}
           {isPro ? dietPlannerPanel : <LockedFeature
@@ -2215,17 +1000,16 @@ export default function ProgressClient(props: WorkspaceProps) {
           <button className={focusTab === "study" ? "active" : ""} onClick={() => setFocusTab("study")}>Estudio</button>
           <button className={focusTab === "work" ? "active" : ""} onClick={() => setFocusTab("work")}>Trabajo</button>
         </div>
-        {focusPanel}
-        {focusTab === "study" && booksPanel}
+        <FocusSection key={today} />
+        {focusTab === "study" && <ReadingSection key={today} />}
       </>}
-      {section === "sleep" && sleepPanel}
-      {section === "plan" && <>{goalsPanel}{calendarPanel}</>}
-      {section === "stats" && statsPanel}
+      {section === "sleep" && <SleepSection key={today} />}
+      {section === "plan" && <PlanSection key={today} />}
+      {section === "stats" && <StatsSection key={today} />}
       {section === "friends" && friendsPanel}
-      {section === "pro" && proPanel}
+      {section === "pro" && <ProSection />}
     </section>
     <nav className="mobile-nav">{mobileNavItems.map((item) => <button key={item.id} className={[section === item.id ? "active" : "", item.center ? "is-center" : ""].filter(Boolean).join(" ")} onClick={() => openSection(item.id)}><span className="nav-icon">{item.icon}</span>{item.mobile}</button>)}</nav>
-    {checkoutDialog}
     {settingsDialog}
     {feedbackDialog}
     {announcementOpen && <EarlyAdopterAnnouncement busy={announcementSaving} error={announcementError} onAcknowledge={() => void acknowledgeAnnouncement()} />}
@@ -2273,22 +1057,7 @@ export default function ProgressClient(props: WorkspaceProps) {
       </section>
     </div>}
     {tourActive && section === "summary" && <TourOverlay steps={TOUR_STEPS} onDone={() => setTourActive(false)} />}
-    {voiceOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setVoiceOpen(false); }}>
-      <section className="voice-dialog" role="dialog" aria-modal="true" aria-label="Cierre del día">
-        <button className="voice-dialog-close" type="button" onClick={() => setVoiceOpen(false)} aria-label="Cerrar">×</button>
-        {dayClosePanel}
-        {voiceRecorder}
-      </section>
-    </div>}
-    {blockMenu && <div className="block-action-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBlockMenu(null); }}>
-      <section className="block-action-sheet" role="dialog" aria-modal="true" aria-label={"Opciones para " + blockMenu.block.title}>
-        <p>{blockMenu.block.title}</p>
-        <button type="button" onClick={() => { const current = blockMenu; setBlockMenu(null); openSlotDraft(current.date, clockFromMinutes(current.block.start), current.block); }}>Editar</button>
-        <button type="button" className="danger" onClick={() => { const current = blockMenu; setBlockMenu(null); if (window.confirm("¿Eliminar este bloque?")) void deleteAgendaBlock(current.block); }}>Eliminar</button>
-        <button type="button" className="cancel" onClick={() => setBlockMenu(null)}>Cancelar</button>
-      </section>
-    </div>}
-    {bookToDelete && <div className="delete-book-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookToDelete(null); }}><section className="delete-book-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-book-title"><span className="delete-book-icon" aria-hidden="true">⌫</span><p>ELIMINAR DE TU BIBLIOTECA</p><h2 id="delete-book-title">¿Eliminar “{bookToDelete.title}”?</h2><small>También se eliminarán sus páginas registradas y sus notas. Esta acción no se puede deshacer.</small><div><button type="button" className="delete-book-cancel" disabled={saving} onClick={() => setBookToDelete(null)}>Cancelar</button><button type="button" className="delete-book-confirm" disabled={saving} onClick={() => { const bookId = bookToDelete.id; void save({ action: "delete_book", bookId }).then((ok) => { if (ok) { setBookToDelete(null); setSelectedBookId(null); setBookShelfPage(0); setPagesInput(0); } }); }}>{saving ? "Eliminando…" : "Sí, eliminar libro"}</button></div></section></div>}
+    {voiceOpen && <VoiceCheckinDialog />}
     </main>
   </WorkspaceContext.Provider>;
 }

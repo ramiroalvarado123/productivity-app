@@ -5,10 +5,9 @@ import { listPhrase } from "@/shared/lib/format";
 import { quoteForDate } from "@/shared/lib/quotes";
 import { streakFor, sumByDate, weeklyStreakFor } from "@/domain/streaks";
 import { type AppEngagement } from "@/features/engagement/logic/app-engagement";
-import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, unscheduledTasks, type Block } from "@/domain/schedule";
+import { dayBlocks, dayWindow, freeSlots, inferTaskCategory, overlappingBlocks, unscheduledTasks } from "@/domain/schedule";
 import { buildInsights, closeInsights, type ComingDay, type InsightAction } from "@/features/insights/logic/insights";
 import { dayFactors, scoreFrom, scoreWeightsForDate, trainingContribution, type DayRecord, type ScoreWeights } from "@/domain/score";
-import { readingPositionForDate } from "@/features/reading/logic/reading";
 import { applyPatch, type DataPatch } from "@/shared/data/apply-patch";
 import { BADGE_DEFINITIONS, type BadgeStats } from "@/features/engagement/logic/badges";
 import { type InboxItem } from "@/features/notifications/components/notifications-center";
@@ -17,15 +16,13 @@ import { buildWeeklySummary, lastClosedWeekStart } from "@/features/notification
 import { useDebouncedRefresh } from "@/shared/data/use-debounced-refresh";
 import { EARLY_ADOPTER_ANNOUNCEMENT_ID } from "@/features/notifications/logic/announcements";
 import { emptySocial, goalWindow, type GroupAccent, type GroupGoal, type SocialData } from "@/features/friends/logic/social";
-import type { Book, BookStatus, BookSuggestion, DietForm, DietNumberDrafts, DietNumberKey, DietPlanContent, FeedbackType, FocusTab, GoalPeriod, MealEstimate, PhysicalTab, Priorities, ProgressData, SavePhase, Section, SettingsView, SlotCategory, StatsPeriod, StreakAction, TrainingLog, User, VoiceCheckin } from "@/shared/data/types";
+import type { DietForm, DietNumberDrafts, DietNumberKey, DietPlanContent, FeedbackType, FocusTab, MealEstimate, PhysicalTab, Priorities, ProgressData, SavePhase, Section, SettingsView, StreakAction, TrainingLog, User } from "@/shared/data/types";
 import { DIET_NUMBER_LIMITS, dietNumberDraftsFrom, estimateTargetCalories, isDietNumberKey, parseDietNumber, parseDietPlan, preparePhoto } from "@/features/nutrition/logic/diet";
-import { parseDecimalInput } from "@/shared/lib/numbers";
 import type { GoalDraft, GroupPanelTab } from "@/features/friends/logic/goal-draft";
 import { MAX_VOICE_UPLOAD_BYTES, VOICE_AUTO_STOP_BYTES } from "@/features/voice-checkin/constants";
 import { SaveButtonContent } from "@/shared/ui/save-button";
 import { insightTargets } from "@/features/app-shell/navigation";
-import { argentinaDate, argentinaMinutes, dateMinus, datePlus, dayDistance, formatDate, normalizeClock, sleepDuration, weekFor, weekdayLabel } from "@/domain/dates";
-import { normalizeBookText } from "@/features/reading/logic/books";
+import { argentinaDate, argentinaMinutes, dateMinus, datePlus, dayDistance, formatDate, weekFor, weekdayLabel } from "@/domain/dates";
 import { emptyData } from "@/shared/data/empty-data";
 import { emptyGoalDraft } from "@/features/friends/logic/goal-draft";
 import { getTrainingWeeklyTargetServerSnapshot, getTrainingWeeklyTargetSnapshot, setTrainingWeeklyTargetValue, subscribeTrainingWeeklyTarget } from "@/features/training/hooks/use-training-weekly-target";
@@ -71,7 +68,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   const [openSummary, setOpenSummary] = useState<{ weekStart: string; fresh: boolean } | null>(null);
   const autoSummaryRef = useRef("");
   const urlIntentRef = useRef<{ summary: string; notifications: boolean; section: string } | null>(null);
-  const [streakInfoOpen, setStreakInfoOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [announcementSaving, setAnnouncementSaving] = useState(false);
   const [announcementError, setAnnouncementError] = useState("");
@@ -134,27 +130,14 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     : usernameCheck?.value === usernameValue ? usernameCheck.status
     : "checking";
   const [priorityDraft, setPriorityDraft] = useState<Priorities>({ monthKey, gymWeight: 2, nutritionWeight: 2, readingWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2 });
-  const [selectedDisciplineId, setSelectedDisciplineId] = useState<number | null>(null);
-  const [trainingDate, setTrainingDate] = useState(today);
-  const [sleepEntryDate, setSleepEntryDate] = useState(today);
-  const [focusEntryDate, setFocusEntryDate] = useState(today);
-  const [readingEntryDate, setReadingEntryDate] = useState(today);
-  const [trainingWeekAnchor, setTrainingWeekAnchor] = useState(today);
-  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
-  const [statsOffset, setStatsOffset] = useState(0);
-  const [selectedScorePointKey, setSelectedScorePointKey] = useState<string | null>(null);
   // Meta de entrenamientos por semana, para la racha de constancia. Vive en
   // este navegador (no en el servidor) porque es una preferencia liviana de
   // lectura de la racha, no un dato que otra pantalla necesite.
   const trainingWeeklyTarget = useSyncExternalStore(subscribeTrainingWeeklyTarget, getTrainingWeeklyTargetSnapshot, getTrainingWeeklyTargetServerSnapshot);
   const setTrainingWeeklyTarget = setTrainingWeeklyTargetValue;
-  const [calendarCursor, setCalendarCursor] = useState(today.slice(0, 7));
   const [physicalTab, setPhysicalTab] = useState<PhysicalTab>("training");
   const [focusTab, setFocusTab] = useState<FocusTab>("study");
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutPlan, setCheckoutPlan] = useState<"monthly" | "annual">("annual");
-  const [checkoutStep, setCheckoutStep] = useState<"form" | "processing" | "done">("form");
   const [friendsNotice, setFriendsNotice] = useState(
     inviteResult === "ok" ? "¡Listo! Ya son amigos: van a ver el Daily Score del otro." :
     inviteResult === "error" ? "Esa invitación no se pudo usar: puede estar vencida, ya aceptada o ser para otra cuenta." : "",
@@ -187,32 +170,8 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   const [pendingTasks, setPendingTasks] = useState<Record<number, boolean>>({});
   const [pendingEvents, setPendingEvents] = useState<Record<number, boolean>>({});
   const [agendaView, setAgendaView] = useState<"week" | "month">("week");
-  const [weekAnchor, setWeekAnchor] = useState(today);
-  const [slotDraft, setSlotDraft] = useState<{ date: string; startTime: string; editingBlock?: Block } | null>(null);
-  const [blockMenu, setBlockMenu] = useState<{ block: Block; date: string } | null>(null);
-  const agendaLongPressRef = useRef<number | null>(null);
-  const suppressAgendaClickRef = useRef(false);
-  const [slotCategory, setSlotCategory] = useState<SlotCategory>("focus");
-  const [slotDuration, setSlotDuration] = useState("60");
-  const [slotCustomHours, setSlotCustomHours] = useState("");
   const [nowMinutes, setNowMinutes] = useState(argentinaMinutes);
   const [dietCalendarCursor, setDietCalendarCursor] = useState(today.slice(0, 7));
-  const [bookTab, setBookTab] = useState<BookStatus>("reading");
-  const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
-  const [bookToDelete, setBookToDelete] = useState<Book | null>(null);
-  const [bookShelfPage, setBookShelfPage] = useState(0);
-  const [pagesInput, setPagesInput] = useState<number | "">(0);
-  const [bookForm, setBookForm] = useState(false);
-  const [bookDraft, setBookDraft] = useState({ title: "", author: "", totalPages: 0, status: "reading" as BookStatus, coverUrl: "", externalKey: "" });
-  const [bookSuggestions, setBookSuggestions] = useState<BookSuggestion[]>([]);
-  const [bookSuggestLoading, setBookSuggestLoading] = useState(false);
-  const [bookMatching, setBookMatching] = useState(false);
-  const [bookSuggestionOpen, setBookSuggestionOpen] = useState(false);
-  const [discoverQuery, setDiscoverQuery] = useState("");
-  const [discoverLanguage, setDiscoverLanguage] = useState("es");
-  const [discoverResults, setDiscoverResults] = useState<BookSuggestion[]>([]);
-  const [discoverLoading, setDiscoverLoading] = useState(false);
-  const [discoverSearched, setDiscoverSearched] = useState(false);
   const [aiDescription, setAiDescription] = useState("");
   const [mealEntryDate, setMealEntryDate] = useState(today);
   const [mealPhoto, setMealPhoto] = useState<File | null>(null);
@@ -285,49 +244,12 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   const [generatedDietPlan, setGeneratedDietPlan] = useState<DietPlanContent | null>(null);
   const [dietRecording, setDietRecording] = useState(false);
   const [dietVoiceLoading, setDietVoiceLoading] = useState(false);
-  const [sleepBedtime, setSleepBedtime] = useState("23:00");
-  const [sleepWaketime, setSleepWaketime] = useState("07:00");
-  const [sleepQuality, setSleepQuality] = useState<"good" | "bad" | null>(null);
-  const [focusHours, setFocusHours] = useState("");
-  const adjustFocusHours = (delta: number) => {
-    setFocusHours((current) => {
-      const currentHours = parseDecimalInput(current) || 0;
-      const next = Math.min(24, Math.max(0, Math.round((currentHours + delta) * 100) / 100));
-      return next ? next.toLocaleString("es-AR", { maximumFractionDigits: 2 }) : "";
-    });
-  };
-  const adjustPages = (delta: number) => {
-    setPagesInput((current) => {
-      const maximum = selectedBook?.totalPages ? selectedBook.totalPages : 20000;
-      return Math.min(maximum, Math.max(0, (Number(current) || 0) + delta));
-    });
-  };
-  const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>("weekly");
-  const [customDate, setCustomDate] = useState(() => datePlus(argentinaDate(), 30));
-  const [recording, setRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [voiceLoading, setVoiceLoading] = useState(false);
-  const [voiceResult, setVoiceResult] = useState<VoiceCheckin | null>(null);
-  const [voiceSaved, setVoiceSaved] = useState(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const recordingBytesRef = useRef(0);
   const dietRecorderRef = useRef<MediaRecorder | null>(null);
   const dietStreamRef = useRef<MediaStream | null>(null);
   const dietChunksRef = useRef<Blob[]>([]);
   const dietRecordingBytesRef = useRef(0);
   const dietStopTimerRef = useRef<number | null>(null);
-  const dietHydratedRef = useRef(false);
-  const sleepHydratedRef = useRef(false);
-  const previousTodayRef = useRef(today);
 
-  // Al cambiar el día, la carga rápida de comidas vuelve a apuntar a hoy.
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    setMealEntryDate(today);
-  }, [today]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // El menú de cuenta se comporta como un desplegable real: cualquier toque
   // exterior o Escape lo cierra, sin interferir con sus acciones internas.
@@ -351,6 +273,7 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   }, []);
 
   // Cada carga lleva un número: si llega una respuesta vieja después de una más nueva (o de un guardado), se descarta.
+  const dietHydratedRef = useRef(false);
   const loadSeqRef = useRef(0);
   const silentFailuresRef = useRef(0);
   const loadData = useCallback(async (options?: { silent?: boolean }) => {
@@ -380,7 +303,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
         setAnnouncementOpen(true);
       }
       setPriorityDraft(next.priorities);
-      setSelectedDisciplineId((current) => current ?? next.disciplines[0]?.id ?? null);
       if (next.dietPlan && !dietHydratedRef.current) {
         const hydratedDietForm: DietForm = {
           age: next.dietPlan.age,
@@ -398,11 +320,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
         setDietQuickCalories(next.dietPlan.targetCalories || null);
         setDietQuickCaloriesDraft(null);
         dietHydratedRef.current = true;
-      }
-      if (next.dailyCheckin && !sleepHydratedRef.current) {
-        setSleepBedtime(normalizeClock(next.dailyCheckin.bedtime, "23:00"));
-        setSleepWaketime(normalizeClock(next.dailyCheckin.wakeTime, "07:00"));
-        sleepHydratedRef.current = true;
       }
       const hadVisibleFailure = silentFailuresRef.current >= 2;
       silentFailuresRef.current = 0;
@@ -504,58 +421,9 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
       document.removeEventListener("visibilitychange", syncToday);
     };
   }, []);
-  useEffect(() => {
-    const title = bookDraft.title.trim();
-    if (!bookForm || !bookSuggestionOpen || title.length < 2) {
-      return;
-    }
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      setBookSuggestLoading(true);
-      try {
-        const response = await fetch(`/api/book-search?q=${encodeURIComponent(title)}&limit=6`, { signal: controller.signal });
-        const result = await readJson<{ books?: BookSuggestion[]; error?: string }>(response);
-        if (!response.ok) throw new Error(result.error || "No pudimos buscar libros.");
-        setBookSuggestions(result.books ?? []);
-      } catch (caught) {
-        if (!(caught instanceof DOMException && caught.name === "AbortError")) setBookSuggestions([]);
-      } finally {
-        if (!controller.signal.aborted) setBookSuggestLoading(false);
-      }
-    }, 320);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [bookDraft.title, bookForm, bookSuggestionOpen]);
   // Keep the page counter aligned when the visible book changes.
   /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!recording) return;
-    const timer = window.setInterval(() => setRecordingSeconds((seconds) => {
-      if (seconds >= 59) {
-        if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-        return 60;
-      }
-      return seconds + 1;
-    }), 1000);
-    return () => window.clearInterval(timer);
-  }, [recording]);
 
-  // Al empezar un día nuevo se muestran los controles del día nuevo; el historial queda intacto.
-  useEffect(() => {
-    const previous = previousTodayRef.current;
-    if (previous === today) return;
-    setTrainingDate((current) => current === previous ? today : current);
-    setTrainingWeekAnchor((current) => current === previous ? today : current);
-    setWeekAnchor((current) => current === previous ? today : current);
-    setCalendarCursor(today.slice(0, 7));
-    setDietCalendarCursor(today.slice(0, 7));
-    setSleepEntryDate(today);
-    setFocusEntryDate(today);
-    setReadingEntryDate(today);
-    setSleepBedtime("23:00");
-    setSleepWaketime("07:00");
-    sleepHydratedRef.current = false;
-    previousTodayRef.current = today;
-  }, [today]);
 
   const beginSaveFeedback = useCallback((key: string) => {
     if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current);
@@ -959,30 +827,10 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
       : `${listPhrase(priorityNames)} pesan más que el resto en tu Daily Score.`;
   const displayName = data.profile.displayName.split(" ")[0] || "Usuario";
   const activeGoals = data.goals.filter((goal) => !goal.completedAt);
-  const selectedDiscipline = data.disciplines.find((item) => item.id === selectedDisciplineId) ?? data.disciplines[0] ?? null;
-  const selectedTrainingLog = selectedDiscipline ? effectiveTrainingLogs.find((item) => item.disciplineId === selectedDiscipline.id && item.trainingDate === trainingDate) : undefined;
-  const selectedExercises = selectedTrainingLog ? data.exerciseLogs.filter((item) => item.trainingLogId === selectedTrainingLog.id) : [];
-  // Cada disciplina tiene un único detalle de sesión posible: nunca conviven
-  // el de pesas, el de distancia y el genérico para la misma disciplina.
-  const isDistanceDiscipline = selectedDiscipline?.kind === "running" || selectedDiscipline?.kind === "cycling" || selectedDiscipline?.kind === "swimming";
-  const trainingDetailTitle = !selectedDiscipline ? "" : selectedDiscipline.kind === "strength" ? "SESIÓN DE GIMNASIO"
-    : selectedDiscipline.kind === "running" ? "SESIÓN DE RUNNING"
-    : selectedDiscipline.kind === "cycling" ? "SESIÓN DE CICLISMO"
-    : selectedDiscipline.kind === "swimming" ? "SESIÓN DE NATACIÓN"
-    : "DETALLE DE SESIÓN";
-  const booksInTab = data.books.filter((book) => book.status === bookTab);
-  const bookShelfPageCount = Math.max(1, Math.ceil(booksInTab.length / 3));
-  const visibleBookShelfPage = Math.min(bookShelfPage, bookShelfPageCount - 1);
-  const visibleBooks = booksInTab.slice(visibleBookShelfPage * 3, visibleBookShelfPage * 3 + 3);
-  const selectedBook = booksInTab.find((book) => book.id === selectedBookId) ?? booksInTab[0] ?? null;
-  const selectedReadingLog = selectedBook ? data.readingHistory.find((log) => log.bookId === selectedBook.id && log.logDate === readingEntryDate) : undefined;
-  const selectedReadingPosition = selectedBook
-    ? readingPositionForDate(selectedBook.currentPage, data.readingHistory.filter((log) => log.bookId === selectedBook.id), readingEntryDate, selectedBook.totalPages)
-    : 0;
   const savedDietPlan = useMemo(() => parseDietPlan(data.dietPlan?.planJson), [data.dietPlan?.planJson]);
   const displayedDietPlan = generatedDietPlan ?? savedDietPlan;
-  const dietTargetCalories = generatedDietPlan?.targetCalories ?? data.dietPlan?.targetCalories ?? 0;
-  const calculatedSleepMinutes = sleepDuration(sleepBedtime, sleepWaketime);
+  // El objetivo guardado: un plan generado y todavía sin guardar no cambia el puntaje ni los avisos.
+  const dietTargetCalories = data.dietPlan?.targetCalories ?? 0;
 
   // ---------------------------------------------------------------------------
   // Plan del día: la agenda con horarios, los huecos libres y los avisos que
@@ -1312,21 +1160,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   }, [loading, initialUser.onboardingCompleted, announcementOpen, openSummary, inboxOpen, engagement, summaryWeeks, latestSummaryWeek, seenIds, showSummary]);
 
   const quote = useMemo(() => quoteForDate(today), [today]);
-  useEffect(() => {
-    if (selectedBook) {
-      setSelectedBookId(selectedBook.id);
-      setPagesInput(selectedReadingPosition);
-    } else {
-      setSelectedBookId(null);
-      setPagesInput(0);
-    }
-  }, [selectedBook, selectedReadingLog?.pages, selectedReadingPosition, readingEntryDate]);
-  useEffect(() => {
-    const checkin = data.dailyCheckins.find((item) => item.entryDate === sleepEntryDate);
-    setSleepBedtime(checkin ? normalizeClock(checkin.bedtime, "23:00") : "23:00");
-    setSleepWaketime(checkin ? normalizeClock(checkin.wakeTime, "07:00") : "07:00");
-    setSleepQuality(checkin?.sleepQuality === "good" || checkin?.sleepQuality === "bad" ? checkin.sleepQuality : null);
-  }, [data.dailyCheckins, sleepEntryDate]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   function openSection(next: Section) {
@@ -1335,11 +1168,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     // mientras está abierto, se corta en vez de quedar "esperando".
     if (next !== "summary") setTourActive(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-  function showBookShelfPage(page: number) {
-    const nextPage = Math.max(0, Math.min(bookShelfPageCount - 1, page));
-    setBookShelfPage(nextPage);
-    setSelectedBookId(booksInTab[nextPage * 3]?.id ?? null);
   }
   async function submitForm(event: FormEvent<HTMLFormElement>, payload: Record<string, unknown>) {
     const form = event.currentTarget;
@@ -1428,146 +1256,7 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
       setAvatarUploading(false);
     }
   }
-  function openAddBook(status: BookStatus = bookTab) {
-    setBookDraft({ title: "", author: "", totalPages: 0, status, coverUrl: "", externalKey: "" });
-    setBookSuggestions([]);
-    setBookSuggestionOpen(false);
-    setBookForm(true);
-  }
-  function chooseBookSuggestion(book: BookSuggestion) {
-    setBookDraft((current) => ({ ...current, title: book.title, author: book.author === "Autor no informado" ? "" : book.author, totalPages: book.pages || 0, coverUrl: book.coverUrl, externalKey: book.key }));
-    setBookSuggestions([]);
-    setBookSuggestionOpen(false);
-  }
-  async function submitNewBook(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBookMatching(true);
-    try {
-      let resolvedCoverUrl = bookDraft.coverUrl;
-      let resolvedExternalKey = bookDraft.externalKey;
-      let resolvedAuthor = bookDraft.author;
-      let resolvedPages = bookDraft.totalPages;
-      if (!resolvedExternalKey) {
-        try {
-          const query = [bookDraft.title, bookDraft.author].filter(Boolean).join(" ");
-          const response = await fetch(`/api/book-search?q=${encodeURIComponent(query)}&limit=8`);
-          const result = await readJson<{ books?: BookSuggestion[] }>(response);
-          const normalizedTitle = normalizeBookText(bookDraft.title);
-          const normalizedAuthor = normalizeBookText(bookDraft.author);
-          const match = result.books?.find((book) => normalizeBookText(book.title) === normalizedTitle && (!normalizedAuthor || normalizeBookText(book.author).includes(normalizedAuthor) || normalizedAuthor.includes(normalizeBookText(book.author))));
-          if (match) {
-            resolvedCoverUrl = match.coverUrl;
-            resolvedExternalKey = match.key;
-            resolvedAuthor ||= match.author === "Autor no informado" ? "" : match.author;
-            resolvedPages ||= match.pages;
-          }
-        } catch {
-          // A manual book can still be saved with the app's default cover.
-        }
-      }
-      const ok = await save({ action: "add_book", title: bookDraft.title, author: resolvedAuthor, totalPages: resolvedPages, status: bookDraft.status, coverUrl: resolvedCoverUrl, externalKey: resolvedExternalKey });
-      if (ok) {
-        setBookTab(bookDraft.status);
-        setBookForm(false);
-        setBookDraft({ title: "", author: "", totalPages: 0, status: "reading", coverUrl: "", externalKey: "" });
-        setBookSuggestions([]);
-      }
-    } finally {
-      setBookMatching(false);
-    }
-  }
-  async function discoverBooks(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (discoverQuery.trim().length < 2) return;
-    setDiscoverLoading(true);
-    setDiscoverSearched(true);
-    setDiscoverResults([]);
-    try {
-      const response = await fetch(`/api/book-search?q=${encodeURIComponent(discoverQuery.trim())}&language=${discoverLanguage}&mode=discover&limit=8`);
-      const result = await readJson<{ books?: BookSuggestion[]; error?: string }>(response);
-      if (!response.ok) throw new Error(result.error || "No pudimos buscar recomendaciones.");
-      setDiscoverResults(result.books ?? []);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "No pudimos buscar recomendaciones.");
-    } finally {
-      setDiscoverLoading(false);
-    }
-  }
-  async function saveDiscoveredBook(book: BookSuggestion) {
-    const ok = await save({ action: "add_book", title: book.title, author: book.author === "Autor no informado" ? "" : book.author, totalPages: book.pages, status: "wishlist", coverUrl: book.coverUrl, externalKey: book.key });
-    if (ok) setBookTab("wishlist");
-  }
 
-  async function analyzeVoiceBlob(blob: Blob, mimeType: string) {
-    setVoiceLoading(true);
-    setVoiceResult(null);
-    setVoiceSaved(false);
-    try {
-      const form = new FormData();
-      const extension = mimeType.includes("mp4") ? "m4a" : mimeType.includes("ogg") ? "ogg" : "webm";
-      form.append("audio", new File([blob], "cierre-del-dia." + extension, { type: mimeType || "audio/webm" }));
-      form.append("date", today);
-      const response = await fetch("/api/voice-checkin", { method: "POST", body: form });
-      const result = await readJson<{ checkin?: VoiceCheckin; error?: string }>(response);
-      if (!response.ok || !result.checkin) throw new Error(result.error || "No pudimos interpretar la grabación.");
-      setVoiceResult(result.checkin);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "No pudimos interpretar la grabación.");
-    } finally {
-      setVoiceLoading(false);
-    }
-  }
-  async function startVoiceRecording() {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setError("Este navegador no permite grabar audio.");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      chunksRef.current = [];
-      recordingBytesRef.current = 0;
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) => { try { return MediaRecorder.isTypeSupported(type); } catch { return false; } }) || "";
-      let recorder: MediaRecorder;
-      try {
-        recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 32000 });
-      } catch {
-        recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      }
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (!event.data.size) return;
-        chunksRef.current.push(event.data);
-        recordingBytesRef.current += event.data.size;
-        if (recordingBytesRef.current >= VOICE_AUTO_STOP_BYTES && recorder.state === "recording") recorder.stop();
-      };
-      recorder.onstop = () => {
-        setRecording(false);
-        streamRef.current?.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || "audio/webm" });
-        if (blob.size > MAX_VOICE_UPLOAD_BYTES) setError("La grabación quedó demasiado pesada. Probá hablando durante menos tiempo.");
-        else if (blob.size) void analyzeVoiceBlob(blob, blob.type);
-      };
-      recorder.start(1000);
-      setRecordingSeconds(0);
-      setRecording(true);
-      setVoiceResult(null);
-      setVoiceSaved(false);
-    } catch {
-      setError("No pudimos acceder al micrófono. Revisá el permiso del navegador.");
-    }
-  }
-  function stopVoiceRecording() {
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-  }
-  async function applyVoiceCheckin() {
-    if (!voiceResult) return;
-    const ok = await save({ action: "apply_voice_checkin", date: today, checkin: voiceResult });
-    if (ok) {
-      setVoiceResult(null);
-      setVoiceSaved(true);
-    }
-  }
 
   async function selectMealPhoto(file: File | undefined) {
     if (!file) return;
@@ -1706,21 +1395,7 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   /** Manda al comparador de planes desde cualquier candado. */
   const openPro = () => openSection("pro");
 
-  /**
-   * Simulación de la compra. No hay pasarela ni cobro: espera un momento para
-   * que se sienta como un pago real y después activa Pro de verdad en la base,
-   * que es lo que hace que los candados se abran en toda la aplicación.
-   */
-  async function simulatePayment() {
-    setCheckoutStep("processing");
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-    const ok = await save({ action: "set_pro", active: true });
-    setCheckoutStep(ok ? "done" : "form");
-  }
 
-  async function cancelPro() {
-    await save({ action: "set_pro", active: false });
-  }
 
   /** Abre la sección —y la sub-pestaña— donde vive un área. */
   function openArea(area: string) {
@@ -1790,8 +1465,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     setOpenSummary,
     autoSummaryRef,
     urlIntentRef,
-    streakInfoOpen,
-    setStreakInfoOpen,
     announcementOpen,
     setAnnouncementOpen,
     announcementSaving,
@@ -1863,40 +1536,14 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     usernameStatus,
     priorityDraft,
     setPriorityDraft,
-    selectedDisciplineId,
-    setSelectedDisciplineId,
-    trainingDate,
-    setTrainingDate,
-    sleepEntryDate,
-    setSleepEntryDate,
-    focusEntryDate,
-    setFocusEntryDate,
-    readingEntryDate,
-    setReadingEntryDate,
-    trainingWeekAnchor,
-    setTrainingWeekAnchor,
-    statsPeriod,
-    setStatsPeriod,
-    statsOffset,
-    setStatsOffset,
-    selectedScorePointKey,
-    setSelectedScorePointKey,
     trainingWeeklyTarget,
     setTrainingWeeklyTarget,
-    calendarCursor,
-    setCalendarCursor,
     physicalTab,
     setPhysicalTab,
     focusTab,
     setFocusTab,
     voiceOpen,
     setVoiceOpen,
-    checkoutOpen,
-    setCheckoutOpen,
-    checkoutPlan,
-    setCheckoutPlan,
-    checkoutStep,
-    setCheckoutStep,
     friendsNotice,
     setFriendsNotice,
     social,
@@ -1938,56 +1585,10 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     setPendingEvents,
     agendaView,
     setAgendaView,
-    weekAnchor,
-    setWeekAnchor,
-    slotDraft,
-    setSlotDraft,
-    blockMenu,
-    setBlockMenu,
-    agendaLongPressRef,
-    suppressAgendaClickRef,
-    slotCategory,
-    setSlotCategory,
-    slotDuration,
-    setSlotDuration,
-    slotCustomHours,
-    setSlotCustomHours,
     nowMinutes,
     setNowMinutes,
     dietCalendarCursor,
     setDietCalendarCursor,
-    bookTab,
-    setBookTab,
-    selectedBookId,
-    setSelectedBookId,
-    bookToDelete,
-    setBookToDelete,
-    bookShelfPage,
-    setBookShelfPage,
-    pagesInput,
-    setPagesInput,
-    bookForm,
-    setBookForm,
-    bookDraft,
-    setBookDraft,
-    bookSuggestions,
-    setBookSuggestions,
-    bookSuggestLoading,
-    setBookSuggestLoading,
-    bookMatching,
-    setBookMatching,
-    bookSuggestionOpen,
-    setBookSuggestionOpen,
-    discoverQuery,
-    setDiscoverQuery,
-    discoverLanguage,
-    setDiscoverLanguage,
-    discoverResults,
-    setDiscoverResults,
-    discoverLoading,
-    setDiscoverLoading,
-    discoverSearched,
-    setDiscoverSearched,
     aiDescription,
     setAiDescription,
     mealEntryDate,
@@ -2026,42 +1627,11 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     setDietRecording,
     dietVoiceLoading,
     setDietVoiceLoading,
-    sleepBedtime,
-    setSleepBedtime,
-    sleepWaketime,
-    setSleepWaketime,
-    sleepQuality,
-    setSleepQuality,
-    focusHours,
-    setFocusHours,
-    adjustFocusHours,
-    adjustPages,
-    goalPeriod,
-    setGoalPeriod,
-    customDate,
-    setCustomDate,
-    recording,
-    setRecording,
-    recordingSeconds,
-    setRecordingSeconds,
-    voiceLoading,
-    setVoiceLoading,
-    voiceResult,
-    setVoiceResult,
-    voiceSaved,
-    setVoiceSaved,
-    recorderRef,
-    streamRef,
-    chunksRef,
-    recordingBytesRef,
     dietRecorderRef,
     dietStreamRef,
     dietChunksRef,
     dietRecordingBytesRef,
     dietStopTimerRef,
-    dietHydratedRef,
-    sleepHydratedRef,
-    previousTodayRef,
     loadSeqRef,
     silentFailuresRef,
     loadData,
@@ -2122,22 +1692,9 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     priorityCaption,
     displayName,
     activeGoals,
-    selectedDiscipline,
-    selectedTrainingLog,
-    selectedExercises,
-    isDistanceDiscipline,
-    trainingDetailTitle,
-    booksInTab,
-    bookShelfPageCount,
-    visibleBookShelfPage,
-    visibleBooks,
-    selectedBook,
-    selectedReadingLog,
-    selectedReadingPosition,
     savedDietPlan,
     displayedDietPlan,
     dietTargetCalories,
-    calculatedSleepMinutes,
     projectNames,
     projectKinds,
     disciplineNames,
@@ -2174,7 +1731,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     weeklySummary,
     quote,
     openSection,
-    showBookShelfPage,
     submitForm,
     openSettings,
     openPersonalSettings,
@@ -2182,15 +1738,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     saveSettings,
     submitFeedback,
     uploadAvatar,
-    openAddBook,
-    chooseBookSuggestion,
-    submitNewBook,
-    discoverBooks,
-    saveDiscoveredBook,
-    analyzeVoiceBlob,
-    startVoiceRecording,
-    stopVoiceRecording,
-    applyVoiceCheckin,
     selectMealPhoto,
     estimateMeal,
     saveEstimate,
@@ -2203,8 +1750,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     stopDietRecording,
     isPro,
     openPro,
-    simulatePayment,
-    cancelPro,
     openArea,
     applyInsightAction,
     toggleTask,
