@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 
 type OpenLibraryDoc = {
   key?: string;
@@ -20,7 +20,7 @@ const languageCodes: Record<string, { query: string; preference: string }> = {
 };
 
 export async function GET(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return Response.json({ error: "Necesitás iniciar sesión." }, { status: 401 });
 
   const url = new URL(request.url);

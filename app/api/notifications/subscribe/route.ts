@@ -1,5 +1,5 @@
 import { deleteRows, insertRows } from "@/server/db/postgrest";
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 
 function fail(message: string, status = 400) {
   return Response.json({ error: message }, { status });
@@ -11,7 +11,7 @@ function isValidEndpoint(value: unknown): value is string {
 
 export async function POST(request: Request) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getSessionUser();
     if (!user) return fail("Necesitás iniciar sesión.", 401);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     const subscription = body?.subscription;
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getSessionUser();
     if (!user) return fail("Necesitás iniciar sesión.", 401);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     const endpoint = body?.endpoint;

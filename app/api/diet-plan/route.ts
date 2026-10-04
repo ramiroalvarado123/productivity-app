@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 
 type ResponseOutput = { type?: string; content?: Array<{ type?: string; text?: string }> };
 
@@ -15,7 +15,7 @@ function numberInRange(value: unknown, minimum: number, maximum: number) {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return Response.json({ error: "Necesitás iniciar sesión." }, { status: 401 });
 
   const apiKey = process.env.OPENAI_API_KEY;

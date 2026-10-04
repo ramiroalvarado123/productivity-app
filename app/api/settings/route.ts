@@ -1,4 +1,4 @@
-import { getChatGPTUser, updateChatGPTUserMetadata } from "@/server/auth/session";
+import { getSessionUser, updateAuthMetadata } from "@/server/auth/session";
 import { insertRows, selectRows, updateRows } from "@/server/db/postgrest";
 import { profilePreferences, usagePreferencesJsonWithPreferences } from "@/domain/profile-metadata";
 
@@ -6,7 +6,7 @@ type ProfileRow = Record<string, unknown> & { email: string; displayName: string
 function fail(message: string, status = 400) { return Response.json({ error: message }, { status }); }
 
 async function profileForCurrentUser() {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return null;
   await insertRows("profiles", { email: user.email, displayName: user.displayName }, { upsert: true, onConflict: ["email"], ignoreDuplicates: true });
   const profile = (await selectRows<ProfileRow>("profiles", { where: { email: user.email }, limit: 1 }))[0];
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const weeklySummary = typeof body.weeklySummary === "boolean" ? body.weeklySummary : currentPreferences.includes("weekly");
     const usagePreferences = Array.from(new Set([...currentPreferences.filter((item) => item !== "weekly"), ...(weeklySummary ? ["weekly"] : [])]));
     await updateRows("profiles", { email: current.user.email }, { displayName, usagePreferencesJson: usagePreferencesJsonWithPreferences(current.profile?.usagePreferencesJson, usagePreferences), updatedAt: new Date().toISOString() });
-    await updateChatGPTUserMetadata({ displayName, onboardingCompleted: current.user.onboardingCompleted, mainGoals: current.user.mainGoals, usagePreferences });
+    await updateAuthMetadata({ displayName, onboardingCompleted: current.user.onboardingCompleted, mainGoals: current.user.mainGoals, usagePreferences });
     return Response.json({ ok: true, displayName, weeklySummary });
   } catch { return fail("No pudimos guardar la configuración.", 500); }
 }

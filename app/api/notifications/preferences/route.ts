@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 import { insertRows, selectRows } from "@/server/db/postgrest";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -23,7 +23,7 @@ function fail(message: string, status = 400) {
 }
 
 async function currentUser() {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (user) await insertRows("profiles", { email: user.email, displayName: user.displayName }, { upsert: true, onConflict: ["email"], ignoreDuplicates: true });
   return user;
 }

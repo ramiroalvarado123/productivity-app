@@ -1,11 +1,16 @@
-import { cookies } from "next/headers";
-import { ACCESS_COOKIE, SUPABASE_URL, authHeaders } from "@/shared/config/supabase";
+import { accessToken } from "@/server/auth/session";
+import { SUPABASE_URL, authHeaders } from "@/shared/config/supabase";
 
 type Scalar = string | number | boolean | null;
 type Row = Record<string, unknown>;
 
 const toSnake = (value: string) => value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const toCamel = (value: string) => value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+
+/** Fila de Postgres (snake_case) al formato que usa la app (camelCase). */
+export function camelRow<T extends Row = Row>(row: Row): T {
+  return mapKeys(row, toCamel) as T;
+}
 
 function mapKeys(row: Row, transform: (key: string) => string): Row {
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [transform(key), value]));
@@ -24,7 +29,7 @@ function wait(milliseconds: number) {
 }
 
 async function request(table: string, init: RequestInit = {}, query = new URLSearchParams(), retryable = false) {
-  const token = (await cookies()).get(ACCESS_COOKIE)?.value;
+  const token = await accessToken();
   if (!token) throw new Error("Sesión de Supabase ausente.");
   const method = String(init.method ?? "GET").toUpperCase();
   const canRetry = retryable || method === "GET";
@@ -72,8 +77,10 @@ export async function selectRows<T extends Row = Row>(table: string, options: {
   inList?: Record<string, Scalar[]>;
   order?: Array<[string, "asc" | "desc"]>;
   limit?: number;
+  /** Columnas a traer (camelCase). Por defecto todas: para historiales conviene pedir solo las necesarias. */
+  columns?: string[];
 } = {}): Promise<T[]> {
-  const query = new URLSearchParams({ select: "*" });
+  const query = new URLSearchParams({ select: options.columns?.length ? options.columns.map(toSnake).join(",") : "*" });
   filters(query, options.where);
   for (const [key, values] of Object.entries(options.inList ?? {})) {
     // Sin valores PostgREST rechaza `in.()`, y la respuesta correcta es vacía.
@@ -134,7 +141,7 @@ export async function deleteRows(table: string, where: Record<string, Scalar>) {
  * fila que todavía no es tuya).
  */
 export async function callRpc<T = unknown>(fn: string, args: Row = {}): Promise<T> {
-  const token = (await cookies()).get(ACCESS_COOKIE)?.value;
+  const token = await accessToken();
   if (!token) throw new Error("Sesión de Supabase ausente.");
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: "POST",

@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 import AuthPanel from "@/features/auth/components/auth-panel";
 import NewUserPreview from "@/features/onboarding/components/new-user-preview";
 import ProgressClient from "@/features/app-shell/progress-app";
@@ -44,7 +44,7 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
   const params = searchParams ? await searchParams : {};
   if (params.demo === "new-user") return <NewUserPreview />;
 
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (user) {
     let profile: ProfileRow | undefined;
     try {

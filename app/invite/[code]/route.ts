@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 import { callRpc } from "@/server/db/postgrest";
 import { setPendingInvite } from "@/server/auth/cookies";
 
@@ -16,7 +16,7 @@ export async function GET(_request: Request, context: { params: Promise<{ code: 
   const clean = String(code ?? "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 64);
   if (!clean) redirect("/");
 
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) {
     await setPendingInvite(clean);
     redirect("/?invite=pending");

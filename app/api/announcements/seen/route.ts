@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 import { EARLY_ADOPTER_ANNOUNCEMENT_ID } from "@/features/notifications/logic/announcements";
 import { profileSeenAnnouncements, usagePreferencesJsonWithSeenAnnouncements } from "@/domain/profile-metadata";
 import { insertRows, selectRows, updateRows } from "@/server/db/postgrest";
@@ -14,7 +14,7 @@ function fail(message: string, status = 400) {
 
 export async function POST(request: Request) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getSessionUser();
     if (!user) return fail("Necesitás iniciar sesión.", 401);
 
     const body = await request.json().catch(() => null) as { announcementId?: unknown; ids?: unknown } | null;

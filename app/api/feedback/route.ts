@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 import { insertRows } from "@/server/db/postgrest";
 
 const TYPES = new Set(["positive", "idea", "bug", "dislike"]);
@@ -46,7 +46,7 @@ function fail(message: string, status = 400) { return Response.json({ error: mes
 
 export async function POST(request: Request) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getSessionUser();
     if (!user) return fail("Necesitás iniciar sesión.", 401);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body) return fail("Datos inválidos.");

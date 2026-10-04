@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getChatGPTUser, updateChatGPTUserMetadata } from "@/server/auth/session";
+import { getSessionUser, updateAuthMetadata } from "@/server/auth/session";
 import { insertRows, selectRows } from "@/server/db/postgrest";
 import { usagePreferencesJsonWithPreferences } from "@/domain/profile-metadata";
 
@@ -21,7 +21,7 @@ function stringArray(value: FormDataEntryValue | null, allowed: Set<string>) {
 
 export async function POST(request: Request) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getSessionUser();
     if (!user) return NextResponse.redirect(new URL("/", request.url), 303);
 
     const form = await request.formData();
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
       updatedAt: now,
     }, { upsert: true, onConflict: ["userEmail", "monthKey"] });
 
-    const metadataSaved = await updateChatGPTUserMetadata({
+    const metadataSaved = await updateAuthMetadata({
       displayName,
       onboardingCompleted: true,
       mainGoals,

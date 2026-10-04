@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "@/server/db/postgrest";
 import { clearPendingInvite } from "@/server/auth/cookies";
 import {
@@ -94,7 +94,7 @@ async function inviteToGroup(from: string, fromName: string, groupId: number, gr
 }
 
 async function session() {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return null;
   return { user, email: user.email.toLowerCase() };
 }

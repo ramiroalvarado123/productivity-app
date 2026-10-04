@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { getChatGPTUser } from "@/server/auth/session";
+import { getSessionUser } from "@/server/auth/session";
 import { ACCESS_COOKIE, SUPABASE_URL, authHeaders } from "@/shared/config/supabase";
 import { updateRows } from "@/server/db/postgrest";
 
@@ -12,7 +12,7 @@ const fail = (message: string, status = 400) => Response.json({ error: message }
  * una cookie httpOnly que sólo el servidor puede leer.
  */
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return fail("Necesitás iniciar sesión.", 401);
 
   const token = (await cookies()).get(ACCESS_COOKIE)?.value;
