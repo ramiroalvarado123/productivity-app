@@ -1,9 +1,9 @@
-import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
-import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
-import { dateInTimeZone } from "../../lib/format";
-import { readingUpdateFromPosition } from "../../lib/reading";
-import type { DataPatch } from "../../lib/apply-patch";
-import { profilePreferences, profileSeenAnnouncements, usagePreferencesJsonWithPreferences } from "../../lib/profile-metadata";
+import { getChatGPTUser, updateChatGPTUserMetadata } from "@/server/auth/session";
+import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "@/server/db/postgrest";
+import { dateInTimeZone } from "@/shared/lib/format";
+import { readingUpdateFromPosition } from "@/features/reading/logic/reading";
+import type { DataPatch } from "@/shared/data/apply-patch";
+import { profilePreferences, profileSeenAnnouncements, usagePreferencesJsonWithPreferences } from "@/domain/profile-metadata";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;

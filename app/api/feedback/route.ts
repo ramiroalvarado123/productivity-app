@@ -1,5 +1,5 @@
-import { getChatGPTUser } from "../../chatgpt-auth";
-import { insertRows } from "../../lib/supabase-db";
+import { getChatGPTUser } from "@/server/auth/session";
+import { insertRows } from "@/server/db/postgrest";
 
 const TYPES = new Set(["positive", "idea", "bug", "dislike"]);
 const MAX_MESSAGE = 2000;

@@ -1,7 +1,7 @@
-import { getChatGPTUser } from "../../../chatgpt-auth";
-import { EARLY_ADOPTER_ANNOUNCEMENT_ID } from "../../../lib/early-adopter-announcement";
-import { profileSeenAnnouncements, usagePreferencesJsonWithSeenAnnouncements } from "../../../lib/profile-metadata";
-import { insertRows, selectRows, updateRows } from "../../../lib/supabase-db";
+import { getChatGPTUser } from "@/server/auth/session";
+import { EARLY_ADOPTER_ANNOUNCEMENT_ID } from "@/features/notifications/logic/announcements";
+import { profileSeenAnnouncements, usagePreferencesJsonWithSeenAnnouncements } from "@/domain/profile-metadata";
+import { insertRows, selectRows, updateRows } from "@/server/db/postgrest";
 
 type ProfileRow = Record<string, unknown> & { email: string; displayName: string; usagePreferencesJson: string };
 

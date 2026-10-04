@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyPatch } from "../app/lib/apply-patch";
+import { applyPatch } from "@/shared/data/apply-patch";
 
 const TODAY = "2026-09-19";
 

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { getChatGPTUser } from "../../chatgpt-auth";
-import { callRpc } from "../../lib/supabase-db";
-import { setPendingInvite } from "../../lib/auth-cookies";
+import { getChatGPTUser } from "@/server/auth/session";
+import { callRpc } from "@/server/db/postgrest";
+import { setPendingInvite } from "@/server/auth/cookies";
 
 /**
  * El link que se comparte por WhatsApp o mail.

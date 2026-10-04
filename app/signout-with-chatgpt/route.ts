@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { clearSessionCookies } from "../lib/auth-cookies";
+import { clearSessionCookies } from "@/server/auth/cookies";
 
 export async function GET(request: Request) {
   await clearSessionCookies();

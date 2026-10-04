@@ -6,14 +6,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { countdownLabel, formatMinutes, listPhrase, minutesFromClock, pluralize } from "../app/lib/format";
-import { dayBlocks, dayWindow, findSlot, freeSlots, overlappingBlocks, PLAN_AGENDA_HOURS, unscheduledTasks } from "../app/lib/schedule";
-import { streakFor, trendFor } from "../app/lib/streaks";
-import { buildInsights, closeInsights, planInsights, type InsightInput } from "../app/lib/insights";
-import { dayClose, isReviewDay, weeklyReview } from "../app/lib/review";
-import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, type DayRecord, type ScoreWeights } from "../app/lib/score";
-import { quoteForDate, quotes } from "../app/lib/quotes";
-import { readingPositionForDate, readingUpdateFromPosition } from "../app/lib/reading";
+import { countdownLabel, formatMinutes, listPhrase, minutesFromClock, pluralize } from "@/shared/lib/format";
+import { dayBlocks, dayWindow, findSlot, freeSlots, overlappingBlocks, PLAN_AGENDA_HOURS, unscheduledTasks } from "@/domain/schedule";
+import { streakFor, trendFor } from "@/domain/streaks";
+import { buildInsights, closeInsights, planInsights, type InsightInput } from "@/features/insights/logic/insights";
+import { dayClose, isReviewDay, weeklyReview } from "@/features/home/logic/review";
+import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, type DayRecord, type ScoreWeights } from "@/domain/score";
+import { quoteForDate, quotes } from "@/shared/lib/quotes";
+import { readingPositionForDate, readingUpdateFromPosition } from "@/features/reading/logic/reading";
 
 const TODAY = "2026-08-29";
 
@@ -36,7 +36,7 @@ const task = (over: Partial<Parameters<typeof dayBlocks>[0]["tasks"][number]> = 
 });
 const event = (over: Partial<Parameters<typeof dayBlocks>[0]["events"][number]> = {}) => ({
   id: 1, title: "Almuerzo", eventDate: TODAY, eventTime: "13:00",
-  durationMinutes: 90, category: "personal", notes: "", ...over,
+  durationMinutes: 90, category: "personal", notes: "", completedAt: null as string | null, ...over,
 });
 
 // --- format ------------------------------------------------------------------

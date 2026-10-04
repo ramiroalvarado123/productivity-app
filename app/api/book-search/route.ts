@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getChatGPTUser } from "@/server/auth/session";
 
 type OpenLibraryDoc = {
   key?: string;

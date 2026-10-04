@@ -1,10 +1,10 @@
-import { getChatGPTUser } from "./chatgpt-auth";
-import AuthPanel from "./auth-panel";
-import NewUserPreview from "./new-user-preview";
-import ProgressClient from "./progress-client";
-import { selectRows } from "./lib/supabase-db";
-import { readPendingInvite } from "./lib/auth-cookies";
-import { profilePreferences } from "./lib/profile-metadata";
+import { getChatGPTUser } from "@/server/auth/session";
+import AuthPanel from "@/features/auth/components/auth-panel";
+import NewUserPreview from "@/features/onboarding/components/new-user-preview";
+import ProgressClient from "@/features/app-shell/progress-app";
+import { selectRows } from "@/server/db/postgrest";
+import { readPendingInvite } from "@/server/auth/cookies";
+import { profilePreferences } from "@/domain/profile-metadata";
 
 export const dynamic = "force-dynamic";
 

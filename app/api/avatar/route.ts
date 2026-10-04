@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
-import { getChatGPTUser } from "../../chatgpt-auth";
-import { ACCESS_COOKIE, SUPABASE_URL, authHeaders } from "../../lib/supabase-auth";
-import { updateRows } from "../../lib/supabase-db";
+import { getChatGPTUser } from "@/server/auth/session";
+import { ACCESS_COOKIE, SUPABASE_URL, authHeaders } from "@/shared/config/supabase";
+import { updateRows } from "@/server/db/postgrest";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });

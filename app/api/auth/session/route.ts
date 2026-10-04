@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { setSessionCookies } from "../../../lib/auth-cookies";
-import { SUPABASE_URL, authHeaders, type SupabaseSession } from "../../../lib/supabase-auth";
+import { setSessionCookies } from "@/server/auth/cookies";
+import { SUPABASE_URL, authHeaders, type SupabaseSession } from "@/shared/config/supabase";
 
 export async function POST(request: Request) {
   const data = await request.json().catch(() => null) as Partial<SupabaseSession> | null;

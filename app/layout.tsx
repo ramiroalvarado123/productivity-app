@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Instrument_Sans, Newsreader } from "next/font/google";
-import { ServiceWorkerRegistration } from "./service-worker-registration";
+import { ServiceWorkerRegistration } from "@/features/notifications/components/service-worker-registration";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument-sans", display: "swap" });

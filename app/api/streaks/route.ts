@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getChatGPTUser } from "@/server/auth/session";
 import {
   declineAppStreakRestore,
   dismissAppStreakLoss,
@@ -6,10 +6,10 @@ import {
   restoreAppStreak,
   type AppEngagement,
   type EngagementPrompt,
-} from "../../lib/app-engagement";
-import { dateInTimeZone } from "../../lib/format";
-import { profileEngagement, usagePreferencesJsonWithEngagement } from "../../lib/profile-metadata";
-import { insertRows, selectRows, updateRows } from "../../lib/supabase-db";
+} from "@/features/engagement/logic/app-engagement";
+import { dateInTimeZone } from "@/shared/lib/format";
+import { profileEngagement, usagePreferencesJsonWithEngagement } from "@/domain/profile-metadata";
+import { insertRows, selectRows, updateRows } from "@/server/db/postgrest";
 
 type ProfileRow = Record<string, unknown> & {
   email: string;

@@ -1,13 +1,13 @@
 import webpush from "web-push";
-import { SUPABASE_URL } from "../../../lib/supabase-auth";
-import { inferTaskCategory } from "../../../lib/schedule";
-import { scoreForDay, trainingContribution, type DayRecord, type ScoreWeights } from "../../../lib/score";
+import { SUPABASE_URL } from "@/shared/config/supabase";
+import { inferTaskCategory } from "@/domain/schedule";
+import { scoreForDay, trainingContribution, type DayRecord, type ScoreWeights } from "@/domain/score";
 import {
   EARLY_ADOPTER_ANNOUNCEMENT_ID,
   EARLY_ADOPTER_BROADCAST_BODY,
   EARLY_ADOPTER_BROADCAST_KIND,
   EARLY_ADOPTER_BROADCAST_TITLE,
-} from "../../../lib/early-adopter-announcement";
+} from "@/features/notifications/logic/announcements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

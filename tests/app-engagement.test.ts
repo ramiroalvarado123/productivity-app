@@ -6,13 +6,13 @@ import {
   emptyAppEngagement,
   recordAppUse,
   restoreAppStreak,
-} from "../app/lib/app-engagement";
+} from "@/features/engagement/logic/app-engagement";
 import {
   profileEngagement,
   profilePreferences,
   usagePreferencesJsonWithEngagement,
   usagePreferencesJsonWithPreferences,
-} from "../app/lib/profile-metadata";
+} from "@/domain/profile-metadata";
 
 function day(offset: number) {
   const date = new Date("2026-09-01T12:00:00Z");

@@ -1,5 +1,5 @@
-import { getChatGPTUser } from "../../../chatgpt-auth";
-import { insertRows, selectRows } from "../../../lib/supabase-db";
+import { getChatGPTUser } from "@/server/auth/session";
+import { insertRows, selectRows } from "@/server/db/postgrest";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULTS = {

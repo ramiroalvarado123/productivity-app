@@ -1,12 +1,12 @@
-import { getChatGPTUser } from "../../chatgpt-auth";
-import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "../../lib/supabase-db";
-import { clearPendingInvite } from "../../lib/auth-cookies";
+import { getChatGPTUser } from "@/server/auth/session";
+import { callRpc, deleteRows, insertRows, selectRows, updateRows } from "@/server/db/postgrest";
+import { clearPendingInvite } from "@/server/auth/cookies";
 import {
   GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, shareHeadline,
   type Friend, type FriendInvite, type FriendShare, type GoalMetric, type GoalSource, type Group,
   type GroupAccent, type GroupGoal, type GroupInvite, type GroupMember, type SocialData,
-} from "../../lib/social";
-import { mergeBadgeIds, normalizeBadgeIds } from "../../lib/badges";
+} from "@/features/friends/logic/social";
+import { mergeBadgeIds, normalizeBadgeIds } from "@/features/engagement/logic/badges";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ACCESS_COOKIE, SUPABASE_URL, authHeaders } from "../../../lib/supabase-auth";
+import { ACCESS_COOKIE, SUPABASE_URL, authHeaders } from "@/shared/config/supabase";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { password?: string } | null;

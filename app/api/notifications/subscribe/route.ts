@@ -1,5 +1,5 @@
-import { deleteRows, insertRows } from "../../../lib/supabase-db";
-import { getChatGPTUser } from "../../../chatgpt-auth";
+import { deleteRows, insertRows } from "@/server/db/postgrest";
+import { getChatGPTUser } from "@/server/auth/session";
 
 function fail(message: string, status = 400) {
   return Response.json({ error: message }, { status });

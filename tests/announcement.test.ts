@@ -5,7 +5,7 @@ import {
   EARLY_ADOPTER_ANNOUNCEMENT_ID,
   EARLY_ADOPTER_BROADCAST_BODY,
   EARLY_ADOPTER_BROADCAST_TITLE,
-} from "../app/lib/early-adopter-announcement";
+} from "@/features/notifications/logic/announcements";
 import {
   profileEngagement,
   profilePreferences,
@@ -13,8 +13,8 @@ import {
   usagePreferencesJsonWithEngagement,
   usagePreferencesJsonWithPreferences,
   usagePreferencesJsonWithSeenAnnouncement,
-} from "../app/lib/profile-metadata";
-import { emptyAppEngagement } from "../app/lib/app-engagement";
+} from "@/domain/profile-metadata";
+import { emptyAppEngagement } from "@/features/engagement/logic/app-engagement";
 
 test("the one-time push title matches the approved copy exactly", () => {
   assert.equal(EARLY_ADOPTER_BROADCAST_TITLE, "HAY ACTUALIZACIONES IMPORTANTES.");

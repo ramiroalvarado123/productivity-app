@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BADGE_DEFINITIONS, mergeBadgeIds, normalizeBadgeIds } from "../app/lib/badges";
+import { BADGE_DEFINITIONS, mergeBadgeIds, normalizeBadgeIds } from "@/features/engagement/logic/badges";
 
 test("reconoce solo las insignias definidas por la app", () => {
   assert.equal(BADGE_DEFINITIONS.length, 14);

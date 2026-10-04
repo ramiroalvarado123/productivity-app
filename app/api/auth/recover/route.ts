@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { SUPABASE_URL, authHeaders } from "../../../lib/supabase-auth";
+import { SUPABASE_URL, authHeaders } from "@/shared/config/supabase";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { email?: string } | null;

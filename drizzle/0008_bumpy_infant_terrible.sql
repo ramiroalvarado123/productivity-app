@@ -1,1 +1,0 @@
-ALTER TABLE `profiles` ADD `pro_since` text DEFAULT '' NOT NULL;

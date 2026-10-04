@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getChatGPTUser } from "@/server/auth/session";
 
 export async function POST(request: Request) {
   const user = await getChatGPTUser();

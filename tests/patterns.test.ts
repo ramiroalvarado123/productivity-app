@@ -3,9 +3,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPatternInsights, mondayOf, rankInsights, type PatternInput } from "../app/lib/patterns";
-import { buildWeeklySummary, lastClosedWeekStart, type WeeklySummaryInput } from "../app/lib/weekly-summary";
-import type { Insight } from "../app/lib/insights";
+import { buildPatternInsights, mondayOf, rankInsights, type PatternInput } from "@/features/insights/logic/patterns";
+import { buildWeeklySummary, lastClosedWeekStart, type WeeklySummaryInput } from "@/features/notifications/logic/weekly-summary";
+import type { Insight } from "@/features/insights/logic/insights";
 
 // Jueves.
 const TODAY = "2026-10-08";

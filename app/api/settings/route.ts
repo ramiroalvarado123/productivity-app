@@ -1,6 +1,6 @@
-import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
-import { insertRows, selectRows, updateRows } from "../../lib/supabase-db";
-import { profilePreferences, usagePreferencesJsonWithPreferences } from "../../lib/profile-metadata";
+import { getChatGPTUser, updateChatGPTUserMetadata } from "@/server/auth/session";
+import { insertRows, selectRows, updateRows } from "@/server/db/postgrest";
+import { profilePreferences, usagePreferencesJsonWithPreferences } from "@/domain/profile-metadata";
 
 type ProfileRow = Record<string, unknown> & { email: string; displayName: string; usagePreferencesJson: string };
 function fail(message: string, status = 400) { return Response.json({ error: message }, { status }); }

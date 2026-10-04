@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getChatGPTUser, updateChatGPTUserMetadata } from "../../chatgpt-auth";
-import { insertRows, selectRows } from "../../lib/supabase-db";
-import { usagePreferencesJsonWithPreferences } from "../../lib/profile-metadata";
+import { getChatGPTUser, updateChatGPTUserMetadata } from "@/server/auth/session";
+import { insertRows, selectRows } from "@/server/db/postgrest";
+import { usagePreferencesJsonWithPreferences } from "@/domain/profile-metadata";
 
 const MONTH = /^\d{4}-\d{2}$/;
 const USERNAME = /^[a-z0-9_]{3,20}$/;

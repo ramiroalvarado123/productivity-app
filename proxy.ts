@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ACCESS_COOKIE, REFRESH_COOKIE, SUPABASE_URL, authHeaders, type SupabaseSession } from "./app/lib/supabase-auth";
+import { ACCESS_COOKIE, REFRESH_COOKIE, SUPABASE_URL, authHeaders, type SupabaseSession } from "@/shared/config/supabase";
 
 function expiresSoon(token?: string) {
   if (!token) return true;
