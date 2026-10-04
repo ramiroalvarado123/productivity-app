@@ -1,0 +1,3 @@
+{"file":"features/goals/components/goals-panel.tsx","component":"GoalsPanel","doc":"Objetivos: crear, completar y borrar metas con plazo.",
+ "hook":["goalPeriod","customDate"],"shell":["goalTargetDate","goalsPanel"],
+ "render":"goalsPanel","replace":[["<>{goalsPanel}{calendarPanel}</>","<><GoalsPanel />{calendarPanel}</>"]]}

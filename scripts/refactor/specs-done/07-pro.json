@@ -1,0 +1,4 @@
+{"file":"features/pro/components/pro-section.tsx","component":"ProSection","doc":"AVORA Pro: comparación de planes y compra simulada.",
+ "hook":["checkoutOpen","checkoutPlan","checkoutStep","simulatePayment","cancelPro"],
+ "shell":["planRows","lockedCount","proPanel","checkoutDialog"],
+ "render":"<>{proPanel}{checkoutDialog}</>","replace":[["{section === \"pro\" && proPanel}","{section === \"pro\" && <ProSection />}"],["    {checkoutDialog}\n",""]]}

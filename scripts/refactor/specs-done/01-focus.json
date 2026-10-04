@@ -1,0 +1,4 @@
+{"file":"features/focus/components/focus-section.tsx","component":"FocusSection","doc":"Foco: materias o proyectos, horas por día y bloques registrados.",
+ "hook":["focusEntryDate","focusHours","adjustFocusHours"],
+ "shell":["focusProjectsInTab","focusProjectIds","focusTodayInTab","focusWeekInTab","focusEntryMinutesInTab","focusSessionsInEntry","focusPanel"],
+ "render":"focusPanel","replace":[["        {focusPanel}\n","        <FocusSection key={today} />\n"]]}

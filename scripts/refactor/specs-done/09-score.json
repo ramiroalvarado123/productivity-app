@@ -1,0 +1,3 @@
+{"file":"features/score/components/score-section.tsx","component":"ScoreSection","doc":"Daily Score: factores de hoy y prioridades del mes.",
+ "hook":[],"shell":["scoreCard","priorityEditor","scorePage"],
+ "render":"scorePage","replace":[["      {scorePage}\n","      {section === \"score\" && <ScoreSection />}\n"]]}

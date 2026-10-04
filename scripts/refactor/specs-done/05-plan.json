@@ -1,0 +1,4 @@
+{"file":"features/plan/components/plan-section.tsx","component":"PlanSection","doc":"Plan: objetivos, agenda semanal por horas, calendario del mes y recordatorios.",
+ "hook":["calendarCursor","weekAnchor","slotDraft","blockMenu","agendaLongPressRef","suppressAgendaClickRef","slotCategory","slotDuration","slotCustomHours"],
+ "shell":["calendarStart","calendarMonthName","calendarOffset","calendarDays","shiftCalendar","calendarItems","upcoming","agendaWeek","agendaBlocksByDay","agendaStartHour","agendaEndHour","agendaHours","shiftWeek","clearAgendaLongPress","beginAgendaLongPress","openSlotDraft","deleteAgendaBlock","handleAgendaBlockClick","slotUsesProject","slotProjects","slotAreaOptions","weekAgendaPanel","monthCalendarPanel","calendarPanel","blockMenuDialog"],
+ "render":"<><GoalsPanel />{calendarPanel}{blockMenuDialog}</>","replace":[["<><GoalsPanel />{calendarPanel}</>","<PlanSection key={today} />"]]}

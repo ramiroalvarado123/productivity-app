@@ -1,0 +1,4 @@
+{"file":"features/stats/components/stats-section.tsx","component":"StatsSection","doc":"Progreso: Daily Score por período, rachas, tendencias y totales.",
+ "hook":["statsPeriod","statsOffset","selectedScorePointKey"],
+ "shell":["review","weeklyReviewPanel","statsWindow","statsStart","statsEnd","periodDays","periodTraining","periodFocusEntries","periodFocusMinutes","periodTaskTrainingCount","periodSleep","periodReading","periodMeals","trendSpan","trends","scoreBucketsFor","scoreTrendPoints","scoreAverage","scoreGradientId","scoreChartWidth","scoreChartHeight","scoreYFor","scoreChartPoints","scoreLinePath","scoreAreaPath","scoreAverageY","streakCards","statsPanel"],
+ "render":"statsPanel","replace":[["{section === \"stats\" && statsPanel}","{section === \"stats\" && <StatsSection key={today} />}"]]}

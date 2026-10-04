@@ -1,0 +1,9 @@
+{
+  "file": "features/sleep/components/sleep-section.tsx",
+  "component": "SleepSection",
+  "doc": "Sueño: registrar la noche de cualquier día y ver la regularidad de la semana.",
+  "hook": ["sleepEntryDate", "sleepBedtime", "sleepWaketime", "sleepQuality", "calculatedSleepMinutes", "effect:checkin.bedtime"],
+  "shell": ["sleepPanel"],
+  "render": "sleepPanel",
+  "replace": [["{section === \"sleep\" && sleepPanel}", "{section === \"sleep\" && <SleepSection key={today} />}"]]
+}

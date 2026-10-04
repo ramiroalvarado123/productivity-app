@@ -1,0 +1,4 @@
+{"file":"features/home/components/home-section.tsx","component":"HomeSection","doc":"Inicio: racha, frase del día, Daily Score, métricas prioritarias, plan del día y avisos.",
+ "hook":["streakInfoOpen"],
+ "shell":["compactScoreCard","compactVoiceButton","areaMetrics","metricOrder","priorityMetricKeys","explicitPriorityMetricKeys","featuredMetricKeys","heroMetrics","blockCategoryLabel","currentBlock","nextBlock","dayPlanPanel","insightsPanel","streakProgress","streakWidget","quotePanel","homePage"],
+ "render":"homePage","replace":[["      {homePage}\n","      {section === \"summary\" && <HomeSection />}\n"]]}

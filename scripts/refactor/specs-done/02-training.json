@@ -1,0 +1,4 @@
+{"file":"features/training/components/training-section.tsx","component":"TrainingSection","doc":"Entrenamiento: disciplinas, semana navegable y detalle de la sesión del día elegido.",
+ "hook":["selectedDisciplineId","trainingDate","trainingWeekAnchor","selectedDiscipline","selectedTrainingLog","selectedExercises","isDistanceDiscipline","trainingDetailTitle"],
+ "shell":["trainingWeek","shiftTrainingWeek","trainingPanel"],
+ "render":"trainingPanel","replace":[["{physicalTab === \"training\" ? trainingPanel : ","{physicalTab === \"training\" ? <TrainingSection key={today} /> : "]]}

@@ -1,0 +1,4 @@
+{"file":"features/voice-checkin/components/voice-checkin-dialog.tsx","component":"VoiceCheckinDialog","doc":"Cierre del día: balance de hoy y grabación por voz que se reparte en cada sección.",
+ "hook":["recording","recordingSeconds","voiceLoading","voiceResult","voiceSaved","recorderRef","streamRef","chunksRef","recordingBytesRef","effect:if (!recording) return;","analyzeVoiceBlob","startVoiceRecording","stopVoiceRecording","applyVoiceCheckin"],
+ "shell":["voiceRecorder","close","dayClosePanel","voiceDialog"],
+ "render":"voiceDialog","replace":[["    {voiceDialog}\n","    {voiceOpen && <VoiceCheckinDialog />}\n"]]}
