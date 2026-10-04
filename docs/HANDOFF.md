@@ -23,9 +23,9 @@ Cambios de comportamiento intencionales (menores):
 ## Lo que tiene que hacer un humano en Supabase / Vercel
 
 1. **Backup** (Database → Backups, o `supabase db dump`).
-2. **SQL Editor → correr `supabase/performance.sql`** (índices + funciones `avora_toggle_training` / `avora_save_exercises` + marca libros terminados). Es aditivo.
-3. **Project Settings → API → Max rows**: subir a `10000`. Hoy el GET trae hasta 5 años de historial y Supabase corta en 1.000 filas por consulta por defecto (las comidas superan eso en ~1 año).
-4. **Project Settings → General → Region**: confirmar. Las funciones de Vercel corren en `iad1` (EE.UU. Este). Si Supabase está en `us-east-1`, no hay que hacer nada. Si está en São Paulo (`sa-east-1`), agregar `vercel.json` con `{ "regions": ["gru1"] }` (cada consulta pasa de ~120 ms a ~5 ms).
+2. ✅ (aplicado 2026-10-04) **SQL Editor → correr `supabase/performance.sql`** (índices + funciones `avora_toggle_training` / `avora_save_exercises` + marca libros terminados). Es aditivo.
+3. **Integrations → Data API → Settings → Max rows**: subir a `10000`. Hoy el GET trae hasta 5 años de historial y Supabase corta en 1.000 filas por consulta por defecto (las comidas superan eso en ~1 año).
+4. ✅ Supabase está en São Paulo: `vercel.json` ya tiene `"regions": ["gru1"]`. (Antes:) confirmar región. Las funciones de Vercel corren en `iad1` (EE.UU. Este). Si Supabase está en `us-east-1`, no hay que hacer nada. Si está en São Paulo (`sa-east-1`), agregar `vercel.json` con `{ "regions": ["gru1"] }` (cada consulta pasa de ~120 ms a ~5 ms).
 
 ## Próximos pasos (en orden)
 
