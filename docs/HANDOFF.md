@@ -1,6 +1,6 @@
 # HANDOFF — estado de la reestructuración y próximos pasos
 
-Última actualización: 2026-10-04. Leé primero `AGENTS.md` y `docs/architecture.md`.
+Última actualización: 2026-10-05. Leé primero `AGENTS.md` y `docs/architecture.md`.
 
 ## Ya hecho (commits en `main`, sin push salvo indicación)
 
@@ -15,6 +15,7 @@
 4. **Cliente partido**: `progress-client.tsx` (4.300 líneas) → `features/app-shell/progress-app.tsx` (cascarón, ~1.060) + `use-workspace-state.tsx` (estado compartido, ~1.760) + secciones en `features/*/components/*-section.tsx` (30–300 líneas c/u).
 5. **Entrenamientos instantáneos**: marcar/desmarcar un día se ve al toque (optimista) y no bloquea los botones.
 6. `AGENTS.md`, `CLAUDE.md`, `docs/architecture.md`, `.env.example` completo, herramientas en `scripts/refactor/`.
+7. **Revisión semanal con IA para Pro**: se muestra en Progreso; calcula las métricas en el servidor y guarda una revisión por semana. El aviso push del domingo y el pop-up sin IA siguen para todas las cuentas. La memoria guarda sólo preferencias, prioridades, disponibilidad y restricciones temporales explícitas; no conserva el intercambio.
 
 Cambios de comportamiento intencionales (menores):
 - El objetivo de calorías del puntaje/avisos es el **guardado** (antes también tomaba un plan de IA generado y sin guardar).
@@ -26,6 +27,7 @@ Cambios de comportamiento intencionales (menores):
 2. ✅ (aplicado 2026-10-04) **SQL Editor → correr `supabase/performance.sql`** (índices + funciones `avora_toggle_training` / `avora_save_exercises` + marca libros terminados). Es aditivo.
 3. **Integrations → Data API → Settings → Max rows**: subir a `10000`. Hoy el GET trae hasta 5 años de historial y Supabase corta en 1.000 filas por consulta por defecto (las comidas superan eso en ~1 año).
 4. ✅ Supabase está en São Paulo: `vercel.json` ya tiene `"regions": ["gru1"]`. (Antes:) confirmar región. Las funciones de Vercel corren en `iad1` (EE.UU. Este). Si Supabase está en `us-east-1`, no hay que hacer nada. Si está en São Paulo (`sa-east-1`), agregar `vercel.json` con `{ "regions": ["gru1"] }` (cada consulta pasa de ~120 ms a ~5 ms).
+5. **SQL Editor → correr `supabase/weekly-ai-review.sql`** antes de usar la revisión con IA. Crea las dos tablas nuevas con RLS por usuario; no toca preferencias, notificaciones ni el estado del anuncio de Early Adopters.
 
 ## Próximos pasos (en orden)
 

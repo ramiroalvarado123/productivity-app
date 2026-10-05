@@ -42,6 +42,7 @@ export function ProSection() {
     { feature: "Cierre del día por voz", detail: "Contás tu día en un minuto y se acomoda solo en cada sección", free: false, pro: "Sin límite" },
     { feature: "Calorías por foto", detail: "Sacás una foto del plato y sale la estimación con macros", free: false, pro: "Sin límite" },
     { feature: "Plan de alimentación", detail: "Calculado con tus datos y adaptado a tus intolerancias", free: false, pro: "Incluido" },
+    { feature: "Revisión semanal con IA", detail: "Compara tu progreso, prioridades y próximos pasos con tus datos", free: false, pro: "Incluida" },
     { feature: "Reprogramación automática", detail: "Dormiste poco: te mueve el bloque difícil al mejor hueco del día", free: false, pro: "Incluido" },
   ];
   const lockedCount = planRows.filter((row) => row.free === false).length;

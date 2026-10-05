@@ -34,11 +34,11 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 | Lectura (dentro de Foco → Estudio) | `features/reading/components/reading-section.tsx` | + `study-resources.tsx` (artículos/podcasts, notas) |
 | Sueño | `features/sleep/components/sleep-section.tsx` | |
 | Plan | `features/plan/components/plan-section.tsx` | + `features/goals/components/goals-panel.tsx` |
-| Progreso | `features/stats/components/stats-section.tsx` | |
+| Progreso | `features/stats/components/stats-section.tsx` | Las cuentas Pro ven `features/notifications/components/weekly-ai-review.tsx`; la revisión se guarda por semana. |
 | Amigos | **todavía en `progress-app.tsx`** (`circleTab`, `groupsTab`, `friendsPanel`) | ver HANDOFF |
 | Pro | `features/pro/components/pro-section.tsx` | compra simulada |
 | Cierre por voz | `features/voice-checkin/components/voice-checkin-dialog.tsx` | |
-| Notificaciones / resumen semanal | `features/notifications/components/notifications-center.tsx` | lógica en `features/notifications/logic/weekly-summary.ts` |
+| Notificaciones / resumen semanal | `features/notifications/components/notifications-center.tsx` | El aviso dominical y su pop-up sin IA siguen disponibles para todas las cuentas. La revisión Pro usa `weekly-ai-review.tsx` y `weekly-ai-context.ts`. |
 | Configuración / Feedback / Onboarding | **todavía en `progress-app.tsx`** | ver HANDOFF |
 
 ## Lógica pura (testeada en `tests/`)
@@ -54,8 +54,9 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 - `server/auth/session.ts` — `getSessionUser()` verifica el JWT con las claves públicas de Supabase (jose); acepta cookie o `Authorization: Bearer`.
 - `server/db/postgrest.ts` — `selectRows` (con `columns`), `insertRows`, `updateRows`, `deleteRows`, `callRpc`, `camelRow`.
 - `app/api/notifications/dispatch/route.ts` — cron cada 5 min (Supabase pg_cron) que manda pushes. Grande y con su propia copia del armado del día (pendiente).
+- `app/api/weekly-ai/route.ts` — prepara y guarda revisiones semanales Pro, responde una consulta contextual y conserva únicamente memoria estructurada.
 - `app/api/friends/route.ts` — amigos y grupos (grande, pendiente partir).
 
 ## Base de datos (`supabase/`)
 
-SQL sueltos, ya aplicados en producción salvo los marcados en HANDOFF. Los nuevos: `performance.sql` (índices + RPC de entrenamiento), `study-resources.sql` (artículos/podcasts).
+SQL sueltos, ya aplicados en producción salvo los marcados en HANDOFF. Los nuevos: `performance.sql` (índices + RPC de entrenamiento), `study-resources.sql` (artículos/podcasts), `weekly-ai-review.sql` (revisiones y memoria estructurada Pro).

@@ -5,7 +5,7 @@ import type { StatsPeriod } from "@/shared/data/types";
 import type { StatsWindow } from "@/features/stats/logic/stats-window";
 import type { Trend } from "@/domain/streaks";
 import { averageNumbers, formatFocusHours } from "@/shared/lib/numbers";
-import { countActiveDays, dateMinus, datePlus, datesBetween, dayDistance, formatDate, lastDayOfMonth, shiftMonthStart, weekFor } from "@/domain/dates";
+import { argentinaMinutes, countActiveDays, dateMinus, datePlus, datesBetween, dayDistance, formatDate, lastDayOfMonth, shiftMonthStart, weekFor } from "@/domain/dates";
 import { countdownLabelCapitalized, formatMinutes, listPhrase } from "@/shared/lib/format";
 import { dayBlocks } from "@/domain/schedule";
 import { isReviewDay, weeklyReview } from "@/features/home/logic/review";
@@ -13,6 +13,8 @@ import { scoreLabel } from "@/domain/score";
 import { sparklinePath, trendFor } from "@/domain/streaks";
 import { useId, useState } from "react";
 import { useWorkspace } from "@/features/app-shell/workspace";
+import { lastClosedWeekStart } from "@/features/notifications/logic/weekly-summary";
+import { WeeklyAiReview } from "@/features/notifications/components/weekly-ai-review";
 
 /** Progreso: Daily Score por período, rachas, tendencias y totales. */
 export function StatsSection() {
@@ -40,6 +42,7 @@ export function StatsSection() {
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("weekly");
   const [statsOffset, setStatsOffset] = useState(0);
   const [selectedScorePointKey, setSelectedScorePointKey] = useState<string | null>(null);
+  const weeklyAiWeek = data.profile.isPro ? lastClosedWeekStart(today, argentinaMinutes()) : "";
 
   // El corte semanal sólo se arma el domingo: el resto de la semana no hay nada
   // cerrado que mirar y ocuparía lugar por nada.
@@ -146,7 +149,7 @@ export function StatsSection() {
     { key: "logging", icon: "✎", label: "Registro diario", streak: streaks.logging, unitSingular: "día", unitPlural: "días", pendingLabel: "Hoy todavía no", warningLabel: "Registrá un día hoy para no cortarla" },
   ];
   const statsPanel = <section className="module-stack">
-    {weeklyReviewPanel}
+    {data.profile.isPro ? <WeeklyAiReview key={weeklyAiWeek} weekStart={weeklyAiWeek} /> : weeklyReviewPanel}
     <div className="stats-controls">
       <div className="period-switch">{(["weekly", "monthly", "annual"] as StatsPeriod[]).map((period) => <button className={statsPeriod === period ? "active" : ""} key={period} onClick={() => { setStatsPeriod(period); setStatsOffset(0); setSelectedScorePointKey(null); }}>{period === "weekly" ? "Semanal" : period === "monthly" ? "Mensual" : "Anual"}</button>)}</div>
       <label className="stats-range-picker"><span>Período</span><select value={String(statsOffset)} onChange={(event) => { setStatsOffset(Number(event.target.value)); setSelectedScorePointKey(null); }}>
