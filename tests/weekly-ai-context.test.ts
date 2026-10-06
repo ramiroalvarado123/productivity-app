@@ -68,8 +68,8 @@ test("la revisión semanal deriva el Daily Score y sólo incluye tareas y evento
   });
 
   assert.equal(metrics.activeDays, 1);
-  assert.equal(metrics.averageScore, 13);
-  assert.equal(metrics.bestDay?.score, 42);
+  assert.equal(metrics.averageScore, 16);
+  assert.equal(metrics.bestDay?.score, 50);
   assert.equal(metrics.evidenceWeeks, 0);
   assert.deepEqual(metrics.upcoming.map((item) => item.title), ["Repasar", "Tutoría", "Entregar"]);
   const modelContext = JSON.stringify(weeklyAiModelMetrics(metrics));

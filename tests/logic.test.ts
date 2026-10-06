@@ -253,7 +253,7 @@ const emptyDay: DayRecord = {
   completedSomething: false, hasOpenGoals: false,
 };
 const evenWeights: ScoreWeights = {
-  gymWeight: 2, nutritionWeight: 2, sleepWeight: 2, focusWeight: 2, readingWeight: 2, goalsWeight: 2,
+  gymWeight: 2, nutritionWeight: 2, sleepWeight: 2, focusWeight: 2, goalsWeight: 2,
 };
 
 test("un día completo llega a 100 y uno vacío a 0", () => {
@@ -271,6 +271,15 @@ test("ningún factor pasa de 100 por más que te excedas", () => {
   for (const [name, value] of Object.entries(factors)) {
     assert.ok(value <= 100, `${name} se pasó de 100: ${value}`);
   }
+});
+
+test("la lectura sólo suma como parte de Foco cuando es relevante y aporta como máximo 20 puntos", () => {
+  assert.equal(dayFactors({ ...emptyDay, pages: 10, readingRelevant: null }).focus, 0);
+  assert.equal(dayFactors({ ...emptyDay, pages: 10, readingRelevant: false }).focus, 0);
+  assert.equal(dayFactors({ ...emptyDay, pages: 1, readingRelevant: true }).focus, 2);
+  assert.equal(dayFactors({ ...emptyDay, pages: 10, readingRelevant: true }).focus, 20);
+  assert.equal(dayFactors({ ...emptyDay, focusMinutes: 120, pages: 10, readingRelevant: true }).focus, 100);
+  assert.equal("reading" in dayFactors({ ...emptyDay, pages: 10, readingRelevant: true }), false);
 });
 
 test("un objetivo abierto sin cerrar nada vale la mitad", () => {
@@ -293,7 +302,7 @@ test("las prioridades cambian el puntaje del mismo día", () => {
   const soloEntrenamiento: DayRecord = { ...emptyDay, trainingSessions: 1 };
   const factors = dayFactors(soloEntrenamiento);
   const parejo = scoreFrom(factors, evenWeights);
-  const priorizado = scoreFrom(factors, { ...evenWeights, gymWeight: 3, sleepWeight: 1, readingWeight: 1 });
+  const priorizado = scoreFrom(factors, { ...evenWeights, gymWeight: 3, sleepWeight: 1 });
   assert.ok(priorizado > parejo, `priorizar entrenamiento debería subir el puntaje: ${priorizado} vs ${parejo}`);
 });
 
@@ -308,7 +317,7 @@ test("corregir ayer recalcula todas las áreas sin modificar hoy", () => {
     { ...yesterdayBefore, meals: 3, calories: 2000, targetCalories: 2000 },
     { ...yesterdayBefore, sleepMinutes: 8 * 60, sleepQuality: "good" },
     { ...yesterdayBefore, focusMinutes: 120 },
-    { ...yesterdayBefore, pages: 10 },
+    { ...yesterdayBefore, pages: 10, readingRelevant: true },
   ];
   for (const corrected of corrections) {
     assert.ok(scoreFrom(dayFactors(corrected), evenWeights) > yesterdayScore);
@@ -321,17 +330,17 @@ test("corregir ayer recalcula todas las áreas sin modificar hoy", () => {
 });
 
 test("cada fecha usa las prioridades del mes al que pertenece", () => {
-  const september = { monthKey: "2026-09", ...evenWeights, gymWeight: 3, readingWeight: 1 };
-  const october = { monthKey: "2026-10", ...evenWeights, gymWeight: 1, readingWeight: 3 };
+  const september = { monthKey: "2026-09", ...evenWeights, gymWeight: 3, focusWeight: 1 };
+  const october = { monthKey: "2026-10", ...evenWeights, gymWeight: 1, focusWeight: 3 };
   const history = [september, october];
 
   assert.equal(scoreWeightsForDate("2026-09-30", history, october).gymWeight, 3);
-  assert.equal(scoreWeightsForDate("2026-10-01", history, september).readingWeight, 3);
-  assert.equal(scoreWeightsForDate("fecha-invalida", history, evenWeights), evenWeights);
+  assert.equal(scoreWeightsForDate("2026-10-01", history, september).focusWeight, 3);
+  assert.deepEqual(scoreWeightsForDate("fecha-invalida", history, evenWeights), evenWeights);
 });
 
 test("sin peso en ninguna área el puntaje es 0 y no NaN", () => {
-  const sinPeso: ScoreWeights = { gymWeight: 0, nutritionWeight: 0, sleepWeight: 0, focusWeight: 0, readingWeight: 0, goalsWeight: 0 };
+  const sinPeso: ScoreWeights = { gymWeight: 0, nutritionWeight: 0, sleepWeight: 0, focusWeight: 0, goalsWeight: 0 };
   assert.equal(scoreFrom(dayFactors(emptyDay), sinPeso), 0);
 });
 

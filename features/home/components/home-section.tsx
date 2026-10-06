@@ -34,7 +34,6 @@ export function HomeSection() {
     runStreakAction,
     trainingByDate,
     calories,
-    pagesToday,
     sleepToday,
     focusToday,
     score,
@@ -119,11 +118,6 @@ export function HomeSection() {
       value: calories ? calories.toLocaleString("es-AR") : "—", unit: "kcal",
       caption: dietTargetCalories ? `de ${dietTargetCalories.toLocaleString("es-AR")} objetivo` : `${data.meals.length} comidas hoy`,
     },
-    readingWeight: {
-      icon: "▱", tone: "sky", label: "LECTURA", area: "books",
-      value: String(pagesToday), unit: "pág.",
-      caption: streaks.reading.current ? pluralize(streaks.reading.current, "día leyendo", "días leyendo") : `${data.books.filter((book) => book.status === "reading").length} libros abiertos`,
-    },
     goalsWeight: {
       icon: "◎", tone: "violet", label: "OBJETIVOS", area: "goals",
       value: String(activeGoals.length), unit: "activos",
@@ -131,7 +125,7 @@ export function HomeSection() {
     },
   };
   // Orden estable cuando varias áreas empatan en peso.
-  const metricOrder = ["gymWeight", "focusWeight", "sleepWeight", "nutritionWeight", "readingWeight", "goalsWeight"];
+  const metricOrder = ["gymWeight", "focusWeight", "sleepWeight", "nutritionWeight", "goalsWeight"];
   // Inicio muestra todas las áreas marcadas explícitamente como "Prioridad".
   // Si todavía no hay ninguna, conserva la selección de mayor peso existente;
   // y en el estado inicial completamente equilibrado usa tres accesos útiles.
@@ -274,7 +268,7 @@ export function HomeSection() {
         {quotePanel}
         <section className={"hero-row " + (loading ? "is-loading" : "")}>
           <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
-          <div className="hero-metrics-head"><small>{balanced ? "Tus seis áreas pesan igual" : `Según tu${topPriorities.length > 1 ? "s" : ""} prioridad${topPriorities.length > 1 ? "es" : ""} del mes: ${listPhrase(priorityNames)}`}</small><button type="button" onClick={() => openSection("score")}>Ajustar →</button></div>
+          <div className="hero-metrics-head"><small>{balanced ? "Tus cinco áreas pesan igual" : `Según tu${topPriorities.length > 1 ? "s" : ""} prioridad${topPriorities.length > 1 ? "es" : ""} del mes: ${listPhrase(priorityNames)}`}</small><button type="button" onClick={() => openSection("score")}>Ajustar →</button></div>
           <div className="hero-metrics" data-tiles={heroMetrics.length} data-tour="metrics">
             {heroMetrics.map((metric) => <button
               type="button"

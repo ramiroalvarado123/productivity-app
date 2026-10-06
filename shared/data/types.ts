@@ -1,7 +1,7 @@
 /** Formas de los datos que devuelve GET /api/progress y que usa toda la app. */
 import type { ResourceNote, StudyResource } from "@/features/reading/components/study-resources";
 
-export type User = { displayName: string; username: string; avatarUrl: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string; focusDailyTargetMinutes?: number; seenAnnouncements?: string[] };
+export type User = { displayName: string; username: string; avatarUrl: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string; focusDailyTargetMinutes?: number; readingRelevant?: boolean | null; seenAnnouncements?: string[] };
 export type Meal = { id: number; name: string; detail: string; calories: number; protein: number; carbs: number; fat: number; mealDate: string };
 export type BookStatus = "reading" | "read" | "wishlist";
 export type Book = { id: number; title: string; author: string; status: BookStatus; totalPages: number; currentPage: number; coverUrl: string; externalKey: string };

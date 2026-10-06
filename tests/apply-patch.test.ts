@@ -19,7 +19,7 @@ const base = () => ({
   ],
   dailyCheckin: null as null | Record<string, unknown>,
   dailyCheckins: [] as Array<Record<string, unknown>>,
-  profile: { email: "x@y.z" },
+  profile: { email: "x@y.z", readingRelevant: null as boolean | null },
 });
 
 test("una comida nueva aparece en el historial y en las de hoy, sin tocar lo demás", () => {
@@ -78,6 +78,14 @@ test("ignora colecciones desconocidas o ausentes", () => {
   const next = applyPatch(data, { upsert: { events: [{ id: 1 }] }, remove: { books: [1] } }, TODAY);
   assert.equal(next.profile, data.profile);
   assert.equal("events" in next, false);
+});
+
+test("actualiza una preferencia de perfil sin reemplazar el resto", () => {
+  const data = base();
+  const next = applyPatch(data, { profile: { readingRelevant: true } }, TODAY);
+  assert.equal(next.profile.email, "x@y.z");
+  assert.equal(next.profile.readingRelevant, true);
+  assert.equal(data.profile.readingRelevant, null, "no muta el perfil original");
 });
 
 test("la planilla de gimnasio reemplaza la sesión: edita, agrega y borra ejercicios de una vez", () => {

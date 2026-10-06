@@ -7,6 +7,20 @@ import { readingUpdateFromPosition } from "@/features/reading/logic/reading";
 import type { ActionMap } from "@/server/progress/types";
 
 export const readingActions: ActionMap = {
+  set_reading_relevance: async ({ p, email }) => {
+    const relevant = p.relevant;
+    if (relevant !== null && typeof relevant !== "boolean") return fail("Elegí si la lectura es relevante o no.");
+    try {
+      await updateRows("profiles", { email }, { readingRelevant: relevant, updatedAt: now() });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (/reading_relevant|PGRST204|schema cache/i.test(message) && /column|does not exist|schema cache|PGRST204/i.test(message)) {
+        return fail("No se pudo guardar la relevancia de Lectura. Falta aplicar la migración supabase/reading-relevance.sql.", 503);
+      }
+      throw cause;
+    }
+    return patched({ profile: { readingRelevant: relevant } });
+  },
   add_book: async ({ p, email }) => { const title = String(p.title ?? "").trim(); if (!title) return fail("Ingresá el título del libro."); const status = ["reading", "read", "wishlist"].includes(String(p.status)) ? String(p.status) : "reading", totalPages = Math.max(0, Math.min(20000, Number(p.totalPages) || 0)); await insertRows("books", { userEmail: email, title, author: String(p.author ?? "").trim(), status, totalPages, currentPage: status === "read" ? totalPages : 0, coverUrl: String(p.coverUrl ?? "").slice(0, 1000), externalKey: String(p.externalKey ?? "").slice(0, 300) }); return ok(); },
   delete_book: async ({ p, email }) => { const bookId = Number(p.bookId); if (!(await owned("books", email, { id: bookId }))[0]) return fail("Libro no encontrado.", 404); await deleteRows("reading_logs", { bookId, userEmail: email }); await deleteRows("book_notes", { bookId, userEmail: email }); await deleteRows("books", { id: bookId, userEmail: email }); return ok(); },
   set_pages: async ({ p, email }) => {

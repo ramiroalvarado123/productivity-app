@@ -185,7 +185,6 @@ function buildScoreSeries(data: ProgressData, from: string, through: string) {
     nutritionWeight: data.priorities.nutritionWeight,
     sleepWeight: data.priorities.sleepWeight,
     focusWeight: data.priorities.focusWeight,
-    readingWeight: data.priorities.readingWeight,
     goalsWeight: data.priorities.goalsWeight,
   };
   const history = (data.priorityHistory ?? []) as MonthlyScoreWeights[];
@@ -206,6 +205,7 @@ function buildScoreSeries(data: ProgressData, from: string, through: string) {
       focusMinutes: focusByDate[date] ?? 0,
       focusTargetMinutes: focusTarget,
       pages: pagesByDate[date] ?? 0,
+      readingRelevant: data.profile.readingRelevant === true,
       completedSomething: completionDates.has(date),
       hasOpenGoals,
     }, scoreWeightsForDate(date, history, fallbackWeights));
@@ -274,7 +274,6 @@ export function buildWeeklyAiMetrics(data: ProgressData, weekStart: string, toda
     ["nutrition", "Alimentación", weights.nutritionWeight, "nutrition"],
     ["sleep", "Sueño", weights.sleepWeight, "sleep"],
     ["focus", "Estudio y trabajo", weights.focusWeight, "focus"],
-    ["reading", "Lectura", weights.readingWeight, "reading"],
     ["goals", "Objetivos", weights.goalsWeight, "goals"],
   ];
   const priorities = priorityFields.map(([key, label, weight, areaKey]) => ({

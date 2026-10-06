@@ -4,6 +4,8 @@
  * Es lógica pura: el mismo orden que usa `GET /api/progress` para cada colección.
  */
 
+import type { User } from "@/shared/data/types";
+
 export type CollectionKey =
   | "trainingLogs" | "exerciseLogs" | "mealHistory" | "readingHistory" | "books" | "notes"
   | "goals" | "dailyCheckins" | "focusProjects" | "focusSessions" | "tasks" | "events" | "resources" | "resourceNotes";
@@ -15,6 +17,8 @@ export type DataPatch = {
   upsert?: Partial<Record<CollectionKey, PatchRow[]>>;
   /** Ids borrados. */
   remove?: Partial<Record<CollectionKey, number[]>>;
+  /** Campos de perfil que se guardan fuera de las colecciones. */
+  profile?: Partial<User>;
 };
 
 type Direction = "asc" | "desc";
@@ -65,6 +69,10 @@ export function applyPatch<T extends object>(data: T, patch: DataPatch, today: s
   const next = { ...data } as Record<string, unknown>;
   const touched = new Set<string>();
   const rowsOf = (key: string) => Array.isArray(next[key]) ? next[key] as PatchRow[] : null;
+
+  if (patch.profile && next.profile && typeof next.profile === "object") {
+    next.profile = { ...(next.profile as Record<string, unknown>), ...patch.profile };
+  }
 
   for (const [key, ids] of Object.entries(patch.remove ?? {})) {
     const rows = rowsOf(key);

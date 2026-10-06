@@ -752,12 +752,13 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     focusMinutes: focusByDate[date] ?? 0,
     focusTargetMinutes: data.profile.focusDailyTargetMinutes || 120,
     pages: readingByDate[date] ?? 0,
+    readingRelevant: data.profile.readingRelevant === true,
     completedSomething: completionDates.has(date),
     // Un objetivo cuenta como abierto ese día si ya existía y todavía no
     // estaba cerrado: así el histórico no se contamina con objetivos que
     // creaste después.
     hasOpenGoals: data.goals.some((goal) => goal.createdAt.slice(0, 10) <= date && (!goal.completedAt || goal.completedAt.slice(0, 10) >= date)),
-  }), [trainingByDate, trainingScoreByDate, mealCountByDate, caloriesByDay, nutritionTargetCalories, sleepMinutesByDate, sleepQualityByDate, focusByDate, data.profile.focusDailyTargetMinutes, readingByDate, completionDates, data.goals]);
+  }), [trainingByDate, trainingScoreByDate, mealCountByDate, caloriesByDay, nutritionTargetCalories, sleepMinutesByDate, sleepQualityByDate, focusByDate, data.profile.focusDailyTargetMinutes, data.profile.readingRelevant, readingByDate, completionDates, data.goals]);
 
   const trainedToday = (trainingByDate[today] ?? 0) > 0;
   const calories = data.meals.reduce((sum, meal) => sum + meal.calories, 0);
@@ -809,19 +810,19 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     </div>
     <strong>{scoreForDate(date)}<small>/100</small></strong>
   </div>;
-  const priorityPairs: Array<[string, number]> = [["Entrenamiento", priorityDraft.gymWeight], ["Alimentación", priorityDraft.nutritionWeight], ["Sueño", priorityDraft.sleepWeight], ["Estudio / Trabajo", priorityDraft.focusWeight], ["Lectura", priorityDraft.readingWeight], ["Objetivos", priorityDraft.goalsWeight]];
+  const priorityPairs: Array<[string, number]> = [["Entrenamiento", priorityDraft.gymWeight], ["Alimentación", priorityDraft.nutritionWeight], ["Sueño", priorityDraft.sleepWeight], ["Estudio / Trabajo", priorityDraft.focusWeight], ["Objetivos", priorityDraft.goalsWeight]];
   const highestPriority = Math.max(...priorityPairs.map((item) => item[1]));
   const topPriorities = priorityPairs.filter((item) => item[1] === highestPriority);
   // Elegir dos o tres áreas en el onboarding es lo normal, así que un empate no
   // significa "equilibrio": significa que esas áreas son las prioritarias.
-  // Sólo hay equilibrio real cuando las seis pesan lo mismo.
+  // Sólo hay equilibrio real cuando las cinco pesan lo mismo.
   const priorityNames = topPriorities.map((item) => item[0]);
-  // Sólo hay equilibrio cuando las seis áreas pesan exactamente lo mismo.
+  // Sólo hay equilibrio cuando las cinco áreas pesan exactamente lo mismo.
   // Cuatro o cinco prioridades siguen siendo una selección válida y deben
   // mostrarse completas en Inicio.
   const balanced = topPriorities.length === priorityPairs.length;
   const priorityCaption = balanced
-    ? "Las seis áreas pesan lo mismo en tu Daily Score."
+    ? "Las cinco áreas pesan lo mismo en tu Daily Score."
     : priorityNames.length === 1
       ? `${priorityNames[0]} pesa más que el resto en tu Daily Score.`
       : `${listPhrase(priorityNames)} pesan más que el resto en tu Daily Score.`;
@@ -1038,7 +1039,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
       { area: "nutrition", label: "Alimentación", weight: priorityDraft.nutritionWeight },
       { area: "sleep", label: "Sueño", weight: priorityDraft.sleepWeight },
       { area: "focus", label: "Estudio / Trabajo", weight: priorityDraft.focusWeight },
-      { area: "reading", label: "Lectura", weight: priorityDraft.readingWeight },
     ];
     return buildPatternInsights({
       today,

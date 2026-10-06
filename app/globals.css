@@ -2487,3 +2487,11 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .weekly-ai-review-heading h2{font-size:23px}
   .weekly-ai-lead>p{font-size:15px}
 }
+
+/* Preferencia de relevancia de lectura dentro de Foco */
+.reading-relevance-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 15px;padding:13px 14px;border:1px solid #e5e9e3;border-radius:13px;background:#f7f9f6}
+.reading-relevance-copy{display:grid;gap:4px;min-width:0}
+.reading-relevance-copy b{font-size:12px;color:#26332c}
+.reading-relevance-copy small{max-width:440px;font-size:10px;line-height:1.5;color:#718078}
+.reading-relevance-dropdown{width:180px;flex:0 0 auto}
+@media(max-width:540px){.reading-relevance-row{align-items:stretch;flex-direction:column}.reading-relevance-dropdown{width:100%}}

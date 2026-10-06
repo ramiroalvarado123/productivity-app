@@ -7,14 +7,13 @@
  * histórico se puede reconstruir con los registros que ya están cargados.
  */
 
-export type ScoreFactors = { training: number; nutrition: number; sleep: number; focus: number; reading: number; goals: number };
+export type ScoreFactors = { training: number; nutrition: number; sleep: number; focus: number; goals: number };
 
 export type ScoreWeights = {
   gymWeight: number;
   nutritionWeight: number;
   sleepWeight: number;
   focusWeight: number;
-  readingWeight: number;
   goalsWeight: number;
 };
 
@@ -39,6 +38,8 @@ export type DayRecord = {
   /** Objetivo personal de Estudio/Trabajo para ese día; 2 h si aún no se configuró. */
   focusTargetMinutes?: number;
   pages: number;
+  /** La lectura sólo aporta al factor Foco si el usuario la marcó relevante. */
+  readingRelevant?: boolean | null;
   /** Cerraste al menos una tarea u objetivo ese día. */
   completedSomething: boolean;
   /** Tenías algún objetivo abierto ese día. */
@@ -50,6 +51,8 @@ export const FULL_SLEEP_MINUTES = 8 * 60;
 export const FULL_FOCUS_MINUTES = 2 * 60;
 export const FULL_MEALS = 3;
 export const FULL_PAGES = 10;
+/** La lectura puede sumar como máximo 20 puntos dentro del factor Foco. */
+export const MAX_READING_FOCUS_BONUS = 20;
 /** Dentro de este margen el objetivo de calorías se considera cumplido. */
 export const CALORIE_TARGET_TOLERANCE = 0.10;
 
@@ -95,13 +98,25 @@ export function nutritionScoreFromCalories(calories: number, targetCalories: num
  */
 export function scoreWeightsForDate(date: string, history: MonthlyScoreWeights[], fallback: ScoreWeights): ScoreWeights {
   const monthKey = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.slice(0, 7) : "";
-  return history.find((item) => item.monthKey === monthKey) ?? fallback;
+  const source = history.find((item) => item.monthKey === monthKey) ?? fallback;
+  // readingWeight sigue guardado por compatibilidad con perfiles/versiones
+  // anteriores, pero Lectura ya no es un factor ni una prioridad independiente.
+  return {
+    gymWeight: source.gymWeight,
+    nutritionWeight: source.nutritionWeight,
+    sleepWeight: source.sleepWeight,
+    focusWeight: source.focusWeight,
+    goalsWeight: source.goalsWeight,
+  };
 }
 
 export function dayFactors(day: DayRecord): ScoreFactors {
   const focusTargetMinutes = Number.isFinite(day.focusTargetMinutes) && Number(day.focusTargetMinutes) > 0
     ? Number(day.focusTargetMinutes)
     : FULL_FOCUS_MINUTES;
+  const readingBonus = day.readingRelevant === true
+    ? Math.min(MAX_READING_FOCUS_BONUS, Math.max(0, day.pages) * MAX_READING_FOCUS_BONUS / FULL_PAGES)
+    : 0;
   return {
     training: typeof day.trainingScore === "number"
       ? Math.max(0, Math.min(100, Math.round(day.trainingScore)))
@@ -109,13 +124,12 @@ export function dayFactors(day: DayRecord): ScoreFactors {
     nutrition: nutritionScoreFromCalories(day.calories ?? 0, day.targetCalories ?? 0)
       ?? Math.min(100, Math.round(day.meals / FULL_MEALS * 100)),
     sleep: sleepScoreFromDuration(day.sleepMinutes, day.sleepQuality),
-    focus: Math.min(100, Math.round(day.focusMinutes / focusTargetMinutes * 100)),
-    reading: Math.min(100, day.pages * FULL_PAGES),
+    focus: Math.min(100, Math.round(day.focusMinutes / focusTargetMinutes * 100 + readingBonus)),
     goals: day.completedSomething ? 100 : day.hasOpenGoals ? 50 : 0,
   };
 }
 
-/** Promedio ponderado de los seis factores según tus prioridades del mes. */
+/** Promedio ponderado de los cinco factores según tus prioridades del mes. */
 export function scoreFrom(factors: ScoreFactors, weights: ScoreWeights): number {
   // La escala queda siempre ordenada: Prioridad (3) > Importante (2) > Secundario (1),
   // incluso si una fila antigua tuviera un valor fuera del rango.
@@ -124,16 +138,14 @@ export function scoreFrom(factors: ScoreFactors, weights: ScoreWeights): number 
   const nutritionWeight = normalizeWeight(weights.nutritionWeight);
   const sleepWeight = normalizeWeight(weights.sleepWeight);
   const focusWeight = normalizeWeight(weights.focusWeight);
-  const readingWeight = normalizeWeight(weights.readingWeight);
   const goalsWeight = normalizeWeight(weights.goalsWeight);
-  const total = gymWeight + nutritionWeight + sleepWeight + focusWeight + readingWeight + goalsWeight;
+  const total = gymWeight + nutritionWeight + sleepWeight + focusWeight + goalsWeight;
   if (total <= 0) return 0;
   return Math.round((
     factors.training * gymWeight
     + factors.nutrition * nutritionWeight
     + factors.sleep * sleepWeight
     + factors.focus * focusWeight
-    + factors.reading * readingWeight
     + factors.goals * goalsWeight
   ) / total);
 }

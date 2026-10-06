@@ -86,6 +86,7 @@ export async function readSnapshot(user: SessionUser, params: URLSearchParams, t
       isPro: Boolean(profile?.proSince),
       proSince: profile?.proSince ?? "",
       focusDailyTargetMinutes: Math.max(30, Math.min(720, Math.round(Number(profile?.focusDailyTargetMinutes) || 120))),
+      readingRelevant: typeof profile?.readingRelevant === "boolean" ? profile.readingRelevant : null,
     },
     gymDates: strength ? trainingLogs.filter((row) => row.disciplineId === strength.id && row.trainingDate >= weekStart && row.trainingDate <= weekEnd).map((row) => row.trainingDate) : [],
     disciplines,

@@ -167,7 +167,6 @@ const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
   nutritionWeight: 2,
   sleepWeight: 2,
   focusWeight: 2,
-  readingWeight: 2,
   goalsWeight: 2,
 };
 
@@ -204,9 +203,19 @@ function weightsFromRow(row: Row | undefined): ScoreWeights {
     nutritionWeight: numberValue(row ?? {}, "nutrition_weight", 2),
     sleepWeight: numberValue(row ?? {}, "sleep_weight", 2),
     focusWeight: numberValue(row ?? {}, "focus_weight", 2),
-    readingWeight: numberValue(row ?? {}, "reading_weight", 2),
     goalsWeight: numberValue(row ?? {}, "goals_weight", 2),
   };
+}
+
+async function fetchScoreProfiles() {
+  try {
+    return await adminRequest("profiles", new URLSearchParams({ select: "email,focus_daily_target_minutes,reading_relevant" }).toString());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/reading_relevant|PGRST204|schema cache/i.test(message)) throw error;
+    // Sin migración, Lectura queda sin relevancia y no agrega puntos al foco.
+    return adminRequest("profiles", new URLSearchParams({ select: "email,focus_daily_target_minutes" }).toString());
+  }
 }
 
 /**
@@ -334,6 +343,7 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
     focusMinutes,
     focusTargetMinutes,
     pages,
+    readingRelevant: booleanValue(profile ?? {}, "reading_relevant"),
     completedSomething,
     hasOpenGoals,
   };
@@ -544,7 +554,7 @@ export async function POST(request: Request) {
     if (!isAnnouncementCampaign) {
       try {
       const [scoreProfiles, disciplines, trainingLogs, calendarEvents, tasks, meals, dietPlans, dailyCheckins, readingLogs, focusSessions, goals, priorities] = await Promise.all([
-        adminRequest("profiles", new URLSearchParams({ select: "email,focus_daily_target_minutes" }).toString()),
+        fetchScoreProfiles(),
         adminRequest("training_disciplines", new URLSearchParams({ select: "id,user_email,name,kind,priority" }).toString()),
         adminRequest("training_logs", new URLSearchParams({ select: "id,user_email,discipline_id,training_date,quality" }).toString()),
         adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,duration_minutes,category,completed_at,discipline_id,quality" }).toString()),
