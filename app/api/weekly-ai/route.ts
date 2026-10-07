@@ -276,7 +276,7 @@ async function respondToContext(email: string, weekStart: string, message: strin
 async function generateReview(user: SessionUser, profile: ProfileRow, weekStart: string, apiKey: string) {
   const email = user.email;
   const currentDate = argentinaDate();
-  const closeDate = lastClosedWeekStart(currentDate, argentinaMinutes());
+  const closeDate = lastClosedWeekStart(currentDate, argentinaMinutes(), 15 * 60);
   if (weekStart !== closeDate) return fail("Sólo se puede generar la revisión de la última semana cerrada.", 409);
 
   let existing = await getReview(email, weekStart);
