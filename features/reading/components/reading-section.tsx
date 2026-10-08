@@ -70,7 +70,21 @@ export function ReadingSection() {
     }, 320);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [bookDraft.title, bookForm, bookSuggestionOpen]);
-  const booksInTab = data.books.filter((book) => book.status === bookTab);
+  const latestReadingDateByBook = new Map<number, string>();
+  for (const log of data.readingHistory) {
+    if (log.pages <= 0 && log.minutes <= 0) continue;
+    const previousDate = latestReadingDateByBook.get(log.bookId);
+    if (!previousDate || log.logDate > previousDate) latestReadingDateByBook.set(log.bookId, log.logDate);
+  }
+  const booksInTab = data.books
+    .map((book, index) => ({ book, index }))
+    .filter(({ book }) => book.status === bookTab)
+    .sort((a, b) => {
+      const mostRecentA = latestReadingDateByBook.get(a.book.id) ?? "";
+      const mostRecentB = latestReadingDateByBook.get(b.book.id) ?? "";
+      return mostRecentB.localeCompare(mostRecentA) || a.index - b.index;
+    })
+    .map(({ book }) => book);
   const bookShelfPageCount = Math.max(1, Math.ceil(booksInTab.length / 3));
   const visibleBookShelfPage = Math.min(bookShelfPage, bookShelfPageCount - 1);
   const visibleBooks = booksInTab.slice(visibleBookShelfPage * 3, visibleBookShelfPage * 3 + 3);
