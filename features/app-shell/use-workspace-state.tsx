@@ -180,6 +180,7 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   const [photoPreview, setPhotoPreview] = useState("");
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
+  const initialDietForm = DEFAULT_DIET_FORM;
   const [dietForm, setDietForm] = useState<DietForm>(DEFAULT_DIET_FORM);
   const hydratedDietPlanRef = useRef("");
   const [dietNumberDrafts, setDietNumberDrafts] = useState<DietNumberDrafts>(() => dietNumberDraftsFrom(DEFAULT_DIET_FORM));
