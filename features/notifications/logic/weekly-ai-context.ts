@@ -201,7 +201,7 @@ function buildScoreSeries(data: ProgressData, from: string, through: string) {
       calories: caloriesByDay[date] ?? 0,
       targetCalories,
       sleepMinutes: sleepByDate[date] ?? 0,
-      sleepQuality: sleepQualityByDate[date] as "good" | "bad" | null,
+      sleepQuality: sleepQualityByDate[date] as "good" | "regular" | "bad" | null,
       focusMinutes: focusByDate[date] ?? 0,
       focusTargetMinutes: focusTarget,
       pages: pagesByDate[date] ?? 0,

@@ -304,7 +304,7 @@ function dailyScoreForDate(email: string, date: string, source: DailyScoreRows) 
   );
   const sleepMinutes = numberValue(sleepCheckin ?? {}, "sleep_minutes");
   const savedSleepQuality = stringValue(sleepCheckin ?? {}, "sleep_quality");
-  const sleepQuality = savedSleepQuality === "good" || savedSleepQuality === "bad" ? savedSleepQuality : null;
+  const sleepQuality = savedSleepQuality === "good" || savedSleepQuality === "regular" || savedSleepQuality === "bad" ? savedSleepQuality : null;
   const pages = source.readingLogs
     .filter((row) => stringValue(row, "user_email") === email && stringValue(row, "log_date") === date)
     .reduce((sum, row) => sum + numberValue(row, "pages"), 0);

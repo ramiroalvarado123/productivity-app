@@ -72,7 +72,10 @@ function goalFields(payload: Row): Row | string {
   const period = ["weekly", "monthly", "custom"].includes(String(payload.period)) ? String(payload.period) : "weekly";
   const dueDate = period === "custom" ? String(payload.dueDate ?? "") : "";
   if (dueDate && !DATE.test(dueDate)) return "La fecha límite no es válida.";
-  return { title, metric, source, period, dueDate, targetValue: clamp(payload.targetValue, 1, 100000) };
+  // "mode" sólo viaja cuando es individual: así crear un objetivo compartido sigue
+  // andando aunque todavía no se haya corrido supabase/group-goal-mode.sql.
+  const mode = payload.mode === "individual" ? { mode: "individual" } : {};
+  return { title, metric, source, period, dueDate, ...mode, targetValue: clamp(payload.targetValue, 1, 100000) };
 }
 
 /**
@@ -172,6 +175,7 @@ async function readSocial(email: string): Promise<SocialData> {
       metric: String(goal.metric) as GoalMetric, targetValue: Number(goal.targetValue ?? 0),
       period: String(goal.period) as GroupGoal["period"], dueDate: String(goal.dueDate ?? ""),
       source: (GOAL_SOURCES.some((item) => item.value === goal.source) ? goal.source : "manual") as GoalSource,
+      mode: goal.mode === "individual" ? "individual" : "shared",
       createdBy: String(goal.createdBy ?? "").toLowerCase(), createdAt: String(goal.createdAt ?? ""),
       contributions: progressRows.filter((item) => Number(item.goalId) === Number(goal.id)).map((item) => ({
         userEmail: String(item.userEmail), displayName: String(item.displayName || item.userEmail), value: Number(item.value ?? 0),
@@ -400,7 +404,12 @@ export async function POST(request: Request) {
       if (!groupId) return fail("Elegí el grupo.");
       const draft = goalFields(payload);
       if (typeof draft === "string") return fail(draft);
-      await insertRows("group_goals", { groupId, ...draft, createdBy: email });
+      try {
+        await insertRows("group_goals", { groupId, ...draft, createdBy: email });
+      } catch (cause) {
+        if (draft.mode === "individual") return fail("Para objetivos individuales falta correr supabase/group-goal-mode.sql en Supabase.", 409);
+        throw cause;
+      }
       return ok();
     }
     if (action === "update_group_goal") {
@@ -408,7 +417,14 @@ export async function POST(request: Request) {
       if (!goalId) return fail("Objetivo inválido.");
       const draft = goalFields(payload);
       if (typeof draft === "string") return fail(draft);
-      await updateRows("group_goals", { id: goalId }, draft);
+      // Al volver a "compartido" hay que escribir el modo explícito; si la columna todavía
+      // no existe (SQL sin correr) se reintenta sin ella, que es lo que había antes.
+      try {
+        await updateRows("group_goals", { id: goalId }, { ...draft, mode: payload.mode === "individual" ? "individual" : "shared" });
+      } catch {
+        if (payload.mode === "individual") return fail("Para objetivos individuales falta correr supabase/group-goal-mode.sql en Supabase.", 409);
+        await updateRows("group_goals", { id: goalId }, draft);
+      }
       return ok();
     }
     if (action === "delete_group_goal") {

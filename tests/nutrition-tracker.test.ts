@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildCatalog, nutritionForGrams, searchFoods } from "@/features/nutrition/logic/food-search";
+import { FOOD_ROWS } from "@/features/nutrition/data/food-catalog";
+import { NUTRITION_GOALS, macroTargetsFor } from "@/features/nutrition/logic/macro-goals";
 import { calculateFoodNutrition, calculateMealNutrition, groupMealsByMoment, normalizeFoodSearch } from "@/features/nutrition/logic/nutrition-tracker";
 
 const food = {
@@ -43,4 +46,48 @@ test("agrupa registros por momento y prioriza el más reciente", () => {
 
 test("normaliza búsquedas con o sin acentos", () => {
   assert.equal(normalizeFoodSearch("brócoli"), normalizeFoodSearch("brocoli"));
+});
+
+// --- Catálogo de alimentos con porciones y búsqueda -----------------------------------
+
+
+const catalog = buildCatalog(FOOD_ROWS);
+
+test("el catálogo es grande, sin nombres repetidos y con porciones crecientes", () => {
+  assert.ok(catalog.length >= 400);
+  assert.equal(new Set(catalog.map((item) => item.id)).size, catalog.length);
+  for (const item of catalog) {
+    assert.ok(item.portions.small > 0 && item.portions.small < item.portions.medium && item.portions.medium < item.portions.large, item.name);
+    assert.ok(item.per100.calories >= 0, item.name);
+  }
+});
+
+test("autocompleta por nombre, sinónimo, plural y sin acentos", () => {
+  assert.ok(searchFoods(catalog, "bife").some((item) => /bife de chorizo/i.test(item.name)));
+  assert.equal(searchFoods(catalog, "banana")[0].name, "Banana");
+  assert.equal(searchFoods(catalog, "pollo")[0].name, "Pollo, pechuga sin piel, a la plancha");
+  assert.equal(searchFoods(catalog, "bife")[0].name, "Bife de chorizo, a la parrilla");
+  assert.ok(searchFoods(catalog, "platano").some((item) => item.name === "Banana"));
+  assert.ok(searchFoods(catalog, "bananas").some((item) => item.name === "Banana"));
+  assert.ok(searchFoods(catalog, "brocoli").some((item) => /brócoli/i.test(item.name)));
+  assert.deepEqual(searchFoods(catalog, "   "), []);
+  assert.deepEqual(searchFoods(catalog, "zzzzqq"), []);
+});
+
+test("calcula calorías y macros de cualquier cantidad de gramos", () => {
+  const per100 = { calories: 200, protein: 30, carbs: 0, fat: 8 };
+  assert.deepEqual(nutritionForGrams(per100, 150), { calories: 300, protein: 45, carbs: 0, fat: 12 });
+  assert.deepEqual(nutritionForGrams(per100, 0), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+  assert.equal(nutritionForGrams(per100, -5).calories, 0);
+  assert.equal(nutritionForGrams(per100, 999999).calories, 0);
+});
+
+test("cada objetivo reparte el 100% de las calorías y recomienda macros coherentes", () => {
+  for (const goal of NUTRITION_GOALS) {
+    assert.equal(goal.split.protein + goal.split.carbs + goal.split.fat, 100, goal.label);
+  }
+  assert.deepEqual(NUTRITION_GOALS.map((goal) => goal.key), ["lose", "maintain", "gain"]);
+  const gain = macroTargetsFor(NUTRITION_GOALS.find((goal) => goal.key === "gain")!, 2800);
+  assert.deepEqual(gain, { protein: 210, carbs: 350, fat: 62 });
+  assert.deepEqual(macroTargetsFor(NUTRITION_GOALS[0], 0), { protein: 0, carbs: 0, fat: 0 });
 });

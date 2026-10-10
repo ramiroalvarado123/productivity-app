@@ -2625,3 +2625,101 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
   .nutrition-macro-item>div:first-child span{font-size:8px}
   .nutrition-food-option-copy small{max-width:220px}
 }
+
+/* --- Limpieza de carteles, info del Daily Score, sueño regular y grupos ----- */
+
+.info-button{flex:0 0 auto;width:26px;height:26px;border-radius:50%;border:1px solid #cdd8d0;background:#f6f8f4;color:#4d6b5b;font-family:var(--font-serif);font-size:14px;font-style:italic;font-weight:600;line-height:1;cursor:pointer;display:grid;place-items:center}
+.info-button:hover,.info-button[aria-expanded="true"]{background:var(--green);border-color:var(--green);color:#fff}
+.score-explanation .panel-heading{align-items:flex-start}
+.sleep-quality-options{grid-template-columns:repeat(3,minmax(0,1fr))}
+.sleep-quality-options button.regular.active{background:#c28d3f;border-color:#c28d3f}
+.invite-link-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:12px;font-size:11px;color:#7c8680}
+.invite-link-row button{border:0;background:transparent;padding:0;color:var(--green);font-size:11px;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.invite-link-row button:disabled{opacity:.5;cursor:progress}
+.goal-mode-field{display:grid;gap:6px}
+.goal-mode-field>span{font-size:9px;font-weight:600;color:#65706a}
+.goal-mode-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.goal-mode-options button{display:grid;gap:3px;text-align:left;border:1px solid #dce3dd;background:#fff;border-radius:11px;padding:10px 11px;cursor:pointer}
+.goal-mode-options button b{font-size:11px}
+.goal-mode-options button small{font-size:9px;color:#7c8680;line-height:1.35}
+.goal-mode-options button.is-on{border-color:var(--green);background:#eef5f0;box-shadow:0 0 0 2px #21704f22}
+.group-goal-contributions li.is-done small{color:#2f7a55;font-weight:700}
+
+/* --- Alimentación: resumen primero, registro unificado y objetivos ---------- */
+
+.nutrition-register{display:grid;gap:12px;border:1px solid #e1e8e1;border-radius:16px;padding:14px;background:#fff}
+.nutrition-moments{display:flex;flex-wrap:wrap;gap:6px}
+.nutrition-moments button{border:1px solid #dfe6df;background:#f7f9f6;color:#5b675f;border-radius:99px;padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer}
+.nutrition-moments button.is-on{background:var(--green);border-color:var(--green);color:#fff}
+.nutrition-mode{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:#f1f3ef;border-radius:11px;padding:4px}
+.nutrition-mode button{border:0;background:transparent;border-radius:8px;padding:9px;font-size:12px;font-weight:700;color:#76817a;cursor:pointer}
+.nutrition-mode button.is-on{background:#fff;color:var(--green);box-shadow:0 2px 8px #173e2f14}
+.nutrition-progress-track.is-over i{background:#cf7d62}
+.nutrition-register .nutrition-ai-meal-box{margin:0}
+.estimate-name{display:block;font-size:14px}
+
+.food-picker{display:grid;gap:12px}
+.food-picker-search{position:relative}
+.food-picker-search>input{width:100%;min-width:0;border:1px solid #dbe3dc;background:#fff;border-radius:12px;padding:13px 38px 13px 14px;font-size:14px;outline:none}
+.food-picker-search>input:focus{border-color:#68a084;box-shadow:0 0 0 4px #3675561a}
+.food-picker-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:26px;height:26px;border:0;border-radius:50%;background:#eef1ed;color:#6c776f;font-size:16px;line-height:1;cursor:pointer}
+.food-picker-list{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);margin:0;padding:6px;list-style:none;background:#fff;border:1px solid #dbe3dc;border-radius:14px;box-shadow:0 16px 36px #173e2f26;max-height:340px;overflow:auto}
+.food-picker-list li{display:grid;gap:2px;padding:9px 10px;border-radius:9px;cursor:pointer}
+.food-picker-list li b{font-size:13px;font-weight:600}
+.food-picker-list li small{font-size:10.5px;color:#838c86}
+.food-picker-list li.is-active{background:#eef5f0}
+.food-picker-list li.food-picker-note{cursor:default;color:#838c86;font-size:11px}
+.food-picker-list li.food-picker-own{border-top:1px solid #edf0ec;margin-top:4px;border-radius:0 0 9px 9px}
+.food-picker-list li.food-picker-own b{color:var(--green)}
+.food-picker-detail{display:grid;gap:12px;border:1px solid #e3e9e3;border-radius:14px;padding:13px;background:#fafbf9}
+.food-picker-title{display:grid;gap:3px}
+.food-picker-title b{font-family:var(--font-serif);font-size:19px;font-weight:500}
+.food-picker-title small{font-size:10.5px;color:#838c86}
+.food-picker-title input{width:100%;border:1px solid #dbe3dc;background:#fff;border-radius:10px;padding:10px 11px;font-size:14px;font-weight:600;outline:none}
+.food-picker-own-values p{margin:0 0 6px;font-size:10.5px;font-weight:700;color:#65706a}
+.food-picker-own-values>div{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.food-picker-own-values label,.food-picker-grams{display:grid;gap:4px;font-size:10px;font-weight:600;color:#65706a}
+.food-picker-own-values input,.food-picker-grams input{width:100%;min-width:0;border:1px solid #dbe3dc;background:#fff;border-radius:10px;padding:10px;font-size:13px;outline:none}
+.food-picker-sizes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.food-picker-sizes button{display:grid;gap:2px;justify-items:center;border:1px solid #dbe3dc;background:#fff;border-radius:11px;padding:10px 4px;cursor:pointer}
+.food-picker-sizes button b{font-size:11.5px}
+.food-picker-sizes button small{font-size:10px;color:#7f8982}
+.food-picker-sizes button.is-on{border-color:var(--green);background:#eef5f0;box-shadow:0 0 0 2px #21704f22}
+.food-picker-grams>span{display:flex;align-items:center;gap:8px}
+.food-picker-grams>span i{font-style:normal;color:#7f8982;font-size:13px}
+.food-picker-result{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;background:#fff;border:1px solid #e3e9e3;border-radius:12px;padding:11px}
+.food-picker-result div{display:grid;gap:1px;justify-items:center}
+.food-picker-result b{font-size:19px;font-variant-numeric:tabular-nums}
+.food-picker-result small{font-size:9.5px;color:#7f8982}
+.food-picker-add{border:0;border-radius:12px;background:var(--green);color:#fff;padding:13px;font-size:13px;font-weight:700;cursor:pointer}
+.food-picker-add:disabled{opacity:.5;cursor:not-allowed}
+
+.nutrition-goal-picker{display:grid;gap:10px;margin-top:4px}
+.nutrition-goal-options{display:flex;flex-wrap:wrap;gap:6px}
+.nutrition-goal-options button{border:1px solid #dfe6df;background:#f7f9f6;color:#5b675f;border-radius:99px;padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer}
+.nutrition-goal-options button.is-on{background:var(--green);border-color:var(--green);color:#fff}
+.nutrition-goal-macros{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.nutrition-goal-macros span{display:grid;gap:2px;justify-items:center;background:#f3f6f2;border-radius:12px;padding:10px 4px;font-size:10.5px;color:#6b766f}
+.nutrition-goal-macros b{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+.nutrition-goal-macros small{grid-column:1/-1;font-size:10.5px;color:#838c86}
+
+.diet-ai-details{border:1px solid #e4e8e1;border-radius:14px;background:#fff;padding:0}
+.diet-ai-details>summary{cursor:pointer;padding:13px 16px;font-size:12px;font-weight:600;color:#5f6b64;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.diet-ai-details>summary::-webkit-details-marker{display:none}
+.diet-ai-details>summary:after{content:"+";font-size:15px;color:#85918a}
+.diet-ai-details[open]>summary:after{content:"−"}
+.diet-ai-details>.panel,.diet-ai-details>.pro-locked{margin:0 8px 8px;box-shadow:none}
+
+@media(max-width:600px){
+  .nutrition-register{padding:11px}
+  .food-picker-own-values>div{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .food-picker-sizes{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .food-picker-result{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .goal-mode-options{grid-template-columns:1fr}
+}
+
+/* Daily Score en el celular: la tarjeta no se estira a 3 columnas (regla pensada para
+   la grilla de Inicio) y la lista de prioridades no tiene scroll interno que la recorte. */
+.score-main>.score-card{grid-column:auto}
+.priority-list{max-height:none;overflow:visible}
+.food-picker-error{color:#b25a47;font-size:10.5px;font-weight:600}

@@ -38,7 +38,6 @@ export function HomeSection() {
     focusToday,
     score,
     highestPriority,
-    topPriorities,
     priorityNames,
     balanced,
     activeGoals,
@@ -258,8 +257,7 @@ export function HomeSection() {
     </article>}
   </div>;
   const quotePanel = <aside className="quote-strip">
-    <span className="quote-mark" aria-hidden="true">“</span>
-    <p>{quote.text}<span className="quote-mark" aria-hidden="true">”</span></p>
+    <p><span className="quote-mark" aria-hidden="true">“</span>{quote.text}<span className="quote-mark" aria-hidden="true">”</span></p>
     <b>{quote.author}</b>
   </aside>;
   const homePage = section === "summary" && <>
@@ -268,7 +266,6 @@ export function HomeSection() {
         {quotePanel}
         <section className={"hero-row " + (loading ? "is-loading" : "")}>
           <div className="hero-primary-grid">{compactScoreCard}{compactVoiceButton}</div>
-          <div className="hero-metrics-head"><small>{balanced ? "Tus cinco áreas pesan igual" : `Según tu${topPriorities.length > 1 ? "s" : ""} prioridad${topPriorities.length > 1 ? "es" : ""} del mes: ${listPhrase(priorityNames)}`}</small><button type="button" onClick={() => openSection("score")}>Ajustar →</button></div>
           <div className="hero-metrics" data-tiles={heroMetrics.length} data-tour="metrics">
             {heroMetrics.map((metric) => <button
               type="button"
@@ -279,7 +276,6 @@ export function HomeSection() {
               <span className={"stat-icon " + metric.tone}>{metric.icon}</span>
               <p>{metric.label}</p>
               <b>{metric.value}<small> {metric.unit}</small></b>
-              <span className="stat-caption">{metric.caption}</span>
             </button>)}
           </div>
         </section>

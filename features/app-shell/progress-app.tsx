@@ -12,7 +12,7 @@ import { BADGE_DEFINITIONS } from "@/features/engagement/logic/badges";
 import { BadgeEmblem, StreakFlameIcon } from "@/features/engagement/components/badge-icons";
 import { NotificationsDialog, WeeklySummaryDialog } from "@/features/notifications/components/notifications-center";
 import { EarlyAdopterAnnouncement } from "@/features/notifications/components/early-adopter-announcement";
-import { GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, goalPercent, goalPeriodLabel, goalSource, goalTotal, goalUnit, initialsFor, inviteMessage, isFresh, mailLink, shareStatus, whatsappLink, type GoalMetric, type GoalSource, type Group, type GroupGoal } from "@/features/friends/logic/social";
+import { GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, goalPeriodLabel, goalSource, goalUnit, initialsFor, inviteMessage, isFresh, mailLink, shareStatus, whatsappLink, type GoalMetric, type GoalSource, type Group, type GroupGoal } from "@/features/friends/logic/social";
 import type { DietForm, Section, SettingsView, StreakAction } from "@/shared/data/types";
 import { estimateTargetCalories } from "@/features/nutrition/logic/diet";
 import { FEEDBACK_SECTIONS, FEEDBACK_TYPES } from "@/features/settings/constants";
@@ -22,6 +22,7 @@ import { InsigniasModal } from "@/features/engagement/components/insignias-modal
 import { LockedFeature } from "@/features/pro/components/locked-feature";
 import { SaveButtonContent } from "@/shared/ui/save-button";
 import { TOUR_STEPS, friendsIcon, gearIcon, mobileNavItems, navItems, plusIcon } from "@/features/app-shell/navigation";
+import { GroupGoalItem } from "@/features/friends/components/group-goal-item";
 import { emptyGoalDraft } from "@/features/friends/logic/goal-draft";
 import { useWorkspaceState, type WorkspaceProps } from "@/features/app-shell/use-workspace-state";
 import { WorkspaceContext } from "@/features/app-shell/workspace";
@@ -34,6 +35,7 @@ import { ScoreSection } from "@/features/score/components/score-section";
 import { SleepSection } from "@/features/sleep/components/sleep-section";
 import { StatsSection } from "@/features/stats/components/stats-section";
 import { TrainingSection } from "@/features/training/components/training-section";
+import { NutritionGoalPicker } from "@/features/nutrition/components/nutrition-goal-picker";
 import { NutritionMealsPanel } from "@/features/nutrition/components/nutrition-meals-panel";
 import { VoiceCheckinDialog } from "@/features/voice-checkin/components/voice-checkin-dialog";
 
@@ -158,7 +160,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     runStreakAction,
     acknowledgeAnnouncement,
     savePhase,
-    save,
     sendSocial,
     score,
     badgeStats,
@@ -172,7 +173,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     showSummary,
     weeklySummary,
     openSection,
-    submitForm,
     openSettings,
     openPersonalSettings,
     openFeedback,
@@ -237,8 +237,7 @@ export default function ProgressClient(props: WorkspaceProps) {
   const dietEstimate = estimateTargetCalories(dietForm);
   const dietQuickCaloriesValue = dietQuickCalories ?? dietEstimate?.targetCalories ?? 0;
   const dietQuickPanel = <article className="panel diet-quick-panel">
-    <div className="panel-heading"><div><p>CALCULADORA RÁPIDA</p><h2>Calorías objetivo, sin IA</h2></div></div>
-    <p className="diet-intro">Completá tus datos y te proponemos una cifra diaria de referencia. Podés aceptarla o modificarla antes de guardarla.</p>
+    <div className="panel-heading"><div><p>PLAN DE ALIMENTACIÓN</p><h2>Tus calorías y macros</h2></div></div>
     <div className="diet-fields">
       <label>Peso actual (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.currentWeightKg} onFocus={() => beginDietNumberInput("currentWeightKg")} onChange={(event) => updateDietNumberInput("currentWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("currentWeightKg")} /></label>
       <label>Peso objetivo (kg)<input type="text" inputMode="decimal" min="35" max="300" value={dietNumberDrafts.targetWeightKg} onFocus={() => beginDietNumberInput("targetWeightKg")} onChange={(event) => updateDietNumberInput("targetWeightKg", event.target.value)} onBlur={() => finishDietNumberInput("targetWeightKg")} /></label>
@@ -249,9 +248,10 @@ export default function ProgressClient(props: WorkspaceProps) {
       <label>Intensidad<Dropdown ariaLabel="Intensidad del objetivo" value={dietForm.goalPace} onChange={(value) => setDietQuickField("goalPace", value as DietForm["goalPace"])} options={[{ value: "gentle", label: "Gradual" }, { value: "moderate", label: "Moderado" }]} /></label>
     </div>
     <div className="diet-quick-result">
-      <label><span>CALORÍAS OBJETIVO</span><input type="text" inputMode="numeric" min="1000" max="6000" value={dietQuickCaloriesDraft ?? (dietQuickCaloriesValue ? String(dietQuickCaloriesValue) : "")} onFocus={beginDietQuickCaloriesInput} onChange={(event) => updateDietQuickCaloriesInput(event.target.value)} onBlur={finishDietQuickCaloriesInput} /><small>{dietEstimate ? `Sugerencia: ${dietEstimate.targetCalories.toLocaleString("es-AR")} kcal · mantenimiento ${dietEstimate.maintenanceCalories.toLocaleString("es-AR")} kcal` : "Completá tus datos para calcular una sugerencia."}</small></label>
+      <label><span>CALORÍAS OBJETIVO</span><input type="text" inputMode="numeric" min="1000" max="6000" value={dietQuickCaloriesDraft ?? (dietQuickCaloriesValue ? String(dietQuickCaloriesValue) : "")} onFocus={beginDietQuickCaloriesInput} onChange={(event) => updateDietQuickCaloriesInput(event.target.value)} onBlur={finishDietQuickCaloriesInput} />{!dietEstimate && <small>Completá tus datos para calcular.</small>}</label>
       <button className="primary-action" type="button" disabled={saving || !dietQuickCaloriesValue} onClick={() => void saveDietTarget(dietQuickCaloriesValue)}><SaveButtonContent label="Guardar objetivo" phase={savePhase("set_diet_target")} /></button>
     </div>
+    <NutritionGoalPicker calories={dietQuickCaloriesValue || dietTargetCalories} />
   </article>;
 
   const dietPlannerPanel = <article className="panel diet-planner-panel">
@@ -274,7 +274,7 @@ export default function ProgressClient(props: WorkspaceProps) {
     {displayedDietPlan && <div className="diet-plan-result"><div className="diet-plan-summary"><div><span>OBJETIVO DIARIO APROXIMADO</span><b>{displayedDietPlan.targetCalories.toLocaleString("es-AR")} kcal</b><small>Rango orientativo {displayedDietPlan.calorieRangeMinimum.toLocaleString("es-AR")}–{displayedDietPlan.calorieRangeMaximum.toLocaleString("es-AR")} kcal · mantenimiento estimado {displayedDietPlan.maintenanceCalories.toLocaleString("es-AR")}</small></div><p>{displayedDietPlan.summary}</p></div><div className="macro-row"><span><b>{displayedDietPlan.macros.proteinGrams} g</b>Proteínas</span><span><b>{displayedDietPlan.macros.carbsGrams} g</b>Carbohidratos</span><span><b>{displayedDietPlan.macros.fatGrams} g</b>Grasas</span></div><div className="diet-meal-options">{displayedDietPlan.meals.map((meal) => <article key={meal.slot}><span>{meal.slot}</span><p>{meal.guidance}</p><ul>{meal.options.map((option) => <li key={option}>{option}</li>)}</ul></article>)}</div><div className="diet-plan-bottom"><div><b>Restricciones aplicadas</b><p>{displayedDietPlan.appliedRestrictions.length ? displayedDietPlan.appliedRestrictions.join(" · ") : "Ninguna indicada"}</p></div><div><b>Importante</b><p>{displayedDietPlan.safetyNote}</p></div></div>{generatedDietPlan && <button className="save-diet-button" type="button" disabled={saving} onClick={() => void saveDietPlan()}><SaveButtonContent label="Guardar este plan y usarlo como objetivo" phase={savePhase("save_diet_plan")} /></button>}</div>}
   </article>;
 
-  const calorieCalendarPanel = <article className="panel calorie-calendar-panel"><div className="calorie-calendar-top"><div><p>SEGUIMIENTO DE LA DIETA</p><h2>Calorías por día</h2><small>{dietTargetCalories ? <>Tu referencia actual es <b>{dietTargetCalories.toLocaleString("es-AR")} kcal diarias.</b></> : "Creá y guardá un plan para comparar cada día con tu objetivo."}</small></div><div className="calorie-calendar-nav"><button onClick={() => shiftDietCalendar(-1)}>‹</button><b>{dietCalendarMonthName}</b><button onClick={() => shiftDietCalendar(1)}>›</button></div></div><div className="calorie-calendar"><div className="calorie-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <b key={day + index}>{day}</b>)}</div><div className="calorie-calendar-cells">{Array.from({ length: dietCalendarOffset }, (_, index) => <span className="blank" key={"diet-blank-" + index} />)}{Array.from({ length: dietCalendarDays }, (_, index) => { const day = index + 1; const iso = dietCalendarCursor + "-" + String(day).padStart(2, "0"); const total = caloriesByDate[iso] ?? 0; return <div className={calorieStatus(total) + (iso === today ? " today" : "")} key={iso} title={total ? total + " kcal registradas" : "Sin comidas registradas"}><span>{day}</span><b>{total ? total.toLocaleString("es-AR") : "—"}</b><small>kcal</small></div>; })}</div></div><div className="calorie-legend"><span><i className="on-target" />En objetivo ±10%</span><span><i className="near-target" />Cerca ±20%</span><span><i className="off-target" />Fuera del rango</span><span><i className="empty" />Sin registro</span></div></article>;
+  const calorieCalendarPanel = <article className="panel calorie-calendar-panel"><div className="calorie-calendar-top"><div><p>SEGUIMIENTO DE LA DIETA</p><h2>Calorías por día</h2></div><div className="calorie-calendar-nav"><button onClick={() => shiftDietCalendar(-1)}>‹</button><b>{dietCalendarMonthName}</b><button onClick={() => shiftDietCalendar(1)}>›</button></div></div><div className="calorie-calendar"><div className="calorie-weekdays">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <b key={day + index}>{day}</b>)}</div><div className="calorie-calendar-cells">{Array.from({ length: dietCalendarOffset }, (_, index) => <span className="blank" key={"diet-blank-" + index} />)}{Array.from({ length: dietCalendarDays }, (_, index) => { const day = index + 1; const iso = dietCalendarCursor + "-" + String(day).padStart(2, "0"); const total = caloriesByDate[iso] ?? 0; return <div className={calorieStatus(total) + (iso === today ? " today" : "")} key={iso} title={total ? total + " kcal registradas" : "Sin comidas registradas"}><span>{day}</span><b>{total ? total.toLocaleString("es-AR") : "—"}</b><small>kcal</small></div>; })}</div></div><div className="calorie-legend"><span><i className="on-target" />En objetivo ±10%</span><span><i className="near-target" />Cerca ±20%</span><span><i className="off-target" />Fuera del rango</span><span><i className="empty" />Sin registro</span></div></article>;
 
 
 
@@ -348,17 +348,21 @@ export default function ProgressClient(props: WorkspaceProps) {
   const myEmail = social.me || data.profile.email.toLowerCase();
   const myStreak = { current: engagement?.currentStreak ?? 0, best: engagement?.bestStreak ?? 0, pendingToday: false };
 
-  async function inviteFriend(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  /** Con usuario: la invitación le llega dentro de AVORA. Sin usuario: genera un link para compartir. */
+  async function sendInvite(username: string) {
     setInviteCopied(false);
-    const result = await sendSocial({ action: "invite_friend", username: inviteUsername.trim().toLowerCase() });
+    const result = await sendSocial({ action: "invite_friend", username });
     if (!result) return;
-    const link = String(result.link ?? "");
-    setInviteLink(link);
-    setFriendsNotice(inviteUsername.trim()
-      ? `Invitación lista para @${inviteUsername.trim().toLowerCase()}. Le aparece adentro de AVORA.`
+    setInviteLink(String(result.link ?? ""));
+    setFriendsNotice(username
+      ? `Invitación lista para @${username}. Le aparece adentro de AVORA.`
       : "Link listo. Compartilo con quien quieras sumar.");
     setInviteUsername("");
+  }
+  function inviteFriend(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const username = inviteUsername.trim().toLowerCase();
+    if (username) void sendInvite(username);
   }
 
   async function copyInvite(link: string) {
@@ -450,6 +454,17 @@ export default function ProgressClient(props: WorkspaceProps) {
       <Dropdown ariaLabel="Cómo se cuenta el objetivo" value={draft.source} onChange={(value) => update({ ...draft, source: value as GoalSource })} options={GOAL_SOURCES.map((source) => ({ value: source.value, label: source.label }))} />
     </label>
     <small className="goal-source-hint">{goalSource(draft.source).hint}</small>
+    <div className="wide goal-mode-field" role="radiogroup" aria-label="Cómo cuenta el objetivo">
+      <span>Quién cumple la meta</span>
+      <div className="goal-mode-options">
+        <button type="button" role="radio" aria-checked={draft.mode === "individual"} className={draft.mode === "individual" ? "is-on" : ""} onClick={() => update({ ...draft, mode: "individual" })}>
+          <b>Cada uno</b><small>Todos tienen que llegar a la meta</small>
+        </button>
+        <button type="button" role="radio" aria-checked={draft.mode === "shared"} className={draft.mode === "shared" ? "is-on" : ""} onClick={() => update({ ...draft, mode: "shared" })}>
+          <b>Entre todos</b><small>Lo de cada uno se suma</small>
+        </button>
+      </div>
+    </div>
     <label><span>Meta</span>
       <input type="number" min={1} max={100000} value={draft.targetValue} onChange={(event) => update({ ...draft, targetValue: Number(event.target.value) })} />
     </label>
@@ -480,12 +495,15 @@ export default function ProgressClient(props: WorkspaceProps) {
     <article className="panel invite-panel">
       <div className="panel-heading"><div><p>SUMAR GENTE</p><h2>Invitá a un amigo</h2></div></div>
       <form className="invite-form" onSubmit={inviteFriend}>
-        <label><span>Nombre de usuario de tu amigo <small>(opcional)</small></span>
+        <label><span>Usuario de tu amigo</span>
           <div className="username-input"><span>@</span><input value={inviteUsername} onChange={(event) => setInviteUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} maxLength={20} placeholder="su_usuario" /></div>
         </label>
-        <button type="submit" disabled={saving}>{inviteUsername.trim() ? "Enviar invitación" : "Generar link"} <span>→</span></button>
+        <button type="submit" disabled={saving || !inviteUsername.trim()}>Enviar invitación <span>→</span></button>
       </form>
-      <small className="invite-hint">Con el nombre de usuario le llega la invitación dentro de AVORA. Sin eso generás un link para mandar por WhatsApp o mail.</small>
+      <div className="invite-link-row">
+        <span>¿No sabés su usuario?</span>
+        <button type="button" disabled={saving} onClick={() => void sendInvite("")}>Generar link para WhatsApp o mail</button>
+      </div>
       {shareBox}
     </article>
 
@@ -650,34 +668,7 @@ export default function ProgressClient(props: WorkspaceProps) {
         </div>
 
         <ul className="group-goal-list">
-          {group.goals.map((goal) => {
-            const mine = goal.contributions.find((item) => item.userEmail === myEmail)?.value ?? 0;
-            const unit = goalUnit(goal);
-            return <li key={goal.id}>
-              <div className="group-goal-head">
-                <div><small>{goalPeriodLabel(goal)}</small><b>{goal.title}</b></div>
-                <p><strong>{goalTotal(goal)}</strong><small>de {goal.targetValue} {unit}</small></p>
-              </div>
-              <div className="accountability-track"><i style={{ width: `${goalPercent(goal)}%` }} /></div>
-              <div className="group-goal-mine">
-                {goal.source === "manual" ? <>
-                  <span>Tu marca</span>
-                  <button type="button" aria-label="Restar una" disabled={saving || mine <= 0} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine - 1 })}>−</button>
-                  <b>{mine}</b>
-                  <button type="button" aria-label="Sumar una" disabled={saving} onClick={() => void sendSocial({ action: "log_goal_progress", goalId: goal.id, value: mine + 1 })}>+</button>
-                </> : <span className="group-goal-auto">↻ Se cuenta solo con lo que registrás en {goalSource(goal.source).label} · <b>{mine} {unit}</b></span>}
-              </div>
-              {group.members.length > 1 && <ul className="group-goal-contributions">
-                {group.members.map((member) => {
-                  const value = goal.contributions.find((item) => item.userEmail === member.userEmail)?.value ?? 0;
-                  return <li key={member.userEmail}>
-                    <span className={"friend-avatar " + accentFor(member.userEmail)}>{initialsFor(member.displayName)}</span>
-                    <b>{member.displayName}</b><small>{value} {unit}</small>
-                  </li>;
-                })}
-              </ul>}
-            </li>;
-          })}
+          {group.goals.map((goal) => <GroupGoalItem key={goal.id} goal={goal} members={group.members} myEmail={myEmail} saving={saving} onLog={(goalId, value) => void sendSocial({ action: "log_goal_progress", goalId, value })} />)}
           {!group.goals.length && <li className="group-goal-empty">Todavía no hay ningún objetivo. Abrí el ＋ y poné el primero.</li>}
         </ul>
 
@@ -707,10 +698,10 @@ export default function ProgressClient(props: WorkspaceProps) {
           <p className="step-label">OBJETIVOS DEL GRUPO</p>
           {group.goals.length > 0 && <ul className="group-goal-admin">
             {group.goals.map((goal) => <li key={goal.id}>
-              <p><b>{goal.title}</b><small>{goal.targetValue} {goalUnit(goal)} · {goalPeriodLabel(goal).toLowerCase()} · {goal.source === "manual" ? "a mano" : "automático"}</small></p>
+              <p><b>{goal.title}</b><small>{goal.targetValue} {goalUnit(goal)} · {goalPeriodLabel(goal).toLowerCase()} · {goal.source === "manual" ? "a mano" : "automático"} · {goal.mode === "individual" ? "cada uno" : "entre todos"}</small></p>
               <button type="button" className={editingGoalId === goal.id ? "is-on" : ""} onClick={() => {
                 setEditingGoalId(goal.id);
-                setGoalDraft({ title: goal.title, source: goal.source, metric: goal.metric, targetValue: goal.targetValue, period: goal.period, dueDate: goal.dueDate });
+                setGoalDraft({ title: goal.title, source: goal.source, metric: goal.metric, mode: goal.mode, targetValue: goal.targetValue, period: goal.period, dueDate: goal.dueDate });
               }}>Editar</button>
               {(goal.createdBy === myEmail || isOwner) && <button type="button" className="group-goal-drop" disabled={saving} onClick={() => { if (window.confirm(`¿Borrar el objetivo "${goal.title}"?`)) void sendSocial({ action: "delete_group_goal", goalId: goal.id }); }}>Borrar</button>}
             </li>)}
@@ -762,7 +753,7 @@ export default function ProgressClient(props: WorkspaceProps) {
       <div className="friends-hero-copy">
         <p>ACCOUNTABILITY PARTNERS</p>
         <h2>Avanzar acompañado<br /><em>cambia el compromiso.</em></h2>
-        <small>Tus amigos ven tu Daily Score y tu racha de uso. Nada más: ni tus comidas, ni tu sueño, ni lo que escribís.</small>
+        <small>Tus amigos ven tu Daily Score y tu racha de uso.</small>
         <div className="friends-hero-actions">
           <button type="button" className={friendsTab === "circle" ? "" : "secondary"} onClick={() => setFriendsTab("circle")}>Mi círculo{social.incoming.length > 0 ? ` (${social.incoming.length})` : ""}</button>
           <button type="button" className={friendsTab === "groups" ? "" : "secondary"} onClick={() => setFriendsTab("groups")}>Grupos{social.groupInvites.length > 0 ? ` (${social.groupInvites.length})` : ""}</button>
@@ -782,8 +773,8 @@ export default function ProgressClient(props: WorkspaceProps) {
   </section>;
 
   const sectionTitles: Record<Section, [string, string]> = {
-    summary: ["Buen día, " + displayName, "Tu plan de hoy y lo que conviene acomodar"],
-    score: ["Daily Score", "Cómo se arma el puntaje y qué peso tiene cada área"],
+    summary: ["Buen día, " + displayName, ""],
+    score: ["Daily Score", ""],
     physical: ["Físico", "Entrenamiento y alimentación, el mismo cuerpo"],
     focus: [focusTab === "study" ? "Estudio" : "Trabajo", focusTab === "study" ? "Materias, foco, tareas y lecturas" : "Proyectos, foco profundo y entregas"],
     sleep: ["Sueño", "Horas de descanso y regularidad"],
@@ -796,7 +787,7 @@ export default function ProgressClient(props: WorkspaceProps) {
 
   const onboardingGoalOptions = [
     ["training", "↗", "Entrenamiento", "Mejorar constancia y rendimiento"],
-    ["focus", "⌁", "Estudio / Trabajo", "Avanzar con foco y organización"],
+    ["focus", "⌁", "Foco", "Estudio y trabajo con foco"],
     ["nutrition", "◇", "Alimentación", "Comer de acuerdo con mis objetivos"],
     ["reading", "▱", "Lectura", "Leer y recordar más"],
     ["sleep", "☾", "Sueño", "Descansar mejor y con regularidad"],
@@ -938,7 +929,7 @@ export default function ProgressClient(props: WorkspaceProps) {
             <i className="profile-menu-chevron" aria-hidden="true">{profileMenuOpen ? "▾" : "▴"}</i>
           </button>
         </div></aside>
-    <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1><small className="page-subtitle">{sectionTitles[section][1]}</small></div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}{unreadCount > 0 && <i className="profile-unread-dot" aria-label={`${unreadCount} notificaciones sin leer`} />}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
+    <section className="dashboard"><header className="topbar"><div><p>{dateHeading}</p><h1>{sectionTitles[section][0]} {section === "summary" && <span>👋</span>}</h1>{sectionTitles[section][1] && <small className="page-subtitle">{sectionTitles[section][1]}</small>}</div><div className="topbar-actions"><div className={"save-status " + (saving ? "saving" : "")}><i />{saving ? "Guardando…" : "Todo guardado"}</div><div className="mobile-profile-wrap" ref={mobileProfileRef}><button type="button" className="mobile-profile-button" onClick={() => setProfileMenuOpen((open) => !open)} aria-expanded={profileMenuOpen} aria-haspopup="menu" aria-label="Abrir menú de cuenta">{data.profile.avatarUrl ? <Image src={data.profile.avatarUrl} alt="" width={42} height={42} unoptimized /> : <span>{initialsFor(data.profile.displayName) || displayName.charAt(0)}</span>}{unreadCount > 0 && <i className="profile-unread-dot" aria-label={`${unreadCount} notificaciones sin leer`} />}</button>{profileMenuOpen && <div className="profile-menu-panel mobile-profile-panel" role="menu" aria-label="Opciones de la cuenta">{profileMenuActions}</div>}</div></div></header>
       {error && <div className="error-banner">{error}{(error.includes("cargar") || error.includes("conectar tus datos")) && <button type="button" onClick={() => void loadData()}>Reintentar</button>}<button type="button" onClick={() => setError("")}>Cerrar</button></div>}
       {section === "summary" && <HomeSection />}
       {section === "score" && <ScoreSection />}
@@ -950,12 +941,15 @@ export default function ProgressClient(props: WorkspaceProps) {
         {physicalTab === "training" ? <TrainingSection key={today} /> : <section className="single-section meals-section">
           <NutritionMealsPanel />
           {dietQuickPanel}
-          {isPro ? dietPlannerPanel : <LockedFeature
-            title="Plan de alimentación"
-            note="Calculado con tu edad, peso y actividad, y adaptado a tus intolerancias."
-            onOpen={openPro}
-          >{dietPlannerPanel}</LockedFeature>}
           {calorieCalendarPanel}
+          <details className="diet-ai-details">
+            <summary>Plan personal con IA</summary>
+            {isPro ? dietPlannerPanel : <LockedFeature
+              title="Plan de alimentación con IA"
+              note="Calculado con tu edad, peso y actividad, y adaptado a tus intolerancias."
+              onOpen={openPro}
+            >{dietPlannerPanel}</LockedFeature>}
+          </details>
         </section>}
       </>}
       {section === "focus" && <>

@@ -38,7 +38,7 @@ export const voiceCheckinActions: ActionMap = {
       sleepMinutes: sleepMentioned ? clamp(sleep.minutes, 1440) : clamp(previous.sleepMinutes, 1440),
       bedtime: sleepMentioned ? String(sleep.bedtime ?? "").slice(0, 20) : String(previous.bedtime ?? ""),
       wakeTime: sleepMentioned ? String(sleep.wakeTime ?? "").slice(0, 20) : String(previous.wakeTime ?? ""),
-      sleepQuality: previous.sleepQuality === "good" || previous.sleepQuality === "bad" ? previous.sleepQuality : null,
+      sleepQuality: previous.sleepQuality === "good" || previous.sleepQuality === "regular" || previous.sleepQuality === "bad" ? previous.sleepQuality : null,
       waterMl: waterMentioned ? clamp(c.waterMl, 20000) : clamp(previous.waterMl, 20000),
       journal: journal || String(previous.journal ?? ""),
       transcript,

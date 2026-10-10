@@ -28,6 +28,8 @@ Cambios de comportamiento intencionales (menores):
 3. **Integrations → Data API → Settings → Max rows**: subir a `10000`. Hoy el GET trae hasta 5 años de historial y Supabase corta en 1.000 filas por consulta por defecto (las comidas superan eso en ~1 año).
 4. ✅ Supabase está en São Paulo: `vercel.json` ya tiene `"regions": ["gru1"]`. (Antes:) confirmar región. Las funciones de Vercel corren en `iad1` (EE.UU. Este). Si Supabase está en `us-east-1`, no hay que hacer nada. Si está en São Paulo (`sa-east-1`), agregar `vercel.json` con `{ "regions": ["gru1"] }` (cada consulta pasa de ~120 ms a ~5 ms).
 5. **SQL Editor → correr `supabase/weekly-ai-review.sql`** antes de usar la revisión con IA. Crea las dos tablas nuevas con RLS por usuario; no toca preferencias, notificaciones ni el estado del anuncio de Early Adopters.
+6. **SQL Editor → correr `supabase/sleep-quality-regular.sql`** (agrega la valoración "Regular" al sueño). Hasta correrlo, una noche marcada "Regular" se guarda sin valoración.
+7. **SQL Editor → correr `supabase/group-goal-mode.sql`** (objetivos de grupo "cada uno" vs "entre todos"). Hasta correrlo, los objetivos compartidos siguen andando y los individuales avisan que falta el SQL.
 
 ## Próximos pasos (en orden)
 
@@ -51,7 +53,9 @@ Cada paso: escribir el spec (ver `scripts/refactor/specs-done/*.json`), correr e
 `use-progress-data.ts` (data, loadData, save, feedback de guardado, error) · `use-day-series.ts` (series por día, `dayRecordFor`, `scoreForDate`) · `use-social.ts` · `use-engagement.ts` · `use-insights.ts` · `use-inbox.ts`. `useWorkspaceState` queda componiéndolos.
 Después: mover el armado del día a `domain/score/day-series.ts` (puro, con tests de caracterización) y hacer que `app/api/notifications/dispatch/route.ts` use la misma función (hoy tiene su copia en `dailyScoreForDate`).
 
-### C. Base de datos de alimentos (decidido, falta implementar)
+### C. Base de datos de alimentos (implementada en versión estática; falta lo de Supabase / envasados)
+
+Hecho: `features/nutrition/data/food-catalog.ts` (~500 alimentos de USDA SR Legacy en español + preparaciones argentinas estimadas) con autocompletado, porciones Pequeña/Mediana/Grande por alimento, cantidad en gramos y alimento propio (`food-picker.tsx`). Se regenera con `scripts/nutrition/`. Lo de abajo es el plan original para ir más allá (productos envasados, catálogo editable) y sigue pendiente:
 
 Objetivo: el usuario busca un alimento, elige porción o gramos, y calorías + proteínas/carbohidratos/grasas salen solas.
 - **Catálogo propio en Supabase** (`supabase/food-catalog.sql`): tabla `food_catalog (id, name, search_name, brand, source 'avora'|'off', external_id unique, kcal_100g, protein_100g, carbs_100g, fat_100g, portions jsonb [{label, grams}], created_at)`, RLS de lectura para `authenticated` e insert solo `source = 'off'`. Sembrar ~150–250 alimentos genéricos en español (incluir típicos argentinos) con valores por 100 g de USDA SR Legacy y porciones caseras (unidad, taza, cucharada, feta…). `search_name` = minúsculas sin acentos (se calcula en JS).

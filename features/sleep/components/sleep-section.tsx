@@ -4,8 +4,11 @@ import { DayStrip } from "@/shared/ui/day-strip";
 import { SaveButtonContent } from "@/shared/ui/save-button";
 import { TimeFieldPicker } from "@/shared/ui/time-dropdown";
 import { normalizeClock, sleepDuration } from "@/domain/dates";
+import { parseSleepQuality, type SleepQuality } from "@/domain/score";
 import { useEffect, useState } from "react";
 import { useWorkspace } from "@/features/app-shell/workspace";
+
+const SHOW_WEARABLE_IMPORT = false;
 
 /** Sueño: registrar la noche de cualquier día y ver la regularidad de la semana. */
 export function SleepSection() {
@@ -23,13 +26,13 @@ export function SleepSection() {
   const [sleepEntryDate, setSleepEntryDate] = useState(today);
   const [sleepBedtime, setSleepBedtime] = useState("23:00");
   const [sleepWaketime, setSleepWaketime] = useState("07:00");
-  const [sleepQuality, setSleepQuality] = useState<"good" | "bad" | null>(null);
+  const [sleepQuality, setSleepQuality] = useState<SleepQuality | null>(null);
   const calculatedSleepMinutes = sleepDuration(sleepBedtime, sleepWaketime);
   useEffect(() => {
     const checkin = data.dailyCheckins.find((item) => item.entryDate === sleepEntryDate);
     setSleepBedtime(checkin ? normalizeClock(checkin.bedtime, "23:00") : "23:00");
     setSleepWaketime(checkin ? normalizeClock(checkin.wakeTime, "07:00") : "07:00");
-    setSleepQuality(checkin?.sleepQuality === "good" || checkin?.sleepQuality === "bad" ? checkin.sleepQuality : null);
+    setSleepQuality(parseSleepQuality(checkin?.sleepQuality));
   }, [data.dailyCheckins, sleepEntryDate]);
 
   const sleepPanel = <section className="module-stack sleep-page">
@@ -49,11 +52,11 @@ export function SleepSection() {
               <TimeFieldPicker idPrefix="sleep-waketime" label="Me desperté" value={sleepWaketime} onChange={setSleepWaketime} hourOptions={WAKE_HOUR_OPTIONS} />
             </div>
           </div>
-          <p className="sleep-form-note">Elegí la hora de la lista: sin escribir y sin AM/PM.</p>
           {calculatedSleepMinutes > 0 && <fieldset className="sleep-quality-picker">
             <legend>¿Cómo fue tu sueño?</legend>
             <div className="sleep-quality-options">
               <button type="button" className={sleepQuality === "good" ? "active good" : "good"} aria-pressed={sleepQuality === "good"} onClick={() => setSleepQuality("good")}>Bueno</button>
+              <button type="button" className={sleepQuality === "regular" ? "active regular" : "regular"} aria-pressed={sleepQuality === "regular"} onClick={() => setSleepQuality("regular")}>Regular</button>
               <button type="button" className={sleepQuality === "bad" ? "active bad" : "bad"} aria-pressed={sleepQuality === "bad"} onClick={() => setSleepQuality("bad")}>Malo</button>
             </div>
           </fieldset>}
@@ -65,7 +68,8 @@ export function SleepSection() {
         <p className="soft-note">Objetivo visual de referencia: 8 horas. Cada persona puede necesitar un rango diferente.</p>
       </article>
     </div>
-    <article className="panel wearable-panel"><div className="wearable-copy"><span className="wearable-icon">⌚</span><div><p>DISPOSITIVO DE SALUD</p><h2>Importar el sueño desde tu reloj</h2><small>Al conectarlo podremos traer duración real, etapas del sueño, frecuencia cardíaca, oxígeno y regularidad, según lo que admita tu dispositivo.</small></div></div><div className="wearable-actions"><div className="wearable-badges"><span>Apple Health</span><span>Health Connect</span><span>Garmin</span></div><button type="button" disabled>Elegir dispositivo · próximo paso</button></div></article>
+    {/* Oculto por ahora: la importación desde el reloj todavía no está disponible. Poné SHOW_WEARABLE_IMPORT en true para mostrarlo. */}
+    {SHOW_WEARABLE_IMPORT && <article className="panel wearable-panel"><div className="wearable-copy"><span className="wearable-icon">⌚</span><div><p>DISPOSITIVO DE SALUD</p><h2>Importar el sueño desde tu reloj</h2><small>Al conectarlo podremos traer duración real, etapas del sueño, frecuencia cardíaca, oxígeno y regularidad, según lo que admita tu dispositivo.</small></div></div><div className="wearable-actions"><div className="wearable-badges"><span>Apple Health</span><span>Health Connect</span><span>Garmin</span></div><button type="button" disabled>Elegir dispositivo · próximo paso</button></div></article>}
   </section>;
   /* eslint-enable react-hooks/set-state-in-effect */
 

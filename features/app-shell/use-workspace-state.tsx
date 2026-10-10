@@ -728,8 +728,8 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   const mealCountByDate = sumByDate(data.mealHistory, (row) => row.mealDate, () => 1);
   const sleepMinutesByDate = sumByDate(data.dailyCheckins.filter((row) => row.sleepMinutes > 0), (row) => row.entryDate, (row) => row.sleepMinutes);
   const sleepQualityByDate = Object.fromEntries(
-    data.dailyCheckins.map((row) => [row.entryDate, row.sleepQuality === "good" || row.sleepQuality === "bad" ? row.sleepQuality : null]),
-  ) as Record<string, "good" | "bad" | null>;
+    data.dailyCheckins.map((row) => [row.entryDate, row.sleepQuality === "good" || row.sleepQuality === "regular" || row.sleepQuality === "bad" ? row.sleepQuality : null]),
+  ) as Record<string, "good" | "regular" | "bad" | null>;
 
   // Fechas en las que cerraste algo. Se arma una vez porque el histórico del
   // Daily Score pregunta por cientos de días seguidos.
@@ -810,7 +810,7 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
     </div>
     <strong>{scoreForDate(date)}<small>/100</small></strong>
   </div>;
-  const priorityPairs: Array<[string, number]> = [["Entrenamiento", priorityDraft.gymWeight], ["Alimentación", priorityDraft.nutritionWeight], ["Sueño", priorityDraft.sleepWeight], ["Estudio / Trabajo", priorityDraft.focusWeight], ["Objetivos", priorityDraft.goalsWeight]];
+  const priorityPairs: Array<[string, number]> = [["Entrenamiento", priorityDraft.gymWeight], ["Alimentación", priorityDraft.nutritionWeight], ["Sueño", priorityDraft.sleepWeight], ["Foco", priorityDraft.focusWeight], ["Objetivos", priorityDraft.goalsWeight]];
   const highestPriority = Math.max(...priorityPairs.map((item) => item[1]));
   const topPriorities = priorityPairs.filter((item) => item[1] === highestPriority);
   // Elegir dos o tres áreas en el onboarding es lo normal, así que un empate no
@@ -1038,7 +1038,7 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
       { area: "training", label: "Entrenamiento", weight: priorityDraft.gymWeight },
       { area: "nutrition", label: "Alimentación", weight: priorityDraft.nutritionWeight },
       { area: "sleep", label: "Sueño", weight: priorityDraft.sleepWeight },
-      { area: "focus", label: "Estudio / Trabajo", weight: priorityDraft.focusWeight },
+      { area: "focus", label: "Foco", weight: priorityDraft.focusWeight },
     ];
     return buildPatternInsights({
       today,

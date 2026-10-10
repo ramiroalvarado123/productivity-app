@@ -8,7 +8,7 @@ type PreviewStep = "access" | "profile" | "priorities" | "complete";
 
 const priorityOptions = [
   ["training", "↗", "Entrenamiento", "Mejorar constancia y rendimiento"],
-  ["focus", "⌁", "Estudio / Trabajo", "Avanzar con foco y organización"],
+  ["focus", "⌁", "Foco", "Estudio y trabajo con foco"],
   ["nutrition", "◇", "Alimentación", "Comer de acuerdo con mis objetivos"],
   ["reading", "▱", "Lectura", "Leer y recordar más"],
   ["sleep", "☾", "Sueño", "Descansar mejor y con regularidad"],

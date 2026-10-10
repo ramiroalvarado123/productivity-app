@@ -33,7 +33,7 @@ export type DayRecord = {
   targetCalories?: number;
   sleepMinutes: number;
   /** Valoración subjetiva guardada por el usuario. */
-  sleepQuality?: "good" | "bad" | null;
+  sleepQuality?: SleepQuality | null;
   focusMinutes: number;
   /** Objetivo personal de Estudio/Trabajo para ese día; 2 h si aún no se configuró. */
   focusTargetMinutes?: number;
@@ -77,9 +77,18 @@ export function trainingContribution(priority: "important" | "secondary" | undef
  * sigue dando un puntaje bajo, mientras que dormir suficiente aporta crédito
  * aunque la persona haya descansado mal. Sin valoración no se aplica ajuste.
  */
-export function sleepScoreFromDuration(minutes: number, quality: "good" | "bad" | null | undefined) {
+export type SleepQuality = "good" | "regular" | "bad";
+
+/** Normaliza lo que viene de la base o del cliente: cualquier otra cosa es "sin valorar". */
+export function parseSleepQuality(value: unknown): SleepQuality | null {
+  return value === "good" || value === "regular" || value === "bad" ? value : null;
+}
+
+export function sleepScoreFromDuration(minutes: number, quality: SleepQuality | null | undefined) {
   const durationScore = Math.min(100, Math.round(Math.max(0, minutes) / FULL_SLEEP_MINUTES * 100));
-  return quality === "bad" ? Math.round(durationScore * 0.65) : durationScore;
+  if (quality === "bad") return Math.round(durationScore * 0.65);
+  if (quality === "regular") return Math.round(durationScore * 0.85);
+  return durationScore;
 }
 
 export function nutritionScoreFromCalories(calories: number, targetCalories: number): number | null {

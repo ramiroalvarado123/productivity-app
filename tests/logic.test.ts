@@ -11,7 +11,8 @@ import { dayBlocks, dayWindow, findSlot, freeSlots, overlappingBlocks, PLAN_AGEN
 import { streakFor, trendFor } from "@/domain/streaks";
 import { buildInsights, closeInsights, planInsights, type InsightInput } from "@/features/insights/logic/insights";
 import { dayClose, isReviewDay, weeklyReview } from "@/features/home/logic/review";
-import { dayFactors, scoreFrom, scoreLabel, scoreWeightsForDate, type DayRecord, type ScoreWeights } from "@/domain/score";
+import { dayFactors, parseSleepQuality, scoreFrom, scoreLabel, scoreWeightsForDate, type DayRecord, type ScoreWeights } from "@/domain/score";
+import { goalCompleted, goalPercent } from "@/features/friends/logic/social";
 import { quoteForDate, quotes } from "@/shared/lib/quotes";
 import { readingPositionForDate, readingUpdateFromPosition } from "@/features/reading/logic/reading";
 
@@ -296,6 +297,29 @@ test("el puntaje de sueño combina duración y calidad", () => {
   assert.ok(eightHoursBad > 40, `8 h deben conservar crédito aunque la calidad sea mala: ${eightHoursBad}`);
   assert.ok(eightHoursBad > fourHoursBad, "dormir más debe subir el puntaje incluso con mala calidad");
   assert.ok(eightHoursBad < eightHoursGood, "una mala calidad debe reducir el puntaje frente a una buena");
+});
+
+test("un sueño regular queda entre el bueno y el malo", () => {
+  const regular = dayFactors({ ...emptyDay, sleepMinutes: 8 * 60, sleepQuality: "regular" }).sleep;
+  const good = dayFactors({ ...emptyDay, sleepMinutes: 8 * 60, sleepQuality: "good" }).sleep;
+  const bad = dayFactors({ ...emptyDay, sleepMinutes: 8 * 60, sleepQuality: "bad" }).sleep;
+  assert.ok(bad < regular && regular < good, `${bad} < ${regular} < ${good}`);
+  assert.equal(parseSleepQuality("regular"), "regular");
+  assert.equal(parseSleepQuality("excelente"), null);
+});
+
+test("un objetivo de grupo individual exige la meta a cada integrante y uno compartido suma", () => {
+  const base = { id: 1, groupId: 1, title: "Entrenar", metric: "sessions" as const, targetValue: 5, period: "weekly" as const, dueDate: "", source: "manual" as const, createdBy: "a@x", createdAt: "2026-10-05T10:00:00Z" };
+  const contributions = [{ userEmail: "a@x", displayName: "A", value: 5 }, { userEmail: "b@x", displayName: "B", value: 2 }];
+  const members = ["a@x", "b@x"];
+  const individual = { ...base, mode: "individual" as const, contributions };
+  const shared = { ...base, mode: "shared" as const, targetValue: 10, contributions };
+  assert.equal(goalCompleted(individual, members), 1);
+  assert.equal(goalPercent(individual, members), 70);
+  assert.equal(goalPercent(shared, members), 70);
+  // Pasarse de la meta no tapa al que falta: A llega a 8 de 5 y el promedio individual no sube de 100% para A.
+  const overshoot = { ...individual, contributions: [{ userEmail: "a@x", displayName: "A", value: 8 }, { userEmail: "b@x", displayName: "B", value: 0 }] };
+  assert.equal(goalPercent(overshoot, members), 50);
 });
 
 test("las prioridades cambian el puntaje del mismo día", () => {

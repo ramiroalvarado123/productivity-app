@@ -29,7 +29,7 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 | Inicio | `features/home/components/home-section.tsx` | racha, frase, Daily Score, métricas, plan del día, "Lo que veo en tus datos" |
 | Daily Score | `features/score/components/score-section.tsx` | factores + prioridades del mes |
 | Físico → Entrenamiento | `features/training/components/training-section.tsx` | + `exercise-session-table.tsx`, `distance-session-form.tsx`, `training-quality-bar.tsx` |
-| Físico → Alimentación | **todavía en `progress-app.tsx`** (`mealsPanel`, `dietQuickPanel`, `dietPlannerPanel`, `calorieCalendarPanel`) y su estado en `use-workspace-state.tsx` | ver HANDOFF |
+| Físico → Alimentación | `features/nutrition/components/nutrition-meals-panel.tsx` (resumen del día, registro y registros) con `food-picker.tsx` (autocompletado + porciones), `ai-meal-register.tsx` y `nutrition-goal-picker.tsx`. Calculadora de calorías, calendario y plan con IA **todavía en `progress-app.tsx`** (`dietQuickPanel`, `calorieCalendarPanel`, `dietPlannerPanel`) | ver HANDOFF |
 | Foco | `features/focus/components/focus-section.tsx` | |
 | Lectura (dentro de Foco → Estudio) | `features/reading/components/reading-section.tsx` | + `study-resources.tsx` (artículos/podcasts, notas) |
 | Sueño | `features/sleep/components/sleep-section.tsx` | |
@@ -47,6 +47,8 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 - `domain/dates.ts` — fechas "AAAA-MM-DD" (zona fija Argentina hoy). `domain/validation.ts` — regex y normalizaciones.
 - `features/insights/logic/insights.ts` (agenda) + `patterns.ts` (cruces del historial, ranking del panel).
 - `features/notifications/logic/weekly-summary.ts`, `features/home/logic/review.ts`, `features/reading/logic/reading.ts`.
+- `features/nutrition/logic/food-search.ts` (búsqueda y cálculo por gramos), `macro-goals.ts` (objetivos → macros) y `nutrition-tracker.ts`. El catálogo (`features/nutrition/data/food-catalog.ts`, USDA SR Legacy en español) se regenera con `scripts/nutrition/`.
+- `features/friends/logic/social.ts` — objetivos de grupo `shared` (suman) o `individual` (cada uno cumple la meta).
 
 ## Servidor
 
@@ -59,4 +61,4 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 
 ## Base de datos (`supabase/`)
 
-SQL sueltos, ya aplicados en producción salvo los marcados en HANDOFF. Los nuevos: `performance.sql` (índices + RPC de entrenamiento), `study-resources.sql` (artículos/podcasts), `weekly-ai-review.sql` (revisiones y memoria estructurada Pro).
+SQL sueltos, ya aplicados en producción salvo los marcados en HANDOFF. Los nuevos: `performance.sql` (índices + RPC de entrenamiento), `study-resources.sql` (artículos/podcasts), `weekly-ai-review.sql` (revisiones y memoria estructurada Pro), `sleep-quality-regular.sql` (valoración "regular") y `group-goal-mode.sql` (objetivos de grupo individuales).

@@ -76,6 +76,12 @@ export type GoalMetric = "count" | "minutes" | "pages" | "sessions";
 export type GoalPeriodKind = "weekly" | "monthly" | "custom";
 /** De dónde sale tu marca: la cargás a mano o la lee de lo que ya registrás. */
 export type GoalSource = "manual" | "training" | "focus" | "reading" | "sleep";
+/**
+ * Cómo cuenta un objetivo de grupo: "shared" suma lo de todos hacia una sola
+ * meta (subir 10 reels por día a una cuenta conjunta); "individual" le exige la
+ * meta completa a cada integrante (entrenar 5 veces por semana, cada uno).
+ */
+export type GoalMode = "shared" | "individual";
 export type GroupGoal = {
   id: number;
   groupId: number;
@@ -85,6 +91,7 @@ export type GroupGoal = {
   period: GoalPeriodKind;
   dueDate: string;
   source: GoalSource;
+  mode: GoalMode;
   createdBy: string;
   createdAt: string;
   contributions: GoalContribution[];
@@ -216,9 +223,23 @@ export function goalTotal(goal: GroupGoal) {
   return goal.contributions.reduce((sum, item) => sum + item.value, 0);
 }
 
-export function goalPercent(goal: GroupGoal) {
+export function goalPercent(goal: GroupGoal, memberEmails: string[] = []) {
   if (goal.targetValue <= 0) return 0;
+  if (goal.mode === "individual" && memberEmails.length) {
+    // Cada integrante aporta hasta su propia meta: el que se pasa no tapa al que falta.
+    const shares = memberEmails.map((email) => Math.min(1, goalValueOf(goal, email) / goal.targetValue));
+    return Math.round(shares.reduce((sum, share) => sum + share, 0) / shares.length * 100);
+  }
   return Math.min(100, Math.round(goalTotal(goal) / goal.targetValue * 100));
+}
+
+export function goalValueOf(goal: GroupGoal, email: string) {
+  return goal.contributions.find((item) => item.userEmail === email)?.value ?? 0;
+}
+
+/** En un objetivo individual: cuántos integrantes ya llegaron a su meta. */
+export function goalCompleted(goal: GroupGoal, memberEmails: string[]) {
+  return memberEmails.filter((email) => goalValueOf(goal, email) >= goal.targetValue).length;
 }
 
 /**

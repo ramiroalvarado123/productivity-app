@@ -19,7 +19,7 @@ export type WeeklySummaryInput = {
   exerciseLogs: Array<{ trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean }>;
   meals: Array<{ mealDate: string; calories: number; protein: number; carbs: number; fat: number }>;
   targetCalories: number;
-  sleep: Array<{ entryDate: string; sleepMinutes: number; bedtime: string; wakeTime: string; sleepQuality?: "good" | "bad" | null }>;
+  sleep: Array<{ entryDate: string; sleepMinutes: number; bedtime: string; wakeTime: string; sleepQuality?: "good" | "regular" | "bad" | null }>;
   focus: Series;
   focusTargetMinutes: number;
   focusSessions: Array<{ projectId: number; sessionDate: string; minutes: number }>;
