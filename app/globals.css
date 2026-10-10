@@ -2506,6 +2506,21 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .nutrition-moment-control select:focus,.nutrition-moment-control input:focus,.nutrition-food-search input:focus{border-color:#6b9b81;box-shadow:0 0 0 3px #36755618}
 .nutrition-meal-panel .nutrition-ai-meal-box{margin:0}
 .nutrition-ai-meal-box .analyze-button{min-height:39px}
+
+/* Mantiene el velo de Pro dentro del rectángulo de IA en Alimentación. */
+.nutrition-meal-panel > .pro-locked{border-radius:16px;overflow:hidden}
+.nutrition-meal-panel > .pro-locked .pro-lock-veil{padding:8px 12px;gap:2px;border-radius:16px;overflow:hidden}
+.nutrition-meal-panel > .pro-locked .pro-lock-badge{width:28px;height:28px;border-radius:9px;font-size:14px;margin:0}
+.nutrition-meal-panel > .pro-locked .pro-lock-veil b{font-size:13px;line-height:1.2}
+.nutrition-meal-panel > .pro-locked .pro-lock-veil small{max-width:58ch;font-size:10.5px;line-height:1.25}
+.nutrition-meal-panel > .pro-locked .pro-lock-cta{margin-top:2px;font-size:10px;line-height:1.2}
+@media(max-width:600px){
+  .nutrition-meal-panel > .pro-locked .pro-lock-veil{padding:6px 10px;gap:1px}
+  .nutrition-meal-panel > .pro-locked .pro-lock-badge{width:24px;height:24px;border-radius:8px;font-size:12px}
+  .nutrition-meal-panel > .pro-locked .pro-lock-veil b{font-size:12px}
+  .nutrition-meal-panel > .pro-locked .pro-lock-veil small{font-size:9.5px;line-height:1.2}
+  .nutrition-meal-panel > .pro-locked .pro-lock-cta{margin-top:1px;font-size:9px}
+}
 .nutrition-estimate-result{display:grid;gap:10px}
 .nutrition-estimate-result>p{margin:0;color:#737d77;font-size:10px;line-height:1.5}
 .nutrition-estimate-macros{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
