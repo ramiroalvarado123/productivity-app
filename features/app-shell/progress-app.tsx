@@ -15,7 +15,6 @@ import { EarlyAdopterAnnouncement } from "@/features/notifications/components/ea
 import { GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, goalPercent, goalPeriodLabel, goalSource, goalTotal, goalUnit, initialsFor, inviteMessage, isFresh, mailLink, shareStatus, whatsappLink, type GoalMetric, type GoalSource, type Group, type GroupGoal } from "@/features/friends/logic/social";
 import type { DietForm, Section, SettingsView, StreakAction } from "@/shared/data/types";
 import { estimateTargetCalories } from "@/features/nutrition/logic/diet";
-import { DayStrip } from "@/shared/ui/day-strip";
 import { FEEDBACK_SECTIONS, FEEDBACK_TYPES } from "@/features/settings/constants";
 import { FRIEND_NUDGE_MESSAGES } from "@/features/friends/constants";
 import type { GoalDraft, GroupPanelTab } from "@/features/friends/logic/goal-draft";
@@ -35,6 +34,7 @@ import { ScoreSection } from "@/features/score/components/score-section";
 import { SleepSection } from "@/features/sleep/components/sleep-section";
 import { StatsSection } from "@/features/stats/components/stats-section";
 import { TrainingSection } from "@/features/training/components/training-section";
+import { NutritionMealsPanel } from "@/features/nutrition/components/nutrition-meals-panel";
 import { VoiceCheckinDialog } from "@/features/voice-checkin/components/voice-checkin-dialog";
 
 export default function ProgressClient(props: WorkspaceProps) {
@@ -138,17 +138,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     setEditingGoalId,
     dietCalendarCursor,
     setDietCalendarCursor,
-    aiDescription,
-    setAiDescription,
-    mealEntryDate,
-    setMealEntryDate,
-    mealPhoto,
-    setMealPhoto,
-    photoPreview,
-    setPhotoPreview,
-    estimating,
-    estimate,
-    setEstimate,
     dietForm,
     setDietForm,
     dietNumberDrafts,
@@ -173,8 +162,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     sendSocial,
     score,
     badgeStats,
-    entryDayLabel,
-    historicalScore,
     displayName,
     savedDietPlan,
     displayedDietPlan,
@@ -192,9 +179,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     saveSettings,
     submitFeedback,
     uploadAvatar,
-    selectMealPhoto,
-    estimateMeal,
-    saveEstimate,
     generateDietPlan,
     saveDietPlan,
     saveDietTarget,
@@ -249,27 +233,6 @@ export default function ProgressClient(props: WorkspaceProps) {
     const difference = Math.abs(total - dietTargetCalories) / dietTargetCalories;
     return difference <= .1 ? "on-target" : difference <= .2 ? "near-target" : "off-target";
   };
-
-  const mealEntryMeals = data.mealHistory.filter((meal) => meal.mealDate === mealEntryDate);
-  const mealEntryCalories = mealEntryMeals.reduce((sum, meal) => sum + meal.calories, 0);
-  const mealsPanel = <article className="panel section-panel"><div className="panel-heading"><div><p>ENERGÍA DE {entryDayLabel(mealEntryDate)}</p><h2>Comidas</h2></div></div>
-    <DayStrip label="Elegí el día de comidas que querés registrar" value={mealEntryDate} today={today} onChange={(date) => { setMealEntryDate(date); setEstimate(null); }} markedDates={new Set(data.mealHistory.map((meal) => meal.mealDate))} />
-    {historicalScore(mealEntryDate)}
-    {isPro ? <div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea value={aiDescription} onChange={(event) => setAiDescription(event.target.value)} placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><label className="photo-button">📷 {mealPhoto ? "Cambiar foto" : "Sacar o subir foto"}<input type="file" accept="image/*" capture="environment" onChange={(event) => void selectMealPhoto(event.target.files?.[0])} /></label>{photoPreview && <div className="photo-preview"><Image src={photoPreview} alt="Comida a analizar" width={38} height={38} unoptimized /><button onClick={() => { URL.revokeObjectURL(photoPreview); setPhotoPreview(""); setMealPhoto(null); }}>×</button></div>}<button className="analyze-button" disabled={estimating || (!mealPhoto && !aiDescription.trim())} onClick={() => void estimateMeal()}>{estimating ? "Analizando…" : "Analizar comida"}</button></div>
-      {estimate && <div className="estimate-result"><div className="estimate-head"><div><span>ESTIMACIÓN PARA REVISAR</span><input value={estimate.mealName} onChange={(event) => setEstimate({ ...estimate, mealName: event.target.value })} /></div><label><input type="number" value={estimate.estimatedCalories} onChange={(event) => setEstimate({ ...estimate, estimatedCalories: Number(event.target.value) || 0 })} /><small>kcal</small></label></div><input className="estimate-detail" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} /><p>Rango probable: {estimate.minimumCalories}–{estimate.maximumCalories} kcal. {estimate.caveat}</p><button className="confirm-estimate" disabled={saving} onClick={() => void saveEstimate()}><SaveButtonContent label="Confirmar y guardar" phase={savePhase("add_meal")} /></button></div>}
-    </div> : <LockedFeature
-      title="Calorías con IA"
-      note="Escribí qué comiste o sacale una foto al plato: la app estima calorías y macros."
-      onOpen={openPro}
-    ><div className="ai-meal-box"><div className="ai-meal-title"><span>✦</span><div><b>Estimar con IA</b><small>Escribí qué comiste o mostralo con una foto.</small></div></div><textarea readOnly value="" placeholder="Ej. milanesa con puré, porción mediana…" /><div className="ai-photo-row"><span className="photo-button">📷 Sacar o subir foto</span><span className="analyze-button">Analizar comida</span></div></div></LockedFeature>}
-    <form className="meal-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); void submitForm(event, { action: "add_meal", date: mealEntryDate, name: form.get("name"), detail: form.get("detail"), calories: form.get("calories"), protein: form.get("protein"), carbs: form.get("carbs"), fat: form.get("fat") }); }}>
-      <label>Comida<input name="name" required placeholder="Ej. Milanesa con puré" /></label>
-      <label>Detalle<input name="detail" required placeholder="Porción mediana, con ensalada…" /></label>
-      <label>Calorías<input name="calories" type="number" min="0" placeholder="kcal" /></label>
-      <button disabled={saving}><SaveButtonContent label="＋ Agregar" phase={savePhase("add_meal")} /></button>
-    </form>
-    <div className="meal-list">{mealEntryMeals.map((meal) => <div className="meal-row" key={meal.id}><span>🍽️</span><div><b>{meal.name}</b><small>{meal.detail} · P {meal.protein} / C {meal.carbs} / G {meal.fat}</small></div><strong>≈ {meal.calories} kcal</strong><button className="row-delete" onClick={() => void save({ action: "delete_meal", id: meal.id })}>×</button></div>)}{!mealEntryMeals.length && <div className="inline-empty"><span>🥗</span><p><b>Todavía no cargaste comidas {mealEntryDate === today ? "hoy" : "este día"}</b><small>Usá texto, foto o carga manual.</small></p></div>}</div><div className="calorie-total"><span>Total estimado</span><b>{mealEntryCalories.toLocaleString("es-AR")} kcal</b></div>
-  </article>;
 
   const dietEstimate = estimateTargetCalories(dietForm);
   const dietQuickCaloriesValue = dietQuickCalories ?? dietEstimate?.targetCalories ?? 0;
@@ -985,7 +948,7 @@ export default function ProgressClient(props: WorkspaceProps) {
           <button className={physicalTab === "meals" ? "active" : ""} onClick={() => setPhysicalTab("meals")}>Alimentación</button>
         </div>
         {physicalTab === "training" ? <TrainingSection key={today} /> : <section className="single-section meals-section">
-          {mealsPanel}
+          <NutritionMealsPanel />
           {dietQuickPanel}
           {isPro ? dietPlannerPanel : <LockedFeature
             title="Plan de alimentación"
