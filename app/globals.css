@@ -2728,3 +2728,13 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 /* Formulario de plan: instrucciones libres debajo de los datos, también en pantallas chicas. */
 .diet-builder-grid{grid-template-columns:minmax(0,1fr)}
 .diet-conversation textarea{min-height:148px}
+
+
+/* Chatbox de personalización del plan nutricional */
+.diet-chat-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:stretch}
+.diet-chat-send{min-width:156px;display:flex;align-items:center;justify-content:center;gap:9px;border:0;border-radius:12px;background:var(--green);color:#fff;padding:12px 16px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,transform .15s}
+.diet-chat-send:hover:not(:disabled){background:#174b37;transform:translateY(-1px)}
+.diet-chat-send:disabled{opacity:.62;cursor:wait}
+.diet-chat-send>span{width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:#ffffff24;font-size:18px;line-height:1}
+.diet-chat-send b{font-size:12px;white-space:nowrap}
+@media(max-width:600px){.diet-chat-compose{grid-template-columns:1fr}.diet-chat-send{min-height:44px;width:100%}}
