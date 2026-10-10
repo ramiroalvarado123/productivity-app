@@ -29,6 +29,7 @@ export type DietPlanContent = {
   macros: { proteinGrams: number; carbsGrams: number; fatGrams: number };
   meals: Array<{ slot: string; guidance: string; options: string[] }>;
   weeklyTips: string[]; shoppingBasics: string[]; appliedRestrictions: string[]; safetyNote: string; needsProfessional: boolean;
+  personalizationSummary?: string;
 };
 export type DietPlanRecord = {
   id: number; age: number; sex: "female" | "male" | "unspecified"; heightCm: number; currentWeightDeciKg: number; targetWeightDeciKg: number;

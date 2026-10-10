@@ -2723,3 +2723,8 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .score-main>.score-card{grid-column:auto}
 .priority-list{max-height:none;overflow:visible}
 .food-picker-error{color:#b25a47;font-size:10.5px;font-weight:600}
+
+
+/* Formulario de plan: instrucciones libres debajo de los datos, también en pantallas chicas. */
+.diet-builder-grid{grid-template-columns:minmax(0,1fr)}
+.diet-conversation textarea{min-height:148px}

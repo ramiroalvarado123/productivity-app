@@ -29,6 +29,8 @@ import { getTrainingWeeklyTargetServerSnapshot, getTrainingWeeklyTargetSnapshot,
 import { planDisciplineIdFor } from "@/domain/plan-disciplines";
 import { readJson } from "@/shared/api/read-json";
 
+const DEFAULT_DIET_FORM: DietForm = { age: 0, sex: "unspecified", heightCm: 0, currentWeightKg: 0, targetWeightKg: 0, activityLevel: "light", goalPace: "gentle", preferences: "", details: "" };
+
 /** Las props con las que arranca la app (vienen del servidor en app/page.tsx). */
 export type WorkspaceProps = {
   initialUser: User;
@@ -178,9 +180,9 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   const [photoPreview, setPhotoPreview] = useState("");
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
-  const initialDietForm: DietForm = { age: 25, sex: "unspecified", heightCm: 175, currentWeightKg: 75, targetWeightKg: 70, activityLevel: "light", goalPace: "gentle", preferences: "", details: "" };
-  const [dietForm, setDietForm] = useState<DietForm>(initialDietForm);
-  const [dietNumberDrafts, setDietNumberDrafts] = useState<DietNumberDrafts>(() => dietNumberDraftsFrom(initialDietForm));
+  const [dietForm, setDietForm] = useState<DietForm>(DEFAULT_DIET_FORM);
+  const hydratedDietPlanRef = useRef("");
+  const [dietNumberDrafts, setDietNumberDrafts] = useState<DietNumberDrafts>(() => dietNumberDraftsFrom(DEFAULT_DIET_FORM));
   const dietNumberFocusRef = useRef<Partial<Record<DietNumberKey, number>>>({});
   // Calculadora rápida (sin IA): null = seguir la sugerencia calculada en vivo; un número = lo que el usuario aceptó o modificó a mano.
   const [dietQuickCalories, setDietQuickCalories] = useState<number | null>(null);
@@ -832,6 +834,27 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
   const displayedDietPlan = generatedDietPlan ?? savedDietPlan;
   // El objetivo guardado: un plan generado y todavía sin guardar no cambia el puntaje ni los avisos.
   const dietTargetCalories = data.dietPlan?.targetCalories ?? 0;
+  useEffect(() => {
+    const record = data.dietPlan;
+    const version = record?.updatedAt ? String(record.updatedAt) : "";
+    if (!record || !version || hydratedDietPlanRef.current === version) return;
+    const restoredForm: DietForm = {
+      age: Number(record.age) || DEFAULT_DIET_FORM.age,
+      sex: record.sex ?? DEFAULT_DIET_FORM.sex,
+      heightCm: Number(record.heightCm) || DEFAULT_DIET_FORM.heightCm,
+      currentWeightKg: Number(record.currentWeightDeciKg) / 10 || DEFAULT_DIET_FORM.currentWeightKg,
+      targetWeightKg: Number(record.targetWeightDeciKg) / 10 || DEFAULT_DIET_FORM.targetWeightKg,
+      activityLevel: record.activityLevel ?? DEFAULT_DIET_FORM.activityLevel,
+      goalPace: record.goalPace ?? DEFAULT_DIET_FORM.goalPace,
+      preferences: String(record.preferences ?? ""),
+      details: String(record.details ?? ""),
+    };
+    hydratedDietPlanRef.current = version;
+    setDietForm(restoredForm);
+    setDietNumberDrafts(dietNumberDraftsFrom(restoredForm));
+    setDietQuickCalories(Number(record.targetCalories) || null);
+    setDietQuickCaloriesDraft(null);
+  }, [data.dietPlan]);
 
   // ---------------------------------------------------------------------------
   // Plan del día: la agenda con horarios, los huecos libres y los avisos que
@@ -1311,7 +1334,6 @@ export function useWorkspaceState({ initialUser, initialError = "", pendingInvit
       const result = await readJson<{ plan?: DietPlanContent; error?: string }>(response);
       if (!response.ok || !result.plan) throw new Error(result.error || "No pudimos crear el plan.");
       setGeneratedDietPlan(result.plan);
-      setDietForm((current) => ({ ...current, details: "" }));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "No pudimos crear el plan.");
     } finally {

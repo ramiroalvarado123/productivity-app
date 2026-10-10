@@ -7,10 +7,10 @@ export const DIET_NUMBER_LIMITS: Record<DietNumberKey, { min: number; max: numbe
 };
 export function dietNumberDraftsFrom(form: DietForm): DietNumberDrafts {
   return {
-    age: String(form.age),
-    heightCm: String(form.heightCm),
-    currentWeightKg: String(form.currentWeightKg),
-    targetWeightKg: String(form.targetWeightKg),
+    age: form.age > 0 ? String(form.age) : "",
+    heightCm: form.heightCm > 0 ? String(form.heightCm) : "",
+    currentWeightKg: form.currentWeightKg > 0 ? String(form.currentWeightKg) : "",
+    targetWeightKg: form.targetWeightKg > 0 ? String(form.targetWeightKg) : "",
   };
 }
 export function isDietNumberKey(key: keyof DietForm): key is DietNumberKey {
