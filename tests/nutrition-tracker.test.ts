@@ -3,7 +3,7 @@ import test from "node:test";
 import { buildCatalog, nutritionForGrams, searchFoods } from "@/features/nutrition/logic/food-search";
 import { FOOD_ROWS } from "@/features/nutrition/data/food-catalog";
 import { NUTRITION_GOALS, macroTargetsFor } from "@/features/nutrition/logic/macro-goals";
-import { calculateFoodNutrition, calculateMealNutrition, groupMealsByMoment, normalizeFoodSearch } from "@/features/nutrition/logic/nutrition-tracker";
+import { calculateFoodNutrition, calculateMealNutrition, detectExplicitMealMoment, groupMealsByMoment, normalizeFoodSearch } from "@/features/nutrition/logic/nutrition-tracker";
 
 const food = {
   id: "pollo",
@@ -42,6 +42,22 @@ test("agrupa registros por momento y prioriza el más reciente", () => {
     ["Almuerzo", 352, 2],
     ["Desayuno", 156, 1],
   ]);
+});
+
+test("un registro sin momento queda agrupado como Sin momento", () => {
+  const [group] = groupMealsByMoment([
+    { id: 9, name: "", detail: "Arroz con pollo", mealDate: "2026-10-10", calories: 520, protein: 35, carbs: 60, fat: 12 },
+  ]);
+  assert.equal(group.name, "Sin momento");
+  assert.equal(group.meals.length, 1);
+});
+
+test("solo detecta momentos mencionados explícitamente en el texto", () => {
+  assert.equal(detectExplicitMealMoment("Almorcé una milanesa con puré"), "Almuerzo");
+  assert.equal(detectExplicitMealMoment("Desayuné avena con banana"), "Desayuno");
+  assert.equal(detectExplicitMealMoment("Tomé una colación nocturna"), "Colación nocturna");
+  assert.equal(detectExplicitMealMoment("Comí arroz con pollo"), null);
+  assert.equal(detectExplicitMealMoment("Desayuné temprano y después almorcé"), null);
 });
 
 test("normaliza búsquedas con o sin acentos", () => {

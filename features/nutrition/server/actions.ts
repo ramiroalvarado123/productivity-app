@@ -6,7 +6,20 @@ import { DATE } from "@/domain/validation";
 import type { ActionMap } from "@/server/progress/types";
 
 export const nutritionActions: ActionMap = {
-  add_meal: async ({ p, email }) => { const date = String(p.date ?? ""), name = String(p.name ?? "").trim(); if (!DATE.test(date) || !name) return fail("Completá el nombre y la fecha."); const rows = await insertRows<ProgressRow>("meals", { userEmail: email, mealDate: date, name, detail: String(p.detail ?? "").trim(), calories: Math.max(0, Math.min(10000, Number(p.calories) || 0)), protein: Math.max(0, Math.min(1000, Number(p.protein) || 0)), carbs: Math.max(0, Math.min(2000, Number(p.carbs) || 0)), fat: Math.max(0, Math.min(1000, Number(p.fat) || 0)) }, { returnRows: true }); return patched({ upsert: { mealHistory: rows } }); },
+  add_meal: async ({ p, email }) => {
+    const date = String(p.date ?? "");
+    const name = String(p.name ?? "").trim();
+    const detail = String(p.detail ?? "").trim();
+    if (!DATE.test(date) || (!name && !detail)) return fail("Completá la comida y la fecha.");
+    const rows = await insertRows<ProgressRow>("meals", {
+      userEmail: email, mealDate: date, name, detail,
+      calories: Math.max(0, Math.min(10000, Number(p.calories) || 0)),
+      protein: Math.max(0, Math.min(1000, Number(p.protein) || 0)),
+      carbs: Math.max(0, Math.min(2000, Number(p.carbs) || 0)),
+      fat: Math.max(0, Math.min(1000, Number(p.fat) || 0)),
+    }, { returnRows: true });
+    return patched({ upsert: { mealHistory: rows } });
+  },
   delete_meal: async ({ p, email }) => { const id = Number(p.id); await deleteRows("meals", { id, userEmail: email }); return patched({ remove: { mealHistory: [id] } }); },
   save_diet_plan: async ({ p, email }) => {
     const age = Math.round(Number(p.age) || 0), heightCm = Math.round(Number(p.heightCm) || 0),

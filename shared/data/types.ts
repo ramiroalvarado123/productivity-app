@@ -1,5 +1,6 @@
 /** Formas de los datos que devuelve GET /api/progress y que usa toda la app. */
 import type { ResourceNote, StudyResource } from "@/features/reading/components/study-resources";
+import type { MealMoment } from "@/features/nutrition/logic/nutrition-tracker";
 
 export type User = { displayName: string; username: string; avatarUrl: string; email: string; onboardingCompleted: boolean; mainGoals: string[]; usagePreferences: string[]; isPro: boolean; proSince: string; focusDailyTargetMinutes?: number; readingRelevant?: boolean | null; seenAnnouncements?: string[] };
 export type Meal = { id: number; name: string; detail: string; calories: number; protein: number; carbs: number; fat: number; mealDate: string };
@@ -22,7 +23,7 @@ export type Task = { id: number; projectId: number | null; title: string; dueDat
 export type CalendarEvent = { id: number; title: string; eventDate: string; eventTime: string; durationMinutes: number; category: "personal" | "study" | "work" | "training" | "health" | "nutrition" | "sleep" | "reading" | "other"; notes: string; completedAt: string | null; disciplineId?: number | null; quality?: number | null };
 export type SlotCategory = "focus" | "training" | "nutrition" | "sleep" | "study" | "work" | "reading" | "personal" | "other";
 export type VoiceCheckin = { transcript: string; summary: string; gym: { attended: boolean | null; detail: string }; meals: Array<{ name: string; detail: string; calories: number; protein: number; carbs: number; fat: number }>; reading: { bookTitle: string; pages: number; minutes: number; note: string }; habits: string[]; study: { minutes: number; detail: string; tasks: string[] }; sleep: { minutes: number; bedtime: string; wakeTime: string }; waterMl: number; journal: string; goals: Array<{ title: string; period: GoalPeriod; category: GoalCategory; targetDate: string }>; confidence: "low" | "medium" | "high" };
-export type MealEstimate = { mealName: string; detail: string; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
+export type MealEstimate = { mealName: string; detail: string; mealMoment?: MealMoment | null; estimatedCalories: number; minimumCalories: number; maximumCalories: number; protein: number; carbs: number; fat: number; confidence: "low" | "medium" | "high"; items: Array<{ name: string; portion: string; calories: number }>; caveat: string };
 export type DietPlanContent = {
   summary: string; targetCalories: number; calorieRangeMinimum: number; calorieRangeMaximum: number; maintenanceCalories: number;
   goalDirection: "lose" | "maintain" | "gain"; paceText: string;

@@ -1,4 +1,6 @@
 import { getSessionUser } from "@/server/auth/session";
+import { detectExplicitMealMoment, MEAL_MOMENTS } from "@/features/nutrition/logic/nutrition-tracker";
+import type { MealEstimate } from "@/shared/data/types";
 
 type ResponseOutput = { type?: string; content?: Array<{ type?: string; text?: string }> };
 
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
 
   const content: Array<Record<string, unknown>> = [{
     type: "input_text",
-    text: `Estimá esta comida para un registro personal de alimentación. Descripción del usuario: ${description || "No agregó descripción; analizá la foto."}\n\nIdentificá alimentos visibles o mencionados, estimá porciones realistas, calorías y macronutrientes aproximados. No inventes ingredientes invisibles como certeza: expresá la duda en caveat. Devolvé un nombre corto de la comida, un detalle útil para editar, el total central aproximado, proteínas, carbohidratos, grasas y un rango razonable. Si la imagen no muestra comida o no hay información suficiente, usá confidence low, items vacíos y explicalo. Esto no es consejo médico.`,
+    text: `Estimá esta comida para un registro personal de alimentación. Descripción del usuario: ${description || "No agregó descripción; analizá la foto."}\n\nIdentificá alimentos visibles o mencionados, estimá porciones realistas, calorías y macronutrientes aproximados. No inventes ingredientes invisibles como certeza: expresá la duda en caveat. Devolvé un nombre corto de la comida, un detalle útil para editar, el total central aproximado, proteínas, carbohidratos, grasas y un rango razonable. Informá mealMoment solo cuando el usuario indique explícitamente el momento con palabras claras (por ejemplo, “desayuné”, “para el almuerzo”, “merendé”, “cené” o “colación”); no lo deduzcas por los alimentos, la foto, la hora actual ni el horario del sistema. Si no lo aclara, devolvé null. Si la imagen no muestra comida o no hay información suficiente, usá confidence low, items vacíos y explicalo. Esto no es consejo médico.`,
   }];
 
   if (image instanceof File && image.size) {
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
             properties: {
               mealName: { type: "string" },
               detail: { type: "string" },
+              mealMoment: { type: ["string", "null"], enum: [...MEAL_MOMENTS, null] },
               estimatedCalories: { type: "integer" },
               minimumCalories: { type: "integer" },
               maximumCalories: { type: "integer" },
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
               items: { type: "array", items: { type: "object", properties: { name: { type: "string" }, portion: { type: "string" }, calories: { type: "integer" } }, required: ["name", "portion", "calories"], additionalProperties: false } },
               caveat: { type: "string" },
             },
-            required: ["mealName", "detail", "estimatedCalories", "minimumCalories", "maximumCalories", "protein", "carbs", "fat", "confidence", "items", "caveat"],
+            required: ["mealName", "detail", "mealMoment", "estimatedCalories", "minimumCalories", "maximumCalories", "protein", "carbs", "fat", "confidence", "items", "caveat"],
             additionalProperties: false,
           },
         },
@@ -84,5 +87,8 @@ export async function POST(request: Request) {
   const result = await response.json() as { output?: ResponseOutput[] };
   const outputText = result.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text;
   if (!outputText) return Response.json({ error: "La IA no devolvió una estimación utilizable." }, { status: 502 });
-  return Response.json({ estimate: JSON.parse(outputText) });
+  const estimate = JSON.parse(outputText) as MealEstimate;
+  // La categoría solo se conserva si aparece explícitamente en la descripción, nunca por inferencia de la foto.
+  estimate.mealMoment = detectExplicitMealMoment(description);
+  return Response.json({ estimate });
 }

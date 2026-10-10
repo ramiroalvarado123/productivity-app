@@ -21,7 +21,7 @@ export function AiMealRegister({ moment, date }: { moment: string; date: string 
     const saved = await save({
       action: "add_meal",
       date,
-      name: moment,
+      name: moment || estimate.mealMoment || "",
       detail: [estimate.mealName.trim(), estimate.detail.trim()].filter(Boolean).join(" — "),
       calories: estimate.estimatedCalories,
       protein: estimate.protein,
@@ -51,6 +51,7 @@ export function AiMealRegister({ moment, date }: { moment: string; date: string 
         <label><input aria-label="Calorías estimadas" type="number" min="0" step="1" value={estimate.estimatedCalories} onChange={(event) => updateNumber("estimatedCalories", event.target.value)} /><small>kcal</small></label>
       </div>
       <input className="estimate-detail" aria-label="Detalle estimado" value={estimate.detail} onChange={(event) => setEstimate({ ...estimate, detail: event.target.value })} />
+      <p aria-live="polite">{moment ? `Momento seleccionado: ${moment}` : estimate.mealMoment ? `Momento detectado: ${estimate.mealMoment}` : "Sin momento asignado; podés dejarlo así o elegir uno arriba."}</p>
       <div className="nutrition-estimate-macros">
         <label>Proteínas (g)<input type="number" min="0" step="1" value={estimate.protein} onChange={(event) => updateNumber("protein", event.target.value)} /></label>
         <label>Carbohidratos (g)<input type="number" min="0" step="1" value={estimate.carbs} onChange={(event) => updateNumber("carbs", event.target.value)} /></label>

@@ -7,17 +7,17 @@ import { FoodPicker } from "@/features/nutrition/components/food-picker";
 import { NutritionDaySummary, formatAmount } from "@/features/nutrition/components/nutrition-day-summary";
 import { useNutritionGoal } from "@/features/nutrition/hooks/use-nutrition-goal";
 import { NUTRITION_GOALS, macroTargetsFor } from "@/features/nutrition/logic/macro-goals";
-import { calculateMealNutrition, groupMealsByMoment } from "@/features/nutrition/logic/nutrition-tracker";
+import { calculateMealNutrition, groupMealsByMoment, MEAL_MOMENTS } from "@/features/nutrition/logic/nutrition-tracker";
 import { DayStrip } from "@/shared/ui/day-strip";
 
-const MEAL_MOMENTS = ["Desayuno", "Almuerzo", "Merienda", "Cena", "Colación"] as const;
 type RegisterMode = "manual" | "ai";
 
 /** Alimentación del día: resumen arriba, después registrar (a mano o con IA) y los registros. */
 export function NutritionMealsPanel() {
-  const { data, today, mealEntryDate, setMealEntryDate, setEstimate, historicalScore, entryDayLabel, dietTargetCalories, savedDietPlan, save } = useWorkspace();
-  const [moment, setMoment] = useState<string>(MEAL_MOMENTS[0]);
+  const { data, today, mealEntryDate, setMealEntryDate, estimate, setEstimate, historicalScore, entryDayLabel, dietTargetCalories, savedDietPlan, save } = useWorkspace();
+  const [moment, setMoment] = useState<string>("");
   const [mode, setMode] = useState<RegisterMode>("manual");
+  const activeMoment = moment || (mode === "ai" ? estimate?.mealMoment ?? "" : "");
   // Los registros se ven abiertos: lo que cargaste tiene que aparecer apenas lo guardás.
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [goalKey] = useNutritionGoal();
@@ -51,8 +51,10 @@ export function NutritionMealsPanel() {
 
     <section className="nutrition-register" aria-label="Registrar una comida">
       <div className="nutrition-moments" role="radiogroup" aria-label="Momento del día">
-        {MEAL_MOMENTS.map((item) => <button key={item} type="button" role="radio" aria-checked={moment === item} className={moment === item ? "is-on" : ""} onClick={() => setMoment(item)}>{item}</button>)}
+        <button type="button" role="radio" aria-checked={!activeMoment} className={!activeMoment ? "is-on" : ""} onClick={() => { setMoment(""); if (mode === "ai" && estimate) setEstimate({ ...estimate, mealMoment: null }); }}>Sin momento</button>
+        {MEAL_MOMENTS.map((item) => <button key={item} type="button" role="radio" aria-checked={activeMoment === item} className={activeMoment === item ? "is-on" : ""} onClick={() => setMoment(item)}>{item}</button>)}
       </div>
+      <small>El momento es opcional. Si no elegís uno, la IA solo lo asigna cuando lo mencionás explícitamente en la descripción.</small>
       <div className="nutrition-mode" role="tablist" aria-label="Cómo registrar">
         <button type="button" role="tab" aria-selected={mode === "manual"} className={mode === "manual" ? "is-on" : ""} onClick={() => setMode("manual")}>A mano</button>
         <button type="button" role="tab" aria-selected={mode === "ai"} className={mode === "ai" ? "is-on" : ""} onClick={() => setMode("ai")}>✦ Con IA</button>

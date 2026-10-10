@@ -1,3 +1,16 @@
+export const MEAL_MOMENTS = [
+  "Desayuno",
+  "Media mañana",
+  "Almuerzo",
+  "Merienda",
+  "Cena",
+  "Colación",
+  "Colación nocturna",
+  "Otro",
+] as const;
+
+export type MealMoment = (typeof MEAL_MOMENTS)[number];
+
 export type NutritionValues = {
   calories: number;
   protein: number;
@@ -70,8 +83,8 @@ export function groupMealsByMoment(meals: NutritionMealRecord[]) {
   const groups = new Map<string, { name: string; meals: NutritionMealRecord[]; calories: number }>();
 
   for (const meal of sorted) {
-    const key = meal.name.trim().toLocaleLowerCase("es") || "otro";
-    const group = groups.get(key) ?? { name: meal.name.trim() || "Otro", meals: [], calories: 0 };
+    const key = meal.name.trim().toLocaleLowerCase("es") || "sin-momento";
+    const group = groups.get(key) ?? { name: meal.name.trim() || "Sin momento", meals: [], calories: 0 };
     group.meals.push(meal);
     group.calories += Number(meal.calories) || 0;
     groups.set(key, group);
@@ -85,4 +98,34 @@ export function groupMealsByMoment(meals: NutritionMealRecord[]) {
 
 export function normalizeFoodSearch(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").trim();
+}
+
+
+const EXPLICIT_MEAL_MOMENT_MENTIONS: Array<{ moment: MealMoment; pattern: RegExp }> = [
+  { moment: "Media mañana", pattern: /\bmedia\s+manana\b/ },
+  { moment: "Colación nocturna", pattern: /\b(?:colacion|snack|tentempie)\s+(?:nocturn[oa]|de\s+noche|a\s+la\s+noche|de\s+medianoche)\b/ },
+  { moment: "Desayuno", pattern: /\b(?:desayuno|desayune|desayunar|desayunamos|desayunaron|desayunaba|desayunaste)\b/ },
+  { moment: "Almuerzo", pattern: /\b(?:almuerzo|almorce|almorzar|almorzando|almorzamos|almorzaron|mediodia)\b/ },
+  { moment: "Merienda", pattern: /\b(?:merienda|merende|merendar|merendando|merendamos|merendaron)\b/ },
+  { moment: "Cena", pattern: /\b(?:cena|cene|ceno|cenar|cenando|cenamos|cenaron)\b/ },
+  { moment: "Colación", pattern: /\b(?:colacion|snack|tentempie)\b/ },
+];
+
+export function detectExplicitMealMoment(description: string): MealMoment | null {
+  const normalized = normalizeFoodSearch(description).replace(/\s+/g, " ");
+  const moments = [...new Set(EXPLICIT_MEAL_MOMENT_MENTIONS
+    .filter(({ pattern }) => pattern.test(normalized))
+    .map(({ moment }) => moment))];
+
+  // Las frases más específicas tienen prioridad sobre "colación" genérica.
+  if (moments.includes("Media mañana")) {
+    const index = moments.indexOf("Colación");
+    if (index >= 0) moments.splice(index, 1);
+  }
+  if (moments.includes("Colación nocturna")) {
+    const index = moments.indexOf("Colación");
+    if (index >= 0) moments.splice(index, 1);
+  }
+
+  return moments.length === 1 ? moments[0] : null;
 }
