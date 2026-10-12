@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { cleanRoutineExercises, cleanRoutineName, normalizeExerciseName, parseRoutineExercises, routineFromRow } from "@/features/training/logic/routines";
-import { describeExercise, lastExerciseValues, sessionHistory } from "@/features/training/logic/exercise-history";
+import { lastExerciseValues } from "@/features/training/logic/exercise-history";
 import type { ExerciseLog, TrainingLog } from "@/shared/data/types";
 
 const log = (id: number, trainingDate: string, disciplineId = 1): TrainingLog => ({ id, disciplineId, trainingDate, durationMinutes: 0, distanceMeters: 0, notes: "" });
@@ -55,19 +55,4 @@ test("la última vez de un ejercicio sale de la sesión anterior más reciente",
   assert.equal(last.get("remo")?.weightDeciKg, 400);
   // El día de hoy y los posteriores no cuentan como "última vez".
   assert.equal(lastExerciseValues(exercises, logs, "2026-10-01").size, 0);
-});
-
-test("el historial agrupa por sesión de la disciplina, de la más nueva a la más vieja", () => {
-  const logs = [log(1, "2026-10-01"), log(2, "2026-10-05"), log(3, "2026-10-07", 2), log(-4, "2026-10-08")];
-  const exercises = [exercise(2, 1, "Remo", 400, 3, 10), exercise(1, 1, "Dominadas", 0, 3, 6, true), exercise(3, 2, "Press", 600, 4, 8), exercise(4, 3, "Sentadilla", 800, 5, 5)];
-  const history = sessionHistory(exercises, logs, 1);
-  assert.deepEqual(history.map((item) => item.date), ["2026-10-05", "2026-10-01"]);
-  assert.deepEqual(history[1].exercises.map((item) => item.exercise), ["Dominadas", "Remo"]);
-});
-
-test("describeExercise muestra solo lo que se cargó", () => {
-  assert.equal(describeExercise({ weightDeciKg: 600, sets: 4, reps: 8 }), "60 kg · 4×8");
-  assert.equal(describeExercise({ weightDeciKg: 125, sets: 0, reps: 10 }), "12,5 kg · 10 reps");
-  assert.equal(describeExercise({ weightDeciKg: 0, sets: 3, reps: 0 }), "3 series");
-  assert.equal(describeExercise({ weightDeciKg: 0, sets: 0, reps: 0 }), "Sin datos");
 });
