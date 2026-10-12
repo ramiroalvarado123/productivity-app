@@ -30,6 +30,7 @@ Cambios de comportamiento intencionales (menores):
 5. **SQL Editor → correr `supabase/weekly-ai-review.sql`** antes de usar la revisión con IA. Crea las dos tablas nuevas con RLS por usuario; no toca preferencias, notificaciones ni el estado del anuncio de Early Adopters.
 6. **SQL Editor → correr `supabase/sleep-quality-regular.sql`** (agrega la valoración "Regular" al sueño). Hasta correrlo, una noche marcada "Regular" se guarda sin valoración.
 7. **SQL Editor → correr `supabase/group-goal-mode.sql`** (objetivos de grupo "cada uno" vs "entre todos"). Hasta correrlo, los objetivos compartidos siguen andando y los individuales avisan que falta el SQL.
+8. **SQL Editor → correr `supabase/training-routines.sql`** (rutinas de gimnasio: tabla `training_routines` con RLS). Hasta correrlo, la app anda igual: no hay rutinas guardadas y al intentar crear una avisa que falta el SQL.
 
 ## Próximos pasos (en orden)
 

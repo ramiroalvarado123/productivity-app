@@ -2738,3 +2738,56 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .diet-chat-send>span{width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:#ffffff24;font-size:18px;line-height:1}
 .diet-chat-send b{font-size:12px;white-space:nowrap}
 @media(max-width:600px){.diet-chat-compose{grid-template-columns:1fr}.diet-chat-send{min-height:44px;width:100%}}
+
+/* Entrenamiento: rutinas (pestañita emergente) e historial de sesiones */
+.exercise-sheet-tools{display:flex;justify-content:flex-end;margin-bottom:-2px}
+.exercise-routine-button{border:1px solid #d6e2d9;border-radius:99px;background:#f6faf6;color:var(--green);padding:7px 13px;font-size:10px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s}
+.exercise-routine-button:hover{background:#ecf5ee;border-color:#a9c6b2}
+.routine-overlay{position:fixed;inset:0;z-index:130;display:grid;place-items:center;padding:20px;background:#10281f70;backdrop-filter:blur(3px)}
+.routine-dialog{position:relative;width:min(440px,100%);max-height:min(82dvh,640px);overflow:auto;padding:26px 24px 22px;border:1px solid #e4e9e3;border-radius:22px;background:#fbfcfa;box-shadow:0 28px 80px #10281f40}
+.routine-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:#eef2ed;color:#647168;font-size:21px;line-height:1;cursor:pointer}
+.routine-eyebrow{margin:0;font-size:9px;font-weight:700;letter-spacing:.07em;color:#89918c}
+.routine-dialog h2{margin:5px 36px 4px 0;font-family:var(--font-serif);font-size:26px;font-weight:500;letter-spacing:-.012em;color:var(--ink)}
+.routine-intro{margin:0 0 16px;font-size:11px;color:#7d8782}
+.routine-list{display:grid;gap:8px}
+.routine-item{display:flex;align-items:center;gap:4px;border:1px solid #e3e8e3;border-radius:14px;background:#fff;padding:4px 6px 4px 4px;transition:border-color .15s}
+.routine-item:hover{border-color:#a9c6b2}
+.routine-apply{flex:1;min-width:0;display:grid;gap:3px;border:0;background:transparent;text-align:left;padding:9px 10px;cursor:pointer}
+.routine-apply b{font-size:13px;color:var(--ink)}
+.routine-apply small{font-size:10px;color:#85908a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.routine-icon{flex:0 0 auto;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:#9ca49f;font-size:15px;line-height:1;cursor:pointer}
+.routine-icon:hover{background:#f3f5f1;color:#5f6963}
+.routine-empty{margin:4px 0 0;padding:14px;border-radius:12px;background:#f4f7f3;font-size:11px;line-height:1.5;color:#6f7a74}
+.routine-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:16px}
+.routine-new,.routine-add{border:1px dashed #b9cdbf;border-radius:11px;background:#f6faf6;color:var(--green);padding:10px 13px;font-size:10px;font-weight:700;cursor:pointer}
+.routine-new:hover,.routine-add:hover{background:#ecf5ee}
+.routine-from-session,.routine-back{border:0;background:transparent;color:#6f7a74;padding:8px 4px;font-size:10px;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.routine-form{display:grid;gap:12px;margin-top:14px}
+.routine-form input{width:100%;min-width:0;border:1px solid #dce3dd;background:#fff;border-radius:10px;padding:10px;font-size:11px;outline:none;color:var(--ink)}
+.routine-form input:focus{border-color:var(--green)}
+.routine-name{font-weight:700}
+.routine-rows{display:grid;gap:7px}
+.routine-row{display:grid;grid-template-columns:minmax(0,1fr) 74px 28px;gap:6px;align-items:center}
+.routine-sets{text-align:center;-moz-appearance:textfield}
+.routine-sets::-webkit-outer-spin-button,.routine-sets::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.routine-add{justify-self:start}
+.routine-problem{margin:0;font-size:10.5px;font-weight:600;color:#b25a47}
+.routine-form .routine-footer{margin-top:4px}
+.session-history .panel-heading{margin-bottom:12px}
+.session-history-empty{margin:0;font-size:11px;line-height:1.5;color:#7d8782}
+.session-history-list{display:grid;gap:7px}
+.session-history-item{border:1px solid #e6eae5;border-radius:12px;background:#fff;transition:border-color .15s}
+.session-history-item.open{border-color:#c9d9cd}
+.session-history-head{width:100%;display:flex;align-items:center;gap:10px;border:0;background:transparent;padding:11px 12px;text-align:left;cursor:pointer}
+.session-history-head b{font-size:12px;color:var(--ink)}
+.session-history-head small{flex:1;font-size:10px;color:#85908a}
+.session-history-head span{color:#9ca49f;font-size:16px;line-height:1}
+.session-history-body{border-top:1px solid #edf0eb;padding:10px 12px 12px;display:grid;gap:10px}
+.session-history-body ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.session-history-body li{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--ink)}
+.session-history-body li em{font-style:normal;color:#6f7a74;white-space:nowrap;font-variant-numeric:tabular-nums}
+.session-history-open,.session-history-more{justify-self:start;border:0;background:transparent;color:var(--green);padding:2px 0;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+@media(max-width:560px){
+  .routine-overlay{align-items:end;padding:0}
+  .routine-dialog{width:100%;max-height:86dvh;border-radius:22px 22px 0 0;padding:24px 18px calc(20px + env(safe-area-inset-bottom))}
+}

@@ -5,6 +5,7 @@ import { today, type ProgressRow } from "@/server/db/rows";
 import type { Timing } from "@/server/http";
 import { DATE, MONTH, daysBefore, stringArray } from "@/domain/validation";
 import { profilePreferences, profileSeenAnnouncements } from "@/domain/profile-metadata";
+import { routineFromRow } from "@/features/training/logic/routines";
 
 /** Columnas del historial de sueño que usa la app (las transcripciones y diarios de voz no viajan). */
 const CHECKIN_HISTORY_COLUMNS = ["id", "entryDate", "sleepMinutes", "bedtime", "wakeTime", "sleepQuality"];
@@ -26,7 +27,7 @@ export async function readSnapshot(user: SessionUser, params: URLSearchParams, t
 
   const [
     profiles, disciplineRows, trainingLogs, exerciseLogs, mealHistory, dietPlans, books, readingHistory, notes,
-    priorityHistory, goals, dailyCheckins, todayCheckins, focusProjects, focusSessions, tasks, events, resources, resourceNotes,
+    priorityHistory, goals, dailyCheckins, todayCheckins, focusProjects, focusSessions, tasks, events, resources, resourceNotes, routines,
   ] = await Promise.all([
     selectRows<ProgressRow>("profiles", { where: { email }, limit: 1 }),
     selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] }),
@@ -48,6 +49,8 @@ export async function readSnapshot(user: SessionUser, params: URLSearchParams, t
     // Tablas opcionales (supabase/study-resources.sql): si todavía no se crearon, la app sigue andando con la lista vacía.
     optional(selectRows<ProgressRow>("study_resources", { where: { userEmail: email }, order: [["createdAt", "desc"]] })),
     optional(selectRows<ProgressRow>("resource_notes", { where: { userEmail: email }, order: [["createdAt", "desc"]] })),
+    // Rutinas (supabase/training-routines.sql): opcional por la misma razón.
+    optional(selectRows<ProgressRow>("training_routines", { where: { userEmail: email }, order: [["createdAt", "asc"], ["id", "asc"]] })),
   ]);
   timing.mark("queries");
 
@@ -111,5 +114,6 @@ export async function readSnapshot(user: SessionUser, params: URLSearchParams, t
     events,
     resources,
     resourceNotes,
+    routines: routines.map(routineFromRow),
   };
 }

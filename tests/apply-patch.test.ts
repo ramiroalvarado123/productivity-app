@@ -108,3 +108,13 @@ test("artículos, podcasts y sus notas se aplican como cualquier colección", ()
   assert.deepEqual(removed.resources.map((row) => row.id), [2]);
   assert.deepEqual(removed.resourceNotes, []);
 });
+
+test("las rutinas se agregan en orden de creación y se pueden editar y borrar", () => {
+  const data = { routines: [{ id: 1, name: "Pull", createdAt: "2026-10-01T00:00:00Z" }] };
+  const added = applyPatch(data, { upsert: { routines: [{ id: 2, name: "Push", createdAt: "2026-10-02T00:00:00Z" }] } }, TODAY);
+  assert.deepEqual(added.routines.map((row) => row.id), [1, 2]);
+  const edited = applyPatch(added, { upsert: { routines: [{ id: 1, name: "Pull A", createdAt: "2026-10-01T00:00:00Z" }] } }, TODAY);
+  assert.equal(edited.routines[0].name, "Pull A");
+  const removed = applyPatch(edited, { remove: { routines: [1] } }, TODAY);
+  assert.deepEqual(removed.routines.map((row) => row.id), [2]);
+});

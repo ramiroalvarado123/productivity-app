@@ -4,9 +4,12 @@ import { DistanceSessionForm } from "@/features/training/components/distance-ses
 import { Dropdown } from "@/shared/ui/dropdown";
 import { ExerciseSessionTable } from "@/features/training/components/exercise-session-table";
 import { SaveButtonContent } from "@/shared/ui/save-button";
+import { SessionHistory } from "@/features/training/components/session-history";
 import { TrainingQualityBar } from "@/features/training/components/training-quality-bar";
 import { dateMinus, formatDate, weekFor } from "@/domain/dates";
 import { formatDecimalInput } from "@/shared/lib/numbers";
+import { lastExerciseValues, sessionHistory } from "@/features/training/logic/exercise-history";
+import { normalizeExerciseName } from "@/features/training/logic/routines";
 import { useMemo, useState } from "react";
 import { useWorkspace } from "@/features/app-shell/workspace";
 
@@ -55,6 +58,21 @@ export function TrainingSection() {
     : selectedDiscipline.kind === "swimming" ? "SESIÓN DE NATACIÓN"
     : "DETALLE DE SESIÓN";
 
+  // Lo de la última vez y el historial salen de los ejercicios ya guardados (sin pedir nada al servidor).
+  const routines = useMemo(() => data.routines ?? [], [data.routines]);
+  const lastValues = useMemo(() => lastExerciseValues(data.exerciseLogs, data.trainingLogs, trainingDate), [data.exerciseLogs, data.trainingLogs, trainingDate]);
+  const exerciseNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const name of [...routines.flatMap((routine) => routine.exercises.map((item) => item.exercise)), ...data.exerciseLogs.map((item) => item.exercise)]) {
+      const key = normalizeExerciseName(name);
+      if (key && !names.has(key)) names.set(key, name);
+    }
+    return [...names.values()].sort((left, right) => left.localeCompare(right, "es"));
+  }, [routines, data.exerciseLogs]);
+  const history = useMemo(
+    () => selectedDiscipline?.kind === "strength" ? sessionHistory(data.exerciseLogs, data.trainingLogs, selectedDiscipline.id) : [],
+    [data.exerciseLogs, data.trainingLogs, selectedDiscipline],
+  );
   // Semana navegable del historial de entrenamientos: independiente de "week"
   // (que siempre es la semana actual, usada en Inicio y otras secciones), así
   // se puede deslizar hacia atrás sin afectar el resto de la app.
@@ -116,6 +134,11 @@ export function TrainingSection() {
             disciplineId={selectedDiscipline.id}
             date={trainingDate}
             exercises={selectedExercises}
+            routines={routines}
+            lastValues={lastValues}
+            exerciseNames={exerciseNames}
+            onSaveRoutine={(routine) => save({ action: "save_routine", id: routine.id || undefined, name: routine.name, exercises: routine.exercises }, "save_routine")}
+            onDeleteRoutine={(routine) => save({ action: "delete_routine", id: routine.id }, "delete_routine")}
             saving={saving}
             savePhase={savePhase("save_exercises")}
             onSave={(payload) => void save(payload)}
@@ -134,6 +157,12 @@ export function TrainingSection() {
           <button className="primary-action" disabled={saving}><SaveButtonContent label="Guardar sesión" phase={savePhase("save_training")} /></button>
         </form>}
       </article>
+      {selectedDiscipline.kind === "strength" && <SessionHistory
+        sessions={history}
+        selectedDate={trainingDate}
+        today={today}
+        onOpenDate={(date) => { setTrainingDate(date); setTrainingWeekAnchor(date); }}
+      />}
     </div>}
   </section>;
 

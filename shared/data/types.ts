@@ -17,6 +17,9 @@ export type DailyCheckin = { id: number; entryDate: string; habitsJson: string; 
 export type Discipline = { id: number; name: string; kind: "strength" | "running" | "cycling" | "swimming" | "sport" | "other"; priority?: "important" | "secondary" };
 export type TrainingLog = { id: number; disciplineId: number; trainingDate: string; durationMinutes: number; distanceMeters: number; notes: string; quality?: number | null; planEventId?: number };
 export type ExerciseLog = { id: number; trainingLogId: number; exercise: string; weightDeciKg: number; sets: number; reps: number; isRecord: boolean };
+export type RoutineExercise = { exercise: string; sets: number };
+/** Rutina armada por la persona (ej. "Pull"): los ejercicios se cargan solos en la planilla del día. */
+export type TrainingRoutine = { id: number; name: string; exercises: RoutineExercise[]; createdAt: string };
 export type FocusProject = { id: number; name: string; kind: "study" | "work" };
 export type FocusSession = { id: number; projectId: number; sessionDate: string; minutes: number; note: string };
 export type Task = { id: number; projectId: number | null; title: string; dueDate: string | null; startTime: string; durationMinutes: number; completedAt: string | null };
@@ -49,7 +52,7 @@ export type ProgressData = {
   meals: Meal[]; mealHistory: Meal[]; books: Book[]; readingLogs: ReadingLog[]; readingHistory: ReadingLog[]; notes: Note[];
   goals: Goal[]; priorities: Priorities; priorityHistory?: Priorities[]; dailyCheckin: DailyCheckin | null; dailyCheckins: DailyCheckin[];
   focusProjects: FocusProject[]; focusSessions: FocusSession[]; tasks: Task[]; events: CalendarEvent[]; dietPlan: DietPlanRecord | null;
-  resources?: StudyResource[]; resourceNotes?: ResourceNote[];
+  resources?: StudyResource[]; resourceNotes?: ResourceNote[]; routines?: TrainingRoutine[];
 };
 export type Section = "summary" | "score" | "physical" | "focus" | "sleep" | "plan" | "stats" | "friends" | "pro";
 export type PhysicalTab = "training" | "meals";

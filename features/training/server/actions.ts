@@ -4,6 +4,7 @@ import { owned } from "@/server/db/rows";
 import type { ProgressRow } from "@/server/db/rows";
 import { DATE, isRecord, numeric, decimal } from "@/domain/validation";
 import { trainingQuality, trainingPriority } from "@/features/training/server/validation";
+import { routineActions } from "@/features/training/server/routine-actions";
 import type { ActionHandler, ActionMap } from "@/server/progress/types";
 
 const saveTrainingHandler: ActionHandler = async ({ p, action, email }) => {
@@ -13,6 +14,7 @@ const saveTrainingHandler: ActionHandler = async ({ p, action, email }) => {
   };
 
 export const trainingActions: ActionMap = {
+  ...routineActions,
   toggle_gym: async ({ p, email }) => {
     const date = String(p.date ?? ""); if (!DATE.test(date)) return fail("Fecha inválida."); let strength = (await selectRows<ProgressRow>("training_disciplines", { where: { userEmail: email, kind: "strength" }, limit: 1 }))[0];
     if (!strength) strength = (await insertRows<ProgressRow>("training_disciplines", { userEmail: email, name: "Gimnasio", kind: "strength" }, { upsert: true, onConflict: ["userEmail", "name"], returnRows: true }))[0];

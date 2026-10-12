@@ -8,7 +8,7 @@ import type { User } from "@/shared/data/types";
 
 export type CollectionKey =
   | "trainingLogs" | "exerciseLogs" | "mealHistory" | "readingHistory" | "books" | "notes"
-  | "goals" | "dailyCheckins" | "focusProjects" | "focusSessions" | "tasks" | "events" | "resources" | "resourceNotes";
+  | "goals" | "dailyCheckins" | "focusProjects" | "focusSessions" | "tasks" | "events" | "resources" | "resourceNotes" | "routines";
 
 export type PatchRow = { id: number } & Record<string, unknown>;
 
@@ -39,6 +39,7 @@ const ORDER: Record<CollectionKey, Array<[string, Direction]>> = {
   events: [["eventDate", "asc"], ["eventTime", "asc"]],
   resources: [["createdAt", "desc"]],
   resourceNotes: [["createdAt", "desc"]],
+  routines: [["createdAt", "asc"], ["id", "asc"]],
 };
 
 /** Postgres: en ascendente los nulos van al final; en descendente, al principio. */
