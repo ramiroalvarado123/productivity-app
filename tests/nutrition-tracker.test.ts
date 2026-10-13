@@ -3,7 +3,7 @@ import test from "node:test";
 import { buildCatalog, nutritionForGrams, searchFoods } from "@/features/nutrition/logic/food-search";
 import { FOOD_ROWS } from "@/features/nutrition/data/food-catalog";
 import { NUTRITION_GOALS, macroTargetsFor } from "@/features/nutrition/logic/macro-goals";
-import { calculateFoodNutrition, calculateMealNutrition, detectExplicitMealMoment, groupMealsByMoment, normalizeFoodSearch } from "@/features/nutrition/logic/nutrition-tracker";
+import { calculateFoodNutrition, calculateMealNutrition, detectExplicitMealMoment, groupMealsByMoment, mealFoodName, mealHistoryShortcuts, normalizeFoodSearch } from "@/features/nutrition/logic/nutrition-tracker";
 
 const food = {
   id: "pollo",
@@ -62,6 +62,26 @@ test("solo detecta momentos mencionados explícitamente en el texto", () => {
 
 test("normaliza búsquedas con o sin acentos", () => {
   assert.equal(normalizeFoodSearch("brócoli"), normalizeFoodSearch("brocoli"));
+});
+
+test("el historial recupera solamente el alimento y descarta la porción anterior", () => {
+  assert.equal(mealFoodName({ detail: "Banana — Porción mediana (120 g)" }), "Banana");
+  assert.equal(mealFoodName({ detail: "Avena con leche — 60 g de avena y 200 ml de leche" }), "Avena con leche");
+});
+
+test("sugiere primero lo de ayer y después lo más repetido de los siete días previos", () => {
+  const base = { calories: 100, protein: 1, carbs: 1, fat: 1 };
+  const suggestions = mealHistoryShortcuts([
+    { ...base, id: 10, name: "Desayuno", detail: "Banana — Porción mediana (120 g)", mealDate: "2026-10-12" },
+    { ...base, id: 9, name: "Desayuno", detail: "Yogur natural — 1 pote", mealDate: "2026-10-12" },
+    { ...base, id: 8, name: "Merienda", detail: "Banana — Porción grande", mealDate: "2026-10-11" },
+    { ...base, id: 7, name: "Desayuno", detail: "Avena — Porción mediana", mealDate: "2026-10-10" },
+    { ...base, id: 6, name: "Desayuno", detail: "Avena — Porción chica", mealDate: "2026-10-09" },
+    { ...base, id: 5, name: "Desayuno", detail: "Avena — Porción chica", mealDate: "2026-10-01" },
+  ], "2026-10-13");
+
+  assert.deepEqual(suggestions.yesterday.map((item) => [item.name, item.count]), [["Banana", 2], ["Yogur natural", 1]]);
+  assert.deepEqual(suggestions.frequent.map((item) => [item.name, item.count]), [["Avena", 2]]);
 });
 
 // --- Catálogo de alimentos con porciones y búsqueda -----------------------------------

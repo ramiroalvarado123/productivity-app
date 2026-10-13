@@ -2724,6 +2724,28 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .priority-list{max-height:none;overflow:visible}
 .food-picker-error{color:#b25a47;font-size:10.5px;font-weight:600}
 
+/* Alimentación: accesos rápidos desde el historial, sin reutilizar porciones. */
+.nutrition-history-shortcuts{display:grid;gap:10px;margin:4px 0 8px;padding:12px;border:1px solid #dfe7df;border-radius:14px;background:linear-gradient(135deg,#f7faf6 0%,#fff 72%)}
+.nutrition-history-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.nutrition-history-heading>div{display:grid;gap:3px;min-width:0}
+.nutrition-history-heading b{font-size:11.5px;color:var(--ink)}
+.nutrition-history-heading small{font-size:9.5px;line-height:1.4;color:#7e8882}
+.nutrition-history-heading>span{flex:0 0 auto;border-radius:99px;background:#eaf2ec;color:var(--green);padding:5px 8px;font-size:8.5px;font-weight:700;white-space:nowrap}
+.nutrition-history-row{display:grid;gap:6px}
+.nutrition-history-row>small{font-size:8px;font-weight:800;letter-spacing:.08em;color:#849087}
+.nutrition-history-row>div{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
+.nutrition-history-row button{flex:0 0 auto;max-width:240px;display:flex;align-items:center;gap:9px;border:1px solid #dce5dd;border-radius:11px;background:#fff;padding:8px 10px;color:var(--ink);cursor:pointer;box-shadow:0 3px 10px #173e2f0a;text-align:left}
+.nutrition-history-row button:hover,.nutrition-history-row button:focus-visible{border-color:#75a188;background:#f1f6f2;outline:none}
+.nutrition-history-row button b{max-width:178px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:650}
+.nutrition-history-row button span{flex:0 0 auto;color:var(--green);font-size:8.5px;font-weight:750;white-space:nowrap}
+
+@media(max-width:600px){
+  .nutrition-history-heading{display:grid;gap:7px}
+  .nutrition-history-heading>span{justify-self:start}
+  .nutrition-history-row button{max-width:210px}
+  .nutrition-history-row button b{max-width:148px}
+}
+
 
 /* Formulario de plan: instrucciones libres debajo de los datos, también en pantallas chicas. */
 .diet-builder-grid{grid-template-columns:minmax(0,1fr)}

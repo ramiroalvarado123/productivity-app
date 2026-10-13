@@ -25,6 +25,12 @@ export type NutritionMealRecord = NutritionValues & {
   mealDate: string;
 };
 
+export type MealHistoryShortcut = {
+  name: string;
+  count: number;
+  lastDate: string;
+};
+
 export type FoodServing = NutritionValues & {
   id: string;
   name: string;
@@ -98,6 +104,58 @@ export function groupMealsByMoment(meals: NutritionMealRecord[]) {
 
 export function normalizeFoodSearch(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").trim();
+}
+
+/**
+ * Recupera solamente el nombre del alimento. Los detalles guardados después del
+ * guion largo incluyen porciones o estimaciones y no deben repetirse automáticamente.
+ */
+export function mealFoodName(meal: Pick<NutritionMealRecord, "detail">) {
+  return meal.detail.split(/\s+—\s+/u, 1)[0]?.trim() ?? "";
+}
+
+function dateMinus(date: string, days: number) {
+  const value = new Date(date + "T12:00:00");
+  value.setDate(value.getDate() - days);
+  return value.toISOString().slice(0, 10);
+}
+
+/** Alimentos de ayer y los más repetidos durante los siete días previos. */
+export function mealHistoryShortcuts(meals: NutritionMealRecord[], referenceDate: string, limit = 4) {
+  const yesterday = dateMinus(referenceDate, 1);
+  const firstDay = dateMinus(referenceDate, 7);
+  const recent = meals
+    .filter((meal) => meal.mealDate >= firstDay && meal.mealDate < referenceDate)
+    .map((meal) => ({ meal, name: mealFoodName(meal) }))
+    .filter((item) => item.name.length > 0)
+    .sort((left, right) => right.meal.mealDate.localeCompare(left.meal.mealDate) || right.meal.id - left.meal.id);
+
+  const byFood = new Map<string, MealHistoryShortcut>();
+  for (const item of recent) {
+    const key = normalizeFoodSearch(item.name).replace(/\s+/g, " ");
+    const current = byFood.get(key);
+    if (current) current.count += 1;
+    else byFood.set(key, { name: item.name, count: 1, lastDate: item.meal.mealDate });
+  }
+
+  const yesterdayKeys = new Set<string>();
+  const yesterdayItems: MealHistoryShortcut[] = [];
+  for (const item of recent) {
+    if (item.meal.mealDate !== yesterday) continue;
+    const key = normalizeFoodSearch(item.name).replace(/\s+/g, " ");
+    if (yesterdayKeys.has(key)) continue;
+    yesterdayKeys.add(key);
+    yesterdayItems.push(byFood.get(key)!);
+    if (yesterdayItems.length === limit) break;
+  }
+
+  const frequent = [...byFood.entries()]
+    .filter(([key, item]) => item.count >= 2 && !yesterdayKeys.has(key))
+    .sort((left, right) => right[1].count - left[1].count || right[1].lastDate.localeCompare(left[1].lastDate))
+    .slice(0, limit)
+    .map(([, item]) => item);
+
+  return { yesterday: yesterdayItems, frequent };
 }
 
 

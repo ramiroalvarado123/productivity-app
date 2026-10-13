@@ -7,7 +7,7 @@ import {
   MAX_PORTION_GRAMS, PORTION_LABELS, PORTION_ORDER, buildCatalog, formatGrams, nutritionForGrams, portionDetail, searchFoods,
   type CatalogFood, type FoodPortionSize,
 } from "@/features/nutrition/logic/food-search";
-import type { NutritionValues } from "@/features/nutrition/logic/nutrition-tracker";
+import { normalizeFoodSearch, type NutritionValues } from "@/features/nutrition/logic/nutrition-tracker";
 import { parseDecimalInput } from "@/shared/lib/numbers";
 import { SaveButtonContent } from "@/shared/ui/save-button";
 
@@ -21,12 +21,18 @@ const EMPTY_OWN: OwnValues = { calories: "", protein: "", carbs: "", fat: "" };
  * elige una porción (o una cantidad en gramos) y los valores se calculan solos.
  * Si el alimento no está, se carga con sus valores cada 100 g y se calcula igual.
  */
-export function FoodPicker({ moment, date }: { moment: string; date: string }) {
+export function FoodPicker({ moment, date, presetName = "" }: { moment: string; date: string; presetName?: string }) {
   const { save, saving, savePhase } = useWorkspace();
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
+  const [initial] = useState(() => {
+    const match = presetName
+      ? searchFoods(CATALOG, presetName, 7).find((food) => normalizeFoodSearch(food.name) === normalizeFoodSearch(presetName))
+      : undefined;
+    return { chosen: match ? { kind: "catalog" as const, food: match } : null, open: Boolean(presetName && !match) };
+  });
+  const [query, setQuery] = useState(presetName);
+  const [open, setOpen] = useState(initial.open);
   const [active, setActive] = useState(0);
-  const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [chosen, setChosen] = useState<Chosen | null>(initial.chosen);
   const [size, setSize] = useState<FoodPortionSize | "custom">("medium");
   const [customGrams, setCustomGrams] = useState("");
   const [own, setOwn] = useState<OwnValues>(EMPTY_OWN);
@@ -121,6 +127,7 @@ export function FoodPicker({ moment, date }: { moment: string; date: string }) {
         aria-autocomplete="list"
         aria-activedescendant={showList ? `${listId}-${active}` : undefined}
         aria-label="Alimento"
+        autoFocus={Boolean(presetName)}
         autoComplete="off"
         value={query}
         placeholder="¿Qué comiste? Ej. bife, banana, arroz…"

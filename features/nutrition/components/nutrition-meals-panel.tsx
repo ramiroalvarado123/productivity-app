@@ -1,22 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useWorkspace } from "@/features/app-shell/workspace";
 import { AiMealRegister } from "@/features/nutrition/components/ai-meal-register";
 import { FoodPicker } from "@/features/nutrition/components/food-picker";
 import { NutritionDaySummary, formatAmount } from "@/features/nutrition/components/nutrition-day-summary";
 import { useNutritionGoal } from "@/features/nutrition/hooks/use-nutrition-goal";
 import { NUTRITION_GOALS, macroTargetsFor } from "@/features/nutrition/logic/macro-goals";
-import { calculateMealNutrition, groupMealsByMoment, MEAL_MOMENTS } from "@/features/nutrition/logic/nutrition-tracker";
+import { calculateMealNutrition, groupMealsByMoment, mealHistoryShortcuts, MEAL_MOMENTS, type MealHistoryShortcut } from "@/features/nutrition/logic/nutrition-tracker";
 import { DayStrip } from "@/shared/ui/day-strip";
 
 type RegisterMode = "manual" | "ai";
 
 /** Alimentación del día: resumen arriba, después registrar (a mano o con IA) y los registros. */
 export function NutritionMealsPanel() {
-  const { data, today, mealEntryDate, setMealEntryDate, estimate, setEstimate, historicalScore, entryDayLabel, dietTargetCalories, savedDietPlan, save } = useWorkspace();
+  const { data, today, mealEntryDate, setMealEntryDate, setAiDescription, estimate, setEstimate, historicalScore, entryDayLabel, dietTargetCalories, savedDietPlan, save } = useWorkspace();
   const [moment, setMoment] = useState<string>("");
   const [mode, setMode] = useState<RegisterMode>("manual");
+  const [manualPreset, setManualPreset] = useState<{ name: string; id: number } | null>(null);
+  const registerRef = useRef<HTMLElement>(null);
   const activeMoment = moment || (mode === "ai" ? estimate?.mealMoment ?? "" : "");
   // Los registros se ven abiertos: lo que cargaste tiene que aparecer apenas lo guardás.
   const [collapsed, setCollapsed] = useState<string[]>([]);
@@ -25,6 +27,15 @@ export function NutritionMealsPanel() {
   const mealsForDay = useMemo(() => data.mealHistory.filter((meal) => meal.mealDate === mealEntryDate), [data.mealHistory, mealEntryDate]);
   const totals = useMemo(() => calculateMealNutrition(mealsForDay), [mealsForDay]);
   const groups = useMemo(() => groupMealsByMoment(mealsForDay), [mealsForDay]);
+  const shortcuts = useMemo(() => mealHistoryShortcuts(data.mealHistory, mealEntryDate), [data.mealHistory, mealEntryDate]);
+  const hasShortcuts = shortcuts.yesterday.length > 0 || shortcuts.frequent.length > 0;
+
+  function reuseFood(item: MealHistoryShortcut) {
+    setEstimate(null);
+    if (mode === "ai") setAiDescription(item.name);
+    else setManualPreset((current) => ({ name: item.name, id: (current?.id ?? 0) + 1 }));
+    window.requestAnimationFrame(() => registerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
 
   // Macros objetivo: primero lo que eligió la persona, después su plan guardado y, si no hay nada, una referencia general.
   const goal = NUTRITION_GOALS.find((item) => item.key === goalKey);
@@ -49,7 +60,7 @@ export function NutritionMealsPanel() {
       {historicalScore(mealEntryDate)}
     </NutritionDaySummary>
 
-    <section className="nutrition-register" aria-label="Registrar una comida">
+    <section className="nutrition-register" aria-label="Registrar una comida" ref={registerRef}>
       <div className="nutrition-moments" role="radiogroup" aria-label="Momento del día">
         <button type="button" role="radio" aria-checked={!activeMoment} className={!activeMoment ? "is-on" : ""} onClick={() => { setMoment(""); if (mode === "ai" && estimate) setEstimate({ ...estimate, mealMoment: null }); }}>Sin momento</button>
         {MEAL_MOMENTS.map((item) => <button key={item} type="button" role="radio" aria-checked={activeMoment === item} className={activeMoment === item ? "is-on" : ""} onClick={() => setMoment(item)}>{item}</button>)}
@@ -59,11 +70,16 @@ export function NutritionMealsPanel() {
         <button type="button" role="tab" aria-selected={mode === "manual"} className={mode === "manual" ? "is-on" : ""} onClick={() => setMode("manual")}>A mano</button>
         <button type="button" role="tab" aria-selected={mode === "ai"} className={mode === "ai" ? "is-on" : ""} onClick={() => setMode("ai")}>✦ Con IA</button>
       </div>
-      {mode === "manual" ? <FoodPicker moment={moment} date={mealEntryDate} /> : <AiMealRegister moment={moment} date={mealEntryDate} />}
+      {mode === "manual" ? <FoodPicker key={manualPreset?.id ?? 0} moment={moment} date={mealEntryDate} presetName={manualPreset?.name} /> : <AiMealRegister moment={moment} date={mealEntryDate} />}
     </section>
 
     <section className="nutrition-meal-log" aria-label="Comidas registradas">
       <div className="nutrition-subheading"><h3>Registros</h3></div>
+      {hasShortcuts && <section className="nutrition-history-shortcuts" aria-label="Alimentos para repetir">
+        <div className="nutrition-history-heading"><div><b>Volvé a elegir lo de siempre</b><small>Tomamos solo el alimento. La cantidad o porción la completás de nuevo.</small></div><span>{mode === "ai" ? "Se agrega en Con IA" : "Se agrega en A mano"}</span></div>
+        {shortcuts.yesterday.length > 0 && <div className="nutrition-history-row"><small>DE AYER</small><div>{shortcuts.yesterday.map((item) => <button type="button" key={`yesterday-${item.name}`} onClick={() => reuseFood(item)}><b>{item.name}</b><span>Elegir</span></button>)}</div></div>}
+        {shortcuts.frequent.length > 0 && <div className="nutrition-history-row"><small>MÁS REPETIDAS · 7 DÍAS</small><div>{shortcuts.frequent.map((item) => <button type="button" key={`frequent-${item.name}`} onClick={() => reuseFood(item)}><b>{item.name}</b><span>{item.count} veces</span></button>)}</div></div>}
+      </section>}
       {groups.length ? groups.map((group) => {
         const isOpen = !collapsed.includes(group.name);
         return <div className="nutrition-meal-group" key={group.name}>
