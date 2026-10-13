@@ -70,6 +70,7 @@ export const FOOD_ROWS: FoodRow[] = [
   ["Bife de chorizo, a la parrilla", "Carnes vacunas", 264, 26.2, 0, 17.7, [80, 150, 250], "bife chorizo lomo parrilla asado carne vaca res bistec"],
   ["Bife de chorizo, crudo", "Carnes vacunas", 163, 22.4, 0, 8.2, [80, 150, 250], "bife chorizo crudo"],
   ["Bola de lomo, al horno", "Carnes vacunas", 188, 26.8, 0, 8.2, [80, 150, 250], "bola lomo tip round carne horno"],
+  ["Carne vacuna, cocida", "Carnes vacunas", 250, 27, 0, 16, [80, 150, 250], "carne vaca vacuna res cocida"],
   ["Carne al horno con papas", "Carnes vacunas", 160, 29.9, 0, 4.5, [100, 200, 300], "carne horno papas asado plato"],
   ["Carne picada común (80/20), cruda", "Carnes vacunas", 254, 17.2, 0, 20, [80, 150, 250], "carne picada molida cruda"],
   ["Carne picada especial (90/10), cruda", "Carnes vacunas", 176, 20, 0, 10, [80, 150, 250], "carne picada molida especial magra cruda"],

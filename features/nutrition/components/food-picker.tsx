@@ -1,19 +1,17 @@
 "use client";
 import { useId, useMemo, useRef, useState } from "react";
 import { useWorkspace } from "@/features/app-shell/workspace";
-import { FOOD_ROWS } from "@/features/nutrition/data/food-catalog";
 import { formatAmount } from "@/features/nutrition/components/nutrition-day-summary";
 import {
-  MAX_PORTION_GRAMS, PORTION_LABELS, PORTION_ORDER, buildCatalog, formatGrams, nutritionForGrams, portionDetail, searchFoods,
+  FOOD_CATALOG, MAX_PORTION_GRAMS, PORTION_LABELS, PORTION_ORDER, formatGrams, nutritionForGrams, portionDetail, searchFoods,
   type CatalogFood, type FoodPortionSize,
 } from "@/features/nutrition/logic/food-search";
-import { normalizeFoodSearch, type NutritionValues } from "@/features/nutrition/logic/nutrition-tracker";
+import type { NutritionValues } from "@/features/nutrition/logic/nutrition-tracker";
 import { parseDecimalInput } from "@/shared/lib/numbers";
 import { SaveButtonContent } from "@/shared/ui/save-button";
 
 type Chosen = { kind: "catalog"; food: CatalogFood } | { kind: "own"; name: string };
 type OwnValues = { calories: string; protein: string; carbs: string; fat: string };
-const CATALOG: CatalogFood[] = buildCatalog(FOOD_ROWS);
 const EMPTY_OWN: OwnValues = { calories: "", protein: "", carbs: "", fat: "" };
 
 /**
@@ -21,15 +19,13 @@ const EMPTY_OWN: OwnValues = { calories: "", protein: "", carbs: "", fat: "" };
  * elige una porción (o una cantidad en gramos) y los valores se calculan solos.
  * Si el alimento no está, se carga con sus valores cada 100 g y se calcula igual.
  */
-export function FoodPicker({ moment, date, presetName = "" }: { moment: string; date: string; presetName?: string }) {
+export function FoodPicker({ moment, date, presetFoodId = "" }: { moment: string; date: string; presetFoodId?: string }) {
   const { save, saving, savePhase } = useWorkspace();
   const [initial] = useState(() => {
-    const match = presetName
-      ? searchFoods(CATALOG, presetName, 7).find((food) => normalizeFoodSearch(food.name) === normalizeFoodSearch(presetName))
-      : undefined;
-    return { chosen: match ? { kind: "catalog" as const, food: match } : null, open: Boolean(presetName && !match) };
+    const match = presetFoodId ? FOOD_CATALOG.find((food) => food.id === presetFoodId) : undefined;
+    return { chosen: match ? { kind: "catalog" as const, food: match } : null, open: false };
   });
-  const [query, setQuery] = useState(presetName);
+  const [query, setQuery] = useState(initial.chosen?.food.name ?? "");
   const [open, setOpen] = useState(initial.open);
   const [active, setActive] = useState(0);
   const [chosen, setChosen] = useState<Chosen | null>(initial.chosen);
@@ -40,7 +36,7 @@ export function FoodPicker({ moment, date, presetName = "" }: { moment: string; 
   const listId = useId();
 
   // Importado de forma estática (pesa ~50 KB): una carga diferida podía quedarse colgada en "cargando".
-  const suggestions = useMemo(() => (query.trim() ? searchFoods(CATALOG, query, 7) : []), [query]);
+  const suggestions = useMemo(() => (query.trim() ? searchFoods(FOOD_CATALOG, query, 7) : []), [query]);
   const showList = open && !chosen && query.trim().length > 0;
   // La última opción de la lista siempre es "cargarlo a mano": un alimento que no está no es un callejón sin salida.
   const optionCount = suggestions.length + 1;
@@ -127,7 +123,7 @@ export function FoodPicker({ moment, date, presetName = "" }: { moment: string; 
         aria-autocomplete="list"
         aria-activedescendant={showList ? `${listId}-${active}` : undefined}
         aria-label="Alimento"
-        autoFocus={Boolean(presetName)}
+        autoFocus={Boolean(presetFoodId)}
         autoComplete="off"
         value={query}
         placeholder="¿Qué comiste? Ej. bife, banana, arroz…"
