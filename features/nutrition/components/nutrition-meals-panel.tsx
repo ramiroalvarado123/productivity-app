@@ -13,6 +13,10 @@ import { DayStrip } from "@/shared/ui/day-strip";
 
 type RegisterMode = "manual" | "ai";
 
+function HistoryClockIcon() {
+  return <span className="nutrition-history-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" /><path d="M10 5.5v4.8l3.2 2" /></svg></span>;
+}
+
 /** Alimentación del día: resumen arriba, después registrar (a mano o con IA) y los registros. */
 export function NutritionMealsPanel() {
   const { data, today, mealEntryDate, setMealEntryDate, setAiDescription, estimate, setEstimate, historicalScore, entryDayLabel, dietTargetCalories, savedDietPlan, save } = useWorkspace();
@@ -29,7 +33,7 @@ export function NutritionMealsPanel() {
   const totals = useMemo(() => calculateMealNutrition(mealsForDay), [mealsForDay]);
   const groups = useMemo(() => groupMealsByMoment(mealsForDay), [mealsForDay]);
   const shortcuts = useMemo(() => mealHistoryShortcuts(FOOD_CATALOG, data.mealHistory, mealEntryDate), [data.mealHistory, mealEntryDate]);
-  const hasShortcuts = shortcuts.yesterday.length > 0 || shortcuts.frequent.length > 0;
+  const hasYesterdayShortcuts = shortcuts.yesterday.length > 0;
 
   function reuseFood(item: MealHistoryShortcut) {
     setEstimate(null);
@@ -75,12 +79,11 @@ export function NutritionMealsPanel() {
     </section>
 
     <section className="nutrition-meal-log" aria-label="Comidas registradas">
-      <div className="nutrition-subheading"><h3>Registros</h3></div>
-      {hasShortcuts && <section className="nutrition-history-shortcuts" aria-label="Alimentos para repetir">
-        <div className="nutrition-history-heading"><div><b>Volvé a elegir lo de siempre</b><small>Tomamos solo el alimento. La cantidad o porción la completás de nuevo.</small></div><span>{mode === "ai" ? "Se agrega en Con IA" : "Se agrega en A mano"}</span></div>
-        {shortcuts.yesterday.length > 0 && <div className="nutrition-history-row"><small>DE AYER</small><div>{shortcuts.yesterday.map((item) => <button type="button" key={`yesterday-${item.name}`} onClick={() => reuseFood(item)}><b>{item.name}</b><span>Elegir</span></button>)}</div></div>}
-        {shortcuts.frequent.length > 0 && <div className="nutrition-history-row"><small>MÁS REPETIDAS · 7 DÍAS</small><div>{shortcuts.frequent.map((item) => <button type="button" key={`frequent-${item.name}`} onClick={() => reuseFood(item)}><b>{item.name}</b><span>{item.count} veces</span></button>)}</div></div>}
+      <div className="nutrition-subheading nutrition-history-title"><h3>Historial</h3></div>
+      {hasYesterdayShortcuts && <section className="nutrition-history-shortcuts" aria-label="Alimentos de ayer">
+        <div className="nutrition-history-row"><small>AYER</small><div>{shortcuts.yesterday.map((item) => <button type="button" key={`yesterday-${item.foodId}`} aria-label={`Volver a elegir ${item.name}`} onClick={() => reuseFood(item)}><HistoryClockIcon /><b>{item.name}</b></button>)}</div></div>
       </section>}
+      <div className="nutrition-subheading nutrition-records-title"><h3>Registros</h3></div>
       {groups.length ? groups.map((group) => {
         const isOpen = !collapsed.includes(group.name);
         return <div className="nutrition-meal-group" key={group.name}>
