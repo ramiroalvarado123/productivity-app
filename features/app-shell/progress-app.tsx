@@ -16,7 +16,7 @@ import { GOAL_METRICS, GOAL_SOURCES, GROUP_ACCENTS, accentFor, goalPeriodLabel, 
 import type { DietForm, Section, SettingsView, StreakAction } from "@/shared/data/types";
 import { estimateTargetCalories } from "@/features/nutrition/logic/diet";
 import { FEEDBACK_SECTIONS, FEEDBACK_TYPES } from "@/features/settings/constants";
-import { FRIEND_NUDGE_MESSAGES } from "@/features/friends/constants";
+import { FriendChat } from "@/features/friends/components/friend-chat";
 import type { GoalDraft, GroupPanelTab } from "@/features/friends/logic/goal-draft";
 import { InsigniasModal } from "@/features/engagement/components/insignias-modal";
 import { LockedFeature } from "@/features/pro/components/locked-feature";
@@ -565,14 +565,7 @@ export default function ProgressClient(props: WorkspaceProps) {
               return badge ? <span className="friend-badge-chip" key={badge.id}><BadgeEmblem className="friend-badge-emblem" symbol={badge.symbol} tier={badge.tier} size={20} />{badge.title}</span> : null;
             })}</div> : <span className="friend-badges-empty">Todavía no desbloqueó insignias.</span>}
           </div>
-          <div className="friend-nudge-wrap">
-            <button type="button" className="friend-nudge" onClick={() => setNudgeOpenFor(nudgeOpenFor === friend.email ? null : friend.email)}>
-              <span>✉ Mandar un mensaje</span><i>{nudgeOpenFor === friend.email ? "▲" : "▼"}</i>
-            </button>
-            {nudgeOpenFor === friend.email && <div className="ui-dropdown-panel friend-nudge-menu" role="menu">
-              {FRIEND_NUDGE_MESSAGES.map((message) => <a key={message} role="menuitem" className="ui-dropdown-option" href={mailLink(message, friend.email)} onClick={() => setNudgeOpenFor(null)}>{message}</a>)}
-            </div>}
-          </div>
+          <FriendChat friend={friend} open={nudgeOpenFor === friend.email} onToggle={() => setNudgeOpenFor(nudgeOpenFor === friend.email ? null : friend.email)} />
         </article>;
       })}
     </section>
