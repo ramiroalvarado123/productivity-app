@@ -44,3 +44,6 @@ next-env.d.ts
 # herramientas de desarrollo locales
 /.claude/
 tsconfig.tsbuildinfo
+
+# app nativa (Capacitor): esta página se genera con `npm run native:sync`
+/native-shell/offline.html

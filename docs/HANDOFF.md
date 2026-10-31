@@ -1,6 +1,6 @@
 # HANDOFF — estado de la reestructuración y próximos pasos
 
-Última actualización: 2026-10-05. Leé primero `AGENTS.md` y `docs/architecture.md`.
+Última actualización: 2026-10-31. Leé primero `AGENTS.md` y `docs/architecture.md`.
 
 ## Ya hecho (commits en `main`, sin push salvo indicación)
 
@@ -21,6 +21,8 @@ Cambios de comportamiento intencionales (menores):
 - El objetivo de calorías del puntaje/avisos es el **guardado** (antes también tomaba un plan de IA generado y sin guardar).
 - Las secciones se "reinician" al cambiar el día (`key={today}`), en vez de un efecto que reseteaba fechas sueltas.
 
+8. **App nativa (Capacitor) — Fase 1 de tiendas**: `ios/` y `android/` generados; la app carga la web de Vercel (`server.url` en `capacitor.config.ts`) con pantalla "sin conexión" local (`native-shell/`). Dentro de la app nativa (`shared/platform/native.ts`) se apagan service worker/Web Push, botón de Google y el pago simulado de Pro. Requisitos de tiendas: borrar cuenta (`app/api/account/route.ts` + `supabase/delete-account.sql`), páginas `/privacidad` `/terminos` `/soporte` (`features/legal/`), permiso para la IA (`features/ai-consent/`, intercepta `fetch` hacia `AI_ENDPOINTS`) y entrada "Privacidad y cuenta" en Configuración. Guía completa para el humano: `docs/store-release.md`.
+
 ## Lo que tiene que hacer un humano en Supabase / Vercel
 
 1. **Backup** (Database → Backups, o `supabase db dump`).
@@ -32,6 +34,9 @@ Cambios de comportamiento intencionales (menores):
 7. **SQL Editor → correr `supabase/group-goal-mode.sql`** (objetivos de grupo "cada uno" vs "entre todos"). Hasta correrlo, los objetivos compartidos siguen andando y los individuales avisan que falta el SQL.
 8. **SQL Editor → correr `supabase/training-routines.sql`** (rutinas de gimnasio: tabla `training_routines` con RLS). Hasta correrlo, la app anda igual: no hay rutinas guardadas y al intentar crear una avisa que falta el SQL.
 9. **SQL Editor → correr `supabase/friend-messages.sql`** (chat entre amigos: tabla `friend_messages` con RLS + función `avora_mark_chat_read`). Hasta correrlo, el chat abre pero avisa que falta el SQL.
+10. **SQL Editor → correr `supabase/delete-account.sql`** (función `avora_delete_my_account` para "Eliminar mi cuenta"). Hasta correrlo, el botón avisa que no está habilitado. Probar primero con una cuenta de prueba.
+11. **Vercel → variables**: `NEXT_PUBLIC_SUPPORT_EMAIL` (mail de soporte) y `NEXT_PUBLIC_SITE_URL` (dirección de producción).
+12. **SQL Editor → `supabase/push-devices.sql` y `supabase/billing.sql`** (push nativo y registro de suscripciones). `supabase/pro-lockdown.sql` solo el día del lanzamiento de los pagos. Claves de APNs/FCM/RevenueCat: `docs/store-release.md` § 4b.
 
 ## Próximos pasos (en orden)
 
@@ -71,7 +76,7 @@ Objetivo: el usuario busca un alimento, elige porción o gramos, y calorías + p
 Partir `app/globals.css` (2.400 líneas) en `styles/*.css` respetando el orden (las reglas del final pisan a las de arriba), sin cambiar nada visual; después mover cada bloque a su `features/<área>/`.
 
 ### E. Resto del plan largo
-`docs/PLAN_REESTRUCTURACION.md`: Fase 5.3 (Pro no auto-asignable), 5.4 (límites de IA), 5.6 (`user_id` en vez de email), Fase 8 (Capacitor/tiendas).
+`docs/PLAN_REESTRUCTURACION.md`: Fase 5.3 (Pro no auto-asignable), 5.4 (límites de IA), 5.6 (`user_id` en vez de email).
 
-## Probar la UI sin login
-Copiar `scripts/refactor/preview-ui-page.example.tsx` a `app/preview-ui/page.tsx`, `npm run dev`, abrir `/preview-ui`. Borrar antes del commit. Si el dev server muestra estilos viejos, `npx next build && npx next start -p 3100`.
+### F. Tiendas, Fase 2
+Hecho (dormido hasta que el humano pegue las claves, ver `docs/store-release.md` § 4b): push nativo (APNs/FCM, `supabase/push-devices.sql`) y compras Pro con RevenueCat (webhook + sync, `supabase/billing.sql`, `supabase/pro-lockdown.sql` para el lanzamiento). Pendiente y opcional: (1) login nativo con Google + Sign in with Apple (hoy la app nativa solo permite email/contraseña); (2) Universal Links / App Links para `/invite/[code]` y confirmación de mail; (3) los endpoints de IA no verifican Pro ni límites en el servidor (5.4); (4) plan B si Apple rechaza por 4.2: empaquetar la interfaz (Fase 8.2 del plan).

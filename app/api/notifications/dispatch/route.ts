@@ -1,4 +1,5 @@
 import webpush from "web-push";
+import { sendNativePush, type NativePlatform } from "@/features/notifications/server/native-delivery";
 import { SUPABASE_URL } from "@/shared/config/supabase";
 import { inferTaskCategory } from "@/domain/schedule";
 import { scoreForDay, trainingContribution, type DayRecord, type ScoreWeights } from "@/domain/score";
@@ -411,6 +412,23 @@ async function sendCandidate(candidate: Candidate, subscriptions: Row[]) {
   let failed = 0;
   const errors: string[] = [];
   await Promise.all(subscriptions.map(async (row) => {
+    // Celular con la app nativa (tabla push_devices): va por APNs / FCM en vez de Web Push.
+    const deviceToken = stringValue(row, "device_token");
+    if (deviceToken) {
+      const result = await sendNativePush(stringValue(row, "platform") as NativePlatform, deviceToken, {
+        title: candidate.title, body: candidate.body, url: candidate.url,
+      });
+      if (result.ok) { sent += 1; return; }
+      failed += 1;
+      errors.push(result.reason);
+      console.error("notifications native push failed", { email: candidate.email, kind: candidate.kind, reason: result.reason });
+      if (result.expired) {
+        expired += 1;
+        const id = numberValue(row, "id");
+        if (id) await adminRequest("push_devices", new URLSearchParams({ id: "eq." + id }).toString(), { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      }
+      return;
+    }
     const endpoint = stringValue(row, "endpoint");
     const p256dh = stringValue(row, "p256dh");
     const auth = stringValue(row, "auth");
@@ -543,12 +561,23 @@ export async function POST(request: Request) {
       recentInvites("friend_invites", "code,from_name,from_email,to_email,created_at"),
       recentInvites("group_invites", "id,group_name,from_name,from_email,to_email,created_at"),
     ]);
-    const [preferenceRows, subscriptions, profiles, events] = await Promise.all([
+    const [preferenceRows, webSubscriptions, nativeDevices, profiles, events] = await Promise.all([
       adminRequest("notification_preferences", new URLSearchParams({ push_enabled: "eq.true" }).toString()),
       adminRequest("push_subscriptions"),
+      // Tabla opcional: si todavía no se corrió supabase/push-devices.sql, solo hay Web Push.
+      adminRequest("push_devices").catch((error) => {
+        console.warn("notifications push_devices unavailable", error);
+        return [] as Row[];
+      }),
       isAnnouncementCampaign ? Promise.resolve([] as Row[]) : adminRequest("profiles", new URLSearchParams({ select: "email,display_name,pro_since" }).toString()),
       isAnnouncementCampaign ? Promise.resolve([] as Row[]) : adminRequest("calendar_events", new URLSearchParams({ select: "id,user_email,title,event_date,event_time" }).toString()),
     ]);
+
+    // Un celular nativo cuenta como "app": igual que una PWA instalada, tiene prioridad sobre los navegadores.
+    const subscriptions: Row[] = [
+      ...webSubscriptions,
+      ...nativeDevices.map((row) => ({ id: row.id, user_email: row.user_email, platform: row.platform, device_token: row.token, client_context: "app" })),
+    ];
 
     let dailyScoreRows: DailyScoreRows | null = null;
     if (!isAnnouncementCampaign) {

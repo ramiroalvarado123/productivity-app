@@ -64,3 +64,11 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 ## Base de datos (`supabase/`)
 
 SQL sueltos, ya aplicados en producción salvo los marcados en HANDOFF. Los nuevos: `performance.sql` (índices + RPC de entrenamiento), `study-resources.sql` (artículos/podcasts), `weekly-ai-review.sql` (revisiones y memoria estructurada Pro), `sleep-quality-regular.sql` (valoración "regular") y `group-goal-mode.sql` (objetivos de grupo individuales) `training-routines.sql` (rutinas de gimnasio) y `friend-messages.sql` (chat entre amigos).
+
+## App nativa (Capacitor)
+- `capacitor.config.ts` + `ios/` + `android/` + `native-shell/` (pantalla sin conexión) + `resources/` (íconos maestros). La app nativa abre la web de Vercel (`server.url`), así que los cambios web llegan sin pasar por las tiendas.
+- `shared/platform/native.ts` (`isNativeApp`, `useIsNative`) y `features/native/components/native-bridge.tsx` (clase en `<html>`, botón atrás de Android).
+- Requisitos de tiendas: `features/legal/` (+ `app/privacidad|terminos|soporte`), `features/ai-consent/` (permiso para OpenAI, intercepta `fetch`), `features/settings/components/account-privacy.tsx` + `app/api/account/route.ts` (borrar cuenta; SQL en `supabase/delete-account.sql`).
+- Guía para publicar y cambiar: `docs/store-release.md`.
+- Push nativo: cliente `features/notifications/logic/native-push.ts` → `POST /api/notifications/devices` (RPC `avora_register_push_device`, `supabase/push-devices.sql`); envío en `features/notifications/server/native-delivery.ts` (APNs por HTTP/2 + FCM v1) llamado desde `app/api/notifications/dispatch/route.ts`.
+- Pagos Pro: cliente `features/pro/logic/native-purchases.ts` + `features/pro/components/native-purchase.tsx` (RevenueCat); servidor `server/billing/` (lógica pura en `revenuecat.ts`), `app/api/billing/{webhook,sync}`, `server/db/admin.ts` (clave de servicio, solo para webhooks). `supabase/billing.sql` y `supabase/pro-lockdown.sql`.

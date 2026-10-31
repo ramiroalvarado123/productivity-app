@@ -2817,3 +2817,33 @@ button.day-block-hit:hover .block-check { border-color: var(--green); }
 .friend-chat-form input{min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-size:16px;background:#fff}
 .friend-chat-form button{border:0;border-radius:10px;padding:0 14px;background:var(--green);color:#fff;font-size:10px;font-weight:700;cursor:pointer}
 .friend-chat-form button:disabled{opacity:.5;cursor:default}
+
+/* ===== Requisitos de las tiendas: páginas legales, permiso de IA y borrado de cuenta ===== */
+.legal-page{min-height:100vh;background:#fbfaf5;color:var(--ink);padding:max(20px,env(safe-area-inset-top)) 20px max(32px,env(safe-area-inset-bottom))}
+.legal-header{max-width:720px;margin:0 auto 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.legal-brand{display:flex;align-items:center;gap:10px;color:var(--green);text-decoration:none}
+.legal-back{font-size:13px;font-weight:600;color:var(--green)}
+.legal-body{max-width:720px;margin:0 auto;font-size:15px;line-height:1.65}
+.legal-body h1{margin:0 0 6px;font-family:var(--font-serif);font-weight:500;font-size:clamp(30px,6vw,42px);letter-spacing:-.014em}
+.legal-body h2{margin:28px 0 8px;font-size:18px;font-weight:700}
+.legal-body h3{margin:18px 0 4px;font-size:15px;font-weight:700}
+.legal-body p,.legal-body li{color:#33433b}
+.legal-body ul{padding-left:20px;list-style:disc}.legal-body li{margin:4px 0}
+.legal-body a{color:var(--green)}
+.legal-updated{margin:0 0 20px;font-size:13px;color:#7b857f}
+.legal-footer{display:flex;gap:16px;margin-top:36px;padding-top:16px;border-top:1px solid var(--line);font-size:13px}
+.lifetrack-legal-note a{color:inherit;text-decoration:underline}
+.ai-consent-dialog p{margin:10px 0;font-size:13px;line-height:1.55}
+.ai-consent-dialog .ai-consent-links{font-size:11px;color:#7b857f}
+.ai-consent-list{margin:8px 0;padding-left:18px;list-style:disc;font-size:13px;line-height:1.6}
+.settings-hub>button.account-delete-trigger b{color:#b3412f}
+.settings-hub>button.account-delete-trigger>span{background:#fbeceb;color:#b3412f}
+.account-delete-confirm{display:grid;gap:8px;padding:14px;border:1px solid #efc9c3;border-radius:14px;background:#fff6f5}
+.account-delete-confirm b{font-size:13px}
+.account-delete-confirm p{margin:0;font-size:12px;line-height:1.5;color:#5b3a35}
+.account-delete-confirm .account-delete-error{color:#a2321f;font-weight:600}
+.account-delete-confirm>div{display:flex;justify-content:flex-end;gap:8px}
+.account-delete-confirm button{border:0;border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.account-delete-confirm button:disabled{opacity:.6;cursor:default}
+.account-delete-confirm .account-delete-cancel{border:1px solid var(--line);background:#fff;color:var(--ink)}
+.account-delete-confirm .account-delete-danger{background:#b3412f;color:#fff}

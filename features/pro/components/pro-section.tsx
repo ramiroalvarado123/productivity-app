@@ -2,6 +2,8 @@
 import { formatDate } from "@/domain/dates";
 import { useState } from "react";
 import { useWorkspace } from "@/features/app-shell/workspace";
+import { nativePlatform, useIsNative } from "@/shared/platform/native";
+import { NativePurchase } from "@/features/pro/components/native-purchase";
 
 /** AVORA Pro: comparación de planes y compra simulada. */
 export function ProSection() {
@@ -13,6 +15,11 @@ export function ProSection() {
     openSection,
     isPro,
   } = useWorkspace();
+  // Apple y Google exigen cobrar con sus propias compras dentro de la app: en la app nativa se usa
+  // RevenueCat (NativePurchase) y nunca el pago simulado de demostración.
+  const native = useIsNative();
+  // Se apaga el pago de demostración de la web cuando Pro ya se cobra de verdad (supabase/pro-lockdown.sql).
+  const webDemoOff = process.env.NEXT_PUBLIC_WEB_PRO_DEMO === "off";
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutPlan, setCheckoutPlan] = useState<"monthly" | "annual">("annual");
   const [checkoutStep, setCheckoutStep] = useState<"form" | "processing" | "done">("form");
@@ -54,9 +61,11 @@ export function ProSection() {
       <p className="pro-active-copy">Activada el {formatDate(data.profile.proSince || today)}. Todas las funciones están desbloqueadas en esta cuenta.</p>
       <div className="pro-active-actions">
         <button className="primary-action" onClick={() => openSection("summary")}>Volver a Inicio</button>
-        <button className="pro-cancel" disabled={saving} onClick={() => void cancelPro()}>{saving ? "Desactivando…" : "Volver al plan gratuito"}</button>
+        {native
+          ? <a className="pro-cancel" href={nativePlatform() === "android" ? "https://play.google.com/store/account/subscriptions" : "https://apps.apple.com/account/subscriptions"}>Administrar suscripción</a>
+          : webDemoOff ? null : <button className="pro-cancel" disabled={saving} onClick={() => void cancelPro()}>{saving ? "Desactivando…" : "Volver al plan gratuito"}</button>}
       </div>
-      <small className="pro-demo-note">Demostración: la suscripción se simula localmente y no hay ningún cobro.</small>
+      {!native && !webDemoOff && <small className="pro-demo-note">Demostración: la suscripción se simula localmente y no hay ningún cobro.</small>}
     </article> : <>
       <article className="panel pro-hero">
         <p className="pro-eyebrow">AVORA PRO</p>
@@ -89,7 +98,10 @@ export function ProSection() {
         </div>
       </article>
 
-      <article className="panel pro-pricing">
+      {native ? <NativePurchase email={data.profile.email} /> : webDemoOff ? <article className="panel pro-pricing">
+        <h3>Pro se contrata desde la app</h3>
+        <p className="pro-price-note">Descargá AVORA en tu iPhone o Android y suscribite desde esta pantalla.</p>
+      </article> : <article className="panel pro-pricing">
         <div className="pro-plan-switch" role="group" aria-label="Elegí la frecuencia de pago">
           <button className={checkoutPlan === "monthly" ? "active" : ""} onClick={() => setCheckoutPlan("monthly")}>Mensual</button>
           <button className={checkoutPlan === "annual" ? "active" : ""} onClick={() => setCheckoutPlan("annual")}>Anual <i>2 meses gratis</i></button>
@@ -105,7 +117,7 @@ export function ProSection() {
           <li>Si cancelás, todo lo que registraste sigue estando.</li>
           <li>Demostración: no se cobra nada y podés volver atrás cuando quieras.</li>
         </ul>
-      </article>
+      </article>}
     </>}
   </section>;
   const checkoutDialog = checkoutOpen && <div className="voice-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && checkoutStep !== "processing") setCheckoutOpen(false); }}>

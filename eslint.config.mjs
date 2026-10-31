@@ -14,6 +14,11 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Restos del build de Vite anterior a la migración: no son código fuente.
     "dist/**",
+    // Proyectos nativos generados por Capacitor y sus recursos: no son código fuente de la app.
+    "android/**",
+    "ios/**",
+    "native-shell/**",
+    "resources/**",
   ]),
 ]);
 

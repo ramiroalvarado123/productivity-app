@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { BrandMark } from "@/shared/ui/brand-mark";
 import { SUPABASE_URL } from "@/shared/config/supabase";
+import { useIsNative } from "@/shared/platform/native";
 
 type Mode = "login" | "signup" | "recover";
 
@@ -15,6 +16,9 @@ export default function AuthPanel({ notice = "" }: { notice?: string }) {
   const [confirmationEmail, setConfirmationEmail] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Google no permite iniciar sesión desde un WebView y Apple pide ofrecer "Iniciar con Apple" si hay
+  // login social: en la app nativa se entra solo con email y contraseña.
+  const native = useIsNative();
   const isGmail = confirmationEmail.toLowerCase().endsWith("@gmail.com");
 
   function google() {
@@ -149,8 +153,8 @@ export default function AuthPanel({ notice = "" }: { notice?: string }) {
             {notice && <p className="lifetrack-access-notice">{notice}</p>}
             <p className="step-label">{mode === "signup" ? "CREAR CUENTA" : mode === "recover" ? "RECUPERAR ACCESO" : "EMPECEMOS"}</p>
             <h2>{mode === "signup" ? "Creá tu cuenta." : mode === "recover" ? "Recuperá tu cuenta." : "Ingresá a AVORA."}</h2>
-            {mode !== "recover" && <button className="lifetrack-google-button" type="button" onClick={google}><span>G</span>Continuar con Google <b>→</b></button>}
-            {mode !== "recover" && <div className="lifetrack-auth-divider"><span>O</span></div>}
+            {mode !== "recover" && !native && <button className="lifetrack-google-button" type="button" onClick={google}><span>G</span>Continuar con Google <b>→</b></button>}
+            {mode !== "recover" && !native && <div className="lifetrack-auth-divider"><span>O</span></div>}
             <form onSubmit={submit} className="lifetrack-auth-options">
               {mode === "signup" && <label className="lifetrack-auth-field"><span>Nombre</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Tu nombre" required minLength={2} /></label>}
               <label className="lifetrack-auth-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@email.com" required /></label>
@@ -163,6 +167,7 @@ export default function AuthPanel({ notice = "" }: { notice?: string }) {
               {mode !== "login" && <button type="button" onClick={() => { setMode("login"); setMessage(""); }}>Volver a iniciar sesión</button>}
             </div>
             <small>AVORA no almacena tu contraseña. La autenticación se procesa de forma segura con Supabase.</small>
+            <small className="lifetrack-legal-note">Al continuar aceptás los <a href="/terminos">Términos de uso</a> y la <a href="/privacidad">Política de privacidad</a>.</small>
           </div>
         </section>
       )}

@@ -15,6 +15,7 @@ Stack: Next.js 16 (App Router) + React 19 + TypeScript estricto + Supabase (Post
 - `npm run dev` — desarrollo (usa la base REAL de Supabase: lo que guardes queda guardado).
 - `npm run check` — lint + typecheck + tests + build. **Tiene que pasar antes de dar por terminada una tarea.**
 - `npm test` — tests de lógica pura (`tests/*.test.ts`, node:test + tsx).
+- `npm run native:sync` — después de tocar `capacitor.config.ts` o plugins; `native:ios` / `native:android` abren Xcode / Android Studio; `native:assets` regenera íconos. Guía: `docs/store-release.md`. **No corras `capacitor-assets generate` a mano** (pisa los íconos de la PWA en `public/`).
 
 ## Dónde va cada cosa
 - `app/` — SOLO rutas de Next (páginas y `api/**/route.ts`). Finitas: autentican, validan y delegan.
@@ -23,6 +24,7 @@ Stack: Next.js 16 (App Router) + React 19 + TypeScript estricto + Supabase (Post
 - `domain/` — reglas compartidas cliente/servidor: Daily Score (`score.ts`), fechas (`dates.ts`), validación (`validation.ts`), agenda (`schedule.ts`), rachas (`streaks.ts`).
 - `shared/` — UI genérica (`ui/`), tipos y helpers de datos (`data/`), utilidades (`lib/`), `api/read-json.ts`, `config/supabase.ts` (URL y clave pública).
 - `server/` — solo servidor: sesión (`auth/session.ts`, verifica el JWT localmente), PostgREST (`db/postgrest.ts`), helpers (`db/rows.ts`, `http.ts`), tipos de acciones (`progress/types.ts`).
+- `ios/`, `android/` — proyectos nativos de Capacitor (cargan la web de Vercel; ver `capacitor.config.ts`). `shared/platform/native.ts` dice si corre dentro de la app nativa: ahí no hay Web Push, ni Google, ni pago de Pro.
 - `supabase/*.sql` — cambios de base para pegar en Supabase > SQL Editor (siempre aditivos).
 
 ## Reglas duras

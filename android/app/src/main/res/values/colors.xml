@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Color de acento de los avisos push (verde de AVORA). -->
+    <color name="avora_notification">#164735</color>
+</resources>

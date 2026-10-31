@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <!-- Marca de AVORA en una sola silueta. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M60,16 L94,80 L79,80 L60,44 L41,80 L26,80 Z M28,30 L54,80 L42,80 L28,52 L14,80 L2,80 Z" />
+</vector>

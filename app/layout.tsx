@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Instrument_Sans, Newsreader } from "next/font/google";
 import { ServiceWorkerRegistration } from "@/features/notifications/components/service-worker-registration";
+import { NativeBridge } from "@/features/native/components/native-bridge";
+import { AiConsentHost } from "@/features/ai-consent/components/ai-consent-host";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument-sans", display: "swap" });
@@ -45,6 +47,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="es" className={`${instrumentSans.variable} ${newsreader.variable} ${cormorantGaramond.variable}`}>
       <body>
         <ServiceWorkerRegistration />
+        <NativeBridge />
+        <AiConsentHost />
         {children}
       </body>
     </html>

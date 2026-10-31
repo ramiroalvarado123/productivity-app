@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { isNativeApp } from "@/shared/platform/native";
 
 const SERVICE_WORKER_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 const APP_VERSION_CHECK_INTERVAL_MS = 2 * 60 * 1000;
@@ -121,7 +122,8 @@ export function ServiceWorkerRegistration() {
     window.addEventListener("pageshow", handlePageShow);
     window.addEventListener("online", handlePageShow);
 
-    if ("serviceWorker" in navigator) {
+    // En la app nativa no hay service worker ni Web Push: la web se carga siempre fresca desde el servidor.
+    if (!isNativeApp() && "serviceWorker" in navigator) {
       navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
       void navigator.serviceWorker
         .register("/sw.js", { scope: "/", updateViaCache: "none" })

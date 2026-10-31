@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { NotificationSettings } from "@/features/notifications/components/notification-settings";
+import { AccountPrivacySettings } from "@/features/settings/components/account-privacy";
 import { CSSProperties, FormEvent, type ReactNode } from "react";
 import { BrandMark } from "@/shared/ui/brand-mark";
 import { Dropdown } from "@/shared/ui/dropdown";
@@ -295,6 +296,7 @@ export default function ProgressClient(props: WorkspaceProps) {
         <p>PREFERENCIAS</p>
         <button type="button" onClick={() => setSettingsView("language")}><span aria-hidden="true">文</span><div><b>Idioma</b><small>Español (Argentina)</small></div><i aria-hidden="true">›</i></button>
         <button type="button" onClick={() => setSettingsView("notifications")}><span aria-hidden="true">◌</span><div><b>Notificaciones</b><small>Resúmenes y próximos recordatorios</small></div><i aria-hidden="true">›</i></button>
+        <AccountPrivacySettings />
       </div>}
 
       {settingsView === "personal" && <>

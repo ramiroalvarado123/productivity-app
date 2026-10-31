@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AVORA</string>
+    <string name="title_activity_main">AVORA</string>
+    <string name="package_name">com.avora.app</string>
+    <string name="custom_url_scheme">com.avora.app</string>
+</resources>

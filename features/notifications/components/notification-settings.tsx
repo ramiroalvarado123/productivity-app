@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import { useIsNative } from "@/shared/platform/native";
+import { disableNativePush, enableNativePush, hasNativePushToken, nativePushPermission } from "@/features/notifications/logic/native-push";
 
 type NotificationPreferences = {
   pushEnabled: boolean;
@@ -56,6 +58,8 @@ async function responseJson(response: Response) {
 }
 
 export function NotificationSettings({ isPro, compact = false }: { isPro: boolean; compact?: boolean }) {
+  // Dentro de la app de iPhone/Android los avisos van por APNs/FCM (native-push.ts), no por Web Push.
+  const native = useIsNative();
   const [preferences, setPreferences] = useState(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,11 +73,14 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let cancelled = false;
-    if (typeof window !== "undefined") {
+    if (native) {
+      void nativePushPermission().then((value) => { if (!cancelled) setPermission(value); }).catch(() => undefined);
+      setSubscriptionReady(hasNativePushToken());
+    } else if (typeof window !== "undefined") {
       if ("Notification" in window) setPermission(Notification.permission);
       setStandalone(window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
     }
-    if ("serviceWorker" in navigator && "PushManager" in window) {
+    if (!native && "serviceWorker" in navigator && "PushManager" in window) {
       void navigator.serviceWorker.ready
         .then((registration) => registration.pushManager.getSubscription())
         .then((subscription) => { if (!cancelled) setSubscriptionReady(Boolean(subscription)); })
@@ -88,18 +95,23 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
       .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "No pudimos cargar las preferencias."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [native]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const pushReady = preferences.pushEnabled && permission === "granted" && subscriptionReady;
   const browserLabel = useMemo(() => {
+    if (native) {
+      if (pushReady) return "Activas en este celular";
+      if (permission === "denied") return "Bloqueadas: activalas desde los Ajustes del celular";
+      return "Todavía no están activadas en este celular";
+    }
     if (pushReady && standalone) return "Activas en la app instalada";
     if (pushReady) return "Activas en este navegador";
     if (preferences.pushEnabled) return "Activadas en otro dispositivo; falta activarlas acá";
     if (permission === "denied") return "Bloqueadas desde el navegador";
     if (permission === "unsupported") return "Este navegador no admite notificaciones push";
     return "Todavía no están activadas en este dispositivo";
-  }, [permission, preferences.pushEnabled, pushReady, standalone]);
+  }, [native, permission, preferences.pushEnabled, pushReady, standalone]);
 
   async function save(next: NotificationPreferences) {
     const response = await fetch("/api/notifications/preferences", {
@@ -125,6 +137,17 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
 
   async function enablePush() {
     setError(""); setNotice("");
+    if (native) {
+      setSaving(true);
+      const result = await enableNativePush();
+      setSaving(false);
+      setPermission(await nativePushPermission().catch(() => permission));
+      if (!result.ok) { setError(result.error); return; }
+      setPreferences((current) => ({ ...current, pushEnabled: true }));
+      setSubscriptionReady(true);
+      setNotice("Notificaciones activadas en este celular.");
+      return;
+    }
     if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
       setPermission("unsupported");
       setError("Este navegador no admite notificaciones push.");
@@ -183,6 +206,13 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
     setError(""); setNotice("");
     setSaving(true);
     try {
+      if (native) {
+        await disableNativePush();
+        setSubscriptionReady(false);
+        await save({ ...preferences, pushEnabled: false });
+        setNotice("Notificaciones desactivadas en este celular.");
+        return;
+      }
       const registration = await navigator.serviceWorker.getRegistration("/sw.js");
       const subscription = await registration?.pushManager.getSubscription();
       if (subscription) {
@@ -223,7 +253,7 @@ export function NotificationSettings({ isPro, compact = false }: { isPro: boolea
         ? <button type="button" className="notification-action secondary" onClick={() => void disablePush()} disabled={saving}>Desactivar</button>
         : <button type="button" className="notification-action" onClick={() => void enablePush()} disabled={saving} aria-busy={saving}>{saving ? "Activando…" : preferences.pushEnabled ? "Activar en esta app" : "Activar"}</button>}
     </div>
-    {preferences.pushEnabled && !pushReady && <small className="field-note">Si usás iPhone, abrí AVORA desde el ícono de la pantalla de inicio y activalas una vez ahí.</small>}
+    {!native && preferences.pushEnabled && !pushReady && <small className="field-note">Si usás iPhone, abrí AVORA desde el ícono de la pantalla de inicio y activalas una vez ahí.</small>}
 
     <p className="notification-section-label">AVISOS</p>
     <div className="settings-disabled-row"><span><b>Actividades del calendario</b><small>Se envía según el horario y la anticipación que elijas.</small></span><i>{preferences.calendarEnabled ? "Activado" : "Desactivado"}</i></div>
