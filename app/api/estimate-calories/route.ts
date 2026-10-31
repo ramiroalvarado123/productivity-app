@@ -1,6 +1,6 @@
 import { getSessionUser } from "@/server/auth/session";
 import { detectExplicitMealMoment, MEAL_MOMENTS } from "@/features/nutrition/logic/nutrition-tracker";
-import type { MealEstimate } from "@/shared/data/types";
+import { catalogNamesForPrompt, groundEstimate, type RawMealEstimate } from "@/features/nutrition/logic/ai-meal-grounding";
 
 type ResponseOutput = { type?: string; content?: Array<{ type?: string; text?: string }> };
 
@@ -34,7 +34,12 @@ export async function POST(request: Request) {
 
   const content: Array<Record<string, unknown>> = [{
     type: "input_text",
-    text: `Estimá esta comida para un registro personal de alimentación. Descripción del usuario: ${description || "No agregó descripción; analizá la foto."}\n\nIdentificá alimentos visibles o mencionados, estimá porciones realistas, calorías y macronutrientes aproximados. No inventes ingredientes invisibles como certeza: expresá la duda en caveat. Devolvé un nombre corto de la comida, un detalle útil para editar, el total central aproximado, proteínas, carbohidratos, grasas y un rango razonable. Informá mealMoment solo cuando el usuario indique explícitamente el momento con palabras claras (por ejemplo, “desayuné”, “para el almuerzo”, “merendé”, “cené” o “colación”); no lo deduzcas por los alimentos, la foto, la hora actual ni el horario del sistema. Si no lo aclara, devolvé null. Si la imagen no muestra comida o no hay información suficiente, usá confidence low, items vacíos y explicalo. Esto no es consejo médico.`,
+    text: `Estimá esta comida para un registro personal de alimentación. Descripción del usuario: ${description || "No agregó descripción; analizá la foto."}
+
+Identificá cada alimento visible o mencionado y estimá cuántos gramos hay de cada uno en una porción realista (en gramos cocidos o servidos, tal como se come). Para cada alimento, si existe en la base de alimentos de AVORA (lista de abajo), devolvé en catalogName el nombre copiado EXACTO de la lista, elegí la preparación más parecida (por ejemplo "a la plancha" o "hervido" según cómo se ve o se dice); los valores nutricionales de esos alimentos los calcula la aplicación a partir de los gramos, así que lo importante ahí son los gramos. Si un alimento no está en la lista (plato mixto, envasado, algo regional), devolvé catalogName null y estimá vos sus calorías y macros para esos gramos. Si un plato compuesto se puede separar en ingredientes de la lista (por ejemplo una milanesa con puré), separalo en varios items. No inventes ingredientes invisibles como certeza: expresá la duda en caveat. Devolvé también un nombre corto de la comida, un detalle útil para editar, el total central aproximado, proteínas, carbohidratos, grasas y un rango razonable (la aplicación recalcula los totales a partir de los items). Informá mealMoment solo cuando el usuario indique explícitamente el momento con palabras claras (por ejemplo, “desayuné”, “para el almuerzo”, “merendé”, “cené” o “colación”); no lo deduzcas por los alimentos, la foto, la hora actual ni el horario del sistema. Si no lo aclara, devolvé null. Si la imagen no muestra comida o no hay información suficiente, usá confidence low, items vacíos y explicalo. Esto no es consejo médico.
+
+BASE DE ALIMENTOS DE AVORA (un nombre por línea):
+${catalogNamesForPrompt()}`,
   }];
 
   if (image instanceof File && image.size) {
@@ -48,7 +53,7 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       model: "gpt-5.6-luna",
       input: [{ role: "user", content }],
-      max_output_tokens: 900,
+      max_output_tokens: 1400,
       text: {
         format: {
           type: "json_schema",
@@ -67,7 +72,7 @@ export async function POST(request: Request) {
               carbs: { type: "integer" },
               fat: { type: "integer" },
               confidence: { type: "string", enum: ["low", "medium", "high"] },
-              items: { type: "array", items: { type: "object", properties: { name: { type: "string" }, portion: { type: "string" }, calories: { type: "integer" } }, required: ["name", "portion", "calories"], additionalProperties: false } },
+              items: { type: "array", items: { type: "object", properties: { name: { type: "string" }, portion: { type: "string" }, grams: { type: "integer" }, catalogName: { type: ["string", "null"] }, calories: { type: "integer" }, protein: { type: "integer" }, carbs: { type: "integer" }, fat: { type: "integer" } }, required: ["name", "portion", "grams", "catalogName", "calories", "protein", "carbs", "fat"], additionalProperties: false } },
               caveat: { type: "string" },
             },
             required: ["mealName", "detail", "mealMoment", "estimatedCalories", "minimumCalories", "maximumCalories", "protein", "carbs", "fat", "confidence", "items", "caveat"],
@@ -87,7 +92,8 @@ export async function POST(request: Request) {
   const result = await response.json() as { output?: ResponseOutput[] };
   const outputText = result.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text;
   if (!outputText) return Response.json({ error: "La IA no devolvió una estimación utilizable." }, { status: 502 });
-  const estimate = JSON.parse(outputText) as MealEstimate;
+  // Los alimentos reconocidos toman sus valores de la base de alimentos (la misma del buscador manual).
+  const estimate = groundEstimate(JSON.parse(outputText) as RawMealEstimate);
   // La categoría solo se conserva si aparece explícitamente en la descripción, nunca por inferencia de la foto.
   estimate.mealMoment = detectExplicitMealMoment(description);
   return Response.json({ estimate });

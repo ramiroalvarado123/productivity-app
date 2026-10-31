@@ -35,7 +35,7 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 | Sueño | `features/sleep/components/sleep-section.tsx` | |
 | Plan | `features/plan/components/plan-section.tsx` | + `features/goals/components/goals-panel.tsx` |
 | Progreso | `features/stats/components/stats-section.tsx` | Las cuentas Pro ven `features/notifications/components/weekly-ai-review.tsx`; la revisión se guarda por semana. |
-| Amigos | **todavía en `progress-app.tsx`** (`circleTab`, `groupsTab`, `friendsPanel`) | ver HANDOFF |
+| Amigos | **todavía en `progress-app.tsx`** (`circleTab`, `groupsTab`, `friendsPanel`) | ver HANDOFF. El chat con cada amigo es `features/friends/components/friend-chat.tsx` (API `app/api/friends/messages/route.ts`, reglas en `features/friends/logic/chat.ts`) |
 | Pro | `features/pro/components/pro-section.tsx` | compra simulada |
 | Cierre por voz | `features/voice-checkin/components/voice-checkin-dialog.tsx` | |
 | Notificaciones / resumen semanal | `features/notifications/components/notifications-center.tsx` | El aviso dominical y su pop-up sin IA siguen disponibles para todas las cuentas. La revisión Pro usa `weekly-ai-review.tsx` y `weekly-ai-context.ts`. |
@@ -49,6 +49,7 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 - `features/notifications/logic/weekly-summary.ts`, `features/home/logic/review.ts`, `features/reading/logic/reading.ts`.
 - `features/nutrition/logic/food-search.ts` (búsqueda y cálculo por gramos), `macro-goals.ts` (objetivos → macros) y `nutrition-tracker.ts`. El catálogo (`features/nutrition/data/food-catalog.ts`, USDA SR Legacy en español) se regenera con `scripts/nutrition/`.
 - `features/training/logic/routines.ts` (validación de rutinas, nombres normalizados) y `exercise-history.ts` (última vez de cada ejercicio).
+- `features/nutrition/logic/ai-meal-grounding.ts` — el registro con IA (`/api/estimate-calories`) reconoce alimentos y gramos y los valores salen del mismo catálogo que el buscador.
 - `features/friends/logic/social.ts` — objetivos de grupo `shared` (suman) o `individual` (cada uno cumple la meta).
 
 ## Servidor
@@ -62,4 +63,4 @@ GET /api/progress ──► features/app-shell/server/snapshot.ts (una tanda de 
 
 ## Base de datos (`supabase/`)
 
-SQL sueltos, ya aplicados en producción salvo los marcados en HANDOFF. Los nuevos: `performance.sql` (índices + RPC de entrenamiento), `study-resources.sql` (artículos/podcasts), `weekly-ai-review.sql` (revisiones y memoria estructurada Pro), `sleep-quality-regular.sql` (valoración "regular") y `group-goal-mode.sql` (objetivos de grupo individuales) y `training-routines.sql` (rutinas de gimnasio).
+SQL sueltos, ya aplicados en producción salvo los marcados en HANDOFF. Los nuevos: `performance.sql` (índices + RPC de entrenamiento), `study-resources.sql` (artículos/podcasts), `weekly-ai-review.sql` (revisiones y memoria estructurada Pro), `sleep-quality-regular.sql` (valoración "regular") y `group-goal-mode.sql` (objetivos de grupo individuales) `training-routines.sql` (rutinas de gimnasio) y `friend-messages.sql` (chat entre amigos).
